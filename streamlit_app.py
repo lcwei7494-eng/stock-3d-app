@@ -52,7 +52,7 @@ with st.expander("📚 點此查看【三維定位法】三個維度的核心含
       * **多頭防守/轉弱（收盤價 < 平衡點）**：當天衝高回落或誘多，若隔天開低跌破平衡點應提防回測。
     """)
 
-# 主要區域：修改提示語支援「代碼」或「名稱」
+# 主要區域：輸入股票代碼或中文公司名稱
 stock_input = st.text_input("請輸入股票代碼或公司名稱", value="3042")
 
 if st.button("🚀 抓取數據並分析", type="primary"):
@@ -65,19 +65,25 @@ if st.button("🚀 抓取數據並分析", type="primary"):
                 api = sj.Shioaji(simulation=True)
                 api.login(api_key=api_key, secret_key=secret_key)
                 
-                # 判斷輸入是代碼還是公司名稱
-                target_code = stock_input.strip()
-                contract = api.Contracts.Stocks.get(target_code)
+                target_input = stock_input.strip()
+                contract = None
                 
-                # 如果用代碼找不到，自動比對公司名稱 (如輸入「晶技」或「台積電」)
+                # 1. 優先試用股票代碼直接取得合約
+                contract = api.Contracts.Stocks.get(target_input)
+                
+                # 2. 若用代碼找不到，正確走訪合約物件進行中文名稱比對
                 if not contract:
-                    for code, stock in api.Contracts.Stocks:
-                        if target_code == stock.name or target_code in stock.name:
-                            contract = stock
+                    # 搜尋上市/上櫃所有合約
+                    for category in [api.Contracts.Stocks.TSE, api.Contracts.Stocks.OTC]:
+                        for code, stock in category.items():
+                            if target_input == stock.name or target_input in stock.name:
+                                contract = stock
+                                break
+                        if contract:
                             break
 
                 if not contract:
-                    st.error(f"找不到股票代碼或公司名稱：『{stock_input}』，請確認輸入是否正確。")
+                    st.error(f"找不到股票代碼或公司名稱：『{stock_input}』，請確認輸入名稱是否正確（例：晶技、台積電）。")
                 else:
                     snapshots = api.snapshots([contract])
                     if not snapshots:
