@@ -6,17 +6,24 @@ st.set_page_config(page_title="三維定位法分析器", layout="centered")
 
 st.title("📈 三維定位法 - 自動抓取分析器")
 
-# 側邊欄：輸入 API 金鑰
-st.sidebar.header("🔑 永豐金 API 設定")
-api_key = st.sidebar.text_input("API Key", type="password")
-secret_key = st.sidebar.text_input("Secret Key", type="password")
+# 自動從 Streamlit Secrets 讀取 API Key (若無設定則退回手動輸入模式)
+api_key = st.secrets.get("SHIOAJI_API_KEY", "")
+secret_key = st.secrets.get("SHIOAJI_SECRET_KEY", "")
+
+# 側邊欄：僅在沒有設定 Secrets 時顯示手動輸入框作為備援
+if not api_key or not secret_key:
+    st.sidebar.header("🔑 永豐金 API 設定")
+    api_key = st.sidebar.text_input("API Key", type="password")
+    secret_key = st.sidebar.text_input("Secret Key", type="password")
+else:
+    st.sidebar.success("✅ 永豐金 API Key 已自動載入！")
 
 # 主要區域：輸入股票代碼
 stock_code = st.text_input("請輸入股票代碼", value="3042")
 
 if st.button("🚀 抓取數據並分析", type="primary"):
     if not api_key or not secret_key:
-        st.error("請在左側選單填寫 API Key 與 Secret Key！")
+        st.error("請在左側選單填寫 API Key 與 Secret Key，或設定 Streamlit Secrets！")
     else:
         with st.spinner("正在連線永豐金 API 抓取資料..."):
             try:
@@ -38,14 +45,14 @@ if st.button("🚀 抓取數據並分析", type="primary"):
                         high_price = float(getattr(snap, 'high', 0.0))
                         low_price = float(getattr(snap, 'low', 0.0))
                         
-                        # 取得均價 (若未提供則用當前價代替)
+                        # 取得均價
                         avg_price = float(getattr(snap, 'average_price', curr_price))
                         if avg_price == 0:
                             avg_price = curr_price
                         
-                        # 修正屬性名稱：ask_volume 與 bid_volume
-                        outer_vol = float(getattr(snap, 'ask_volume', 0.0))  # 外盤量
-                        inner_vol = float(getattr(snap, 'bid_volume', 0.0))  # 內盤量
+                        # 外盤與內盤量
+                        outer_vol = float(getattr(snap, 'ask_volume', 0.0))
+                        inner_vol = float(getattr(snap, 'bid_volume', 0.0))
 
                         # 三維度計算
                         bias_rate = ((curr_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0
@@ -60,7 +67,6 @@ if st.button("🚀 抓取數據並分析", type="primary"):
                         # 顯示結果
                         st.success(f"【{contract.code} {contract.name}】數據讀取成功！")
                         
-                        # 關鍵指標展現
                         col1, col2, col3 = st.columns(3)
                         col1.metric("1️⃣ 成本乖離率", f"{bias_rate:+.2f}%")
                         col2.metric("2️⃣ 動能係數", f"{momentum_coef:.2f}")
