@@ -65,17 +65,24 @@ if st.button("🚀 抓取數據並分析", type="primary"):
                 api = sj.Shioaji(simulation=True)
                 api.login(api_key=api_key, secret_key=secret_key)
                 
+                # 載入所有合約資訊
+                api.fetch_contracts()
+                
                 target_input = stock_input.strip()
                 contract = None
                 
                 # 1. 優先嘗試當作股票代碼直接取得合約
                 contract = api.Contracts.Stocks.get(target_input)
                 
-                # 2. 若找不到代碼，改用穩健方式搜尋中文公司名稱 (例如：晶技、台積電)
+                # 2. 若找不到代碼，走訪 TSE 與 OTC 的上市上櫃股票清單搜尋中文名稱
                 if not contract:
-                    for stock in api.Contracts.Stocks:
-                        if hasattr(stock, 'name') and (target_input == stock.name or target_input in stock.name):
-                            contract = stock
+                    for market in [api.Contracts.Stocks.TSE, api.Contracts.Stocks.OTC]:
+                        for code, stock in market.items():
+                            stock_name = getattr(stock, 'name', '')
+                            if target_input == stock_name or (stock_name and target_input in stock_name):
+                                contract = stock
+                                break
+                        if contract:
                             break
 
                 if not contract:
