@@ -68,22 +68,18 @@ if st.button("🚀 抓取數據並分析", type="primary"):
                 target_input = stock_input.strip()
                 contract = None
                 
-                # 1. 優先試用股票代碼直接取得合約
+                # 1. 優先嘗試當作股票代碼直接取得合約
                 contract = api.Contracts.Stocks.get(target_input)
                 
-                # 2. 若用代碼找不到，正確走訪合約物件進行中文名稱比對
+                # 2. 若找不到代碼，改用穩健方式搜尋中文公司名稱 (例如：晶技、台積電)
                 if not contract:
-                    # 搜尋上市/上櫃所有合約
-                    for category in [api.Contracts.Stocks.TSE, api.Contracts.Stocks.OTC]:
-                        for code, stock in category.items():
-                            if target_input == stock.name or target_input in stock.name:
-                                contract = stock
-                                break
-                        if contract:
+                    for stock in api.Contracts.Stocks:
+                        if hasattr(stock, 'name') and (target_input == stock.name or target_input in stock.name):
+                            contract = stock
                             break
 
                 if not contract:
-                    st.error(f"找不到股票代碼或公司名稱：『{stock_input}』，請確認輸入名稱是否正確（例：晶技、台積電）。")
+                    st.error(f"找不到股票代碼或公司名稱：『{stock_input}』，請確認名稱是否正確（例：晶技、台積電 或 3042）。")
                 else:
                     snapshots = api.snapshots([contract])
                     if not snapshots:
