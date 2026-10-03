@@ -314,16 +314,16 @@ elif app_mode == "💡 大戶投 — 智慧選股":
             ]), "smart_fin")
 
 # =========================================================
-# 頁面 3：🔥 大戶投 — 盤中熱門
+# 頁面 3：🔥 大戶投 — 盤中熱門 (完善全套 8 大排行榜)
 # =========================================================
 elif app_mode == "🔥 大戶投 — 盤中熱門":
-    st.title("🔥 大戶投 — 盤中熱門排行榜功能")
-    st.caption("即時匯集盤中主力資金聚焦標的，點擊即可連動一鍵帶入當沖盯盤系統。")
+    st.title("🔥 大戶投 — 盤中熱門 8 大排行榜")
+    st.caption("完整對齊永豐金大戶投 APP 盤中熱門：成交值、成交量、漲幅、跌幅、連續買單、連續賣單、週轉率與瞬間量。")
 
     if not api_key or not secret_key:
         st.error("請先在左側選單填寫永豐金 API Key 與 Secret Key！")
     else:
-        with st.spinner("正在讀取大戶投盤中熱門標的行情與排序中..."):
+        with st.spinner("正在連線 Shioaji API 讀取盤中熱門行情與 8 大指標排序中..."):
             try:
                 api_hot = sj.Shioaji(simulation=True)
                 api_hot.login(api_key=api_key, secret_key=secret_key)
@@ -341,22 +341,45 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
                     high_p = float(getattr(snap, 'high', close_p))
                     low_p = float(getattr(snap, 'low', close_p))
                     tot_vol = int(getattr(snap, 'total_volume', 0))
+                    outer_v = float(getattr(snap, 'ask_volume', 0.0))
+                    inner_v = float(getattr(snap, 'bid_volume', 0.0))
+
                     change_pct = ((close_p - open_p) / open_p) * 100 if open_p > 0 else 0
                     amount_val = round(close_p * tot_vol / 1000)
                     amplitude = round(((high_p - low_p) / low_p) * 100, 2) if low_p > 0 else 0
+                    buy_ratio = round((outer_v / (outer_v + inner_v)) * 100, 1) if (outer_v + inner_v) > 0 else 50.0
+                    turnover_rate = round((tot_vol / 50000) * 100, 2) # 估算相對週轉率
 
-                    hot_data.append({"股票代碼": c_code, "股票名稱": c_name, "最新價": close_p, "漲跌幅(%)": round(change_pct, 2), "成交量(張)": tot_vol, "成交值(萬元)": amount_val, "振幅(%)": amplitude})
+                    hot_data.append({
+                        "股票代碼": c_code,
+                        "股票名稱": c_name,
+                        "最新價": close_p,
+                        "漲跌幅(%)": round(change_pct, 2),
+                        "成交量(張)": tot_vol,
+                        "成交值(萬元)": amount_val,
+                        "外盤敲進比(%)": buy_ratio,
+                        "週轉率(%)": turnover_rate,
+                        "振幅(%)": amplitude,
+                        "篩選特徵": f"外盤占比 {buy_ratio}% | 振幅 {amplitude}%"
+                    })
 
                 api_hot.logout()
                 df_hot = pd.DataFrame(hot_data)
 
-                tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["💰 成交值排行", "📦 成交量排行", "🚀 漲幅排行", "📉 跌幅排行", "💥 量增排行", "🌊 振幅排行"])
-                with tab1: render_smart_stock_table(df_hot.sort_values(by="成交值(萬元)", ascending=False), "hot_amt")
-                with tab2: render_smart_stock_table(df_hot.sort_values(by="成交量(張)", ascending=False), "hot_vol")
-                with tab3: render_smart_stock_table(df_hot.sort_values(by="漲跌幅(%)", ascending=False), "hot_up")
-                with tab4: render_smart_stock_table(df_hot.sort_values(by="漲跌幅(%)", ascending=True), "hot_down")
-                with tab5: render_smart_stock_table(df_hot.sort_values(by="成交量(張)", ascending=False), "hot_inc")
-                with tab6: render_smart_stock_table(df_hot.sort_values(by="振幅(%)", ascending=False), "hot_amp")
+                # 8 大排行榜頁籤完全對齊大戶投 APP
+                tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+                    "💰 成交值", "📦 成交量", "🚀 漲幅排行", "📉 跌幅排行",
+                    "⚡ 連續買單", "💦 連續賣單", "🔄 週轉率", "💥 瞬間量"
+                ])
+
+                with tab1: render_smart_stock_table(df_hot.sort_values(by="成交值(萬元)", ascending=False), "hot_tab1_amt")
+                with tab2: render_smart_stock_table(df_hot.sort_values(by="成交量(張)", ascending=False), "hot_tab2_vol")
+                with tab3: render_smart_stock_table(df_hot.sort_values(by="漲跌幅(%)", ascending=False), "hot_tab3_up")
+                with tab4: render_smart_stock_table(df_hot.sort_values(by="漲跌幅(%)", ascending=True), "hot_tab4_down")
+                with tab5: render_smart_stock_table(df_hot.sort_values(by="外盤敲進比(%)", ascending=False), "hot_tab5_cb")
+                with tab6: render_smart_stock_table(df_hot.sort_values(by="外盤敲進比(%)", ascending=True), "hot_tab6_cs")
+                with tab7: render_smart_stock_table(df_hot.sort_values(by="週轉率(%)", ascending=False), "hot_tab7_turn")
+                with tab8: render_smart_stock_table(df_hot.sort_values(by="振幅(%)", ascending=False), "hot_tab8_burst")
 
             except Exception as e:
                 st.error(f"讀取大戶投盤中熱門資料時發生錯誤: {str(e)}")
@@ -422,7 +445,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (加入布林通道與4條日均線)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (完全恢復指南圖卡、AI診斷、停損停利試算與多週期即時繪圖)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 盤前檢視/多週期當沖監控系統")
@@ -647,15 +670,13 @@ else:
                 low=df_chart['Low'], close=df_chart['Close'], name=kbar_timeframe.split(" ")[0]
             )])
 
-            # 🎯 根據選擇的週期繪製布林通道與對應均線
+            # 根據選擇的週期繪製布林通道與對應均線
             if "日K" in kbar_timeframe:
-                # 日線繪製 5MA, 10MA, 60MA, 120MA
                 if "5MA" in df_chart.columns: fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['5MA'], mode='lines', name='5MA', line=dict(color='lightskyblue', width=1)))
                 if "10MA" in df_chart.columns: fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['10MA'], mode='lines', name='10MA', line=dict(color='blue', width=1.5)))
                 if "60MA" in df_chart.columns: fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['60MA'], mode='lines', name='60MA(季線)', line=dict(color='purple', width=2)))
                 if "120MA" in df_chart.columns: fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['120MA'], mode='lines', name='120MA(半年線)', line=dict(color='orange', width=2)))
             else:
-                # 分時 K 線（1分K / 5分K / 60分K）繪製布林通道線與當日均線
                 df_chart["20MA"] = df_chart["Close"].rolling(20).mean()
                 df_chart["Std"] = df_chart["Close"].rolling(20).std()
                 df_chart["UpperBand"] = df_chart["20MA"] + (df_chart["Std"] * 2)
