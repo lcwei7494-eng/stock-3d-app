@@ -43,33 +43,33 @@ def get_stock_code_and_name(user_input):
 with st.expander("📚 實戰戰法指南（三維定位法 + 進場 / 停損停利 / 轉弱判讀）"):
     st.markdown("""
     ### 🎯 第一部分：三維定位法
-    * **第一維度：成本乖離率**：衡量當前價與分時均價距離。+1%~+2% 健康偏強；>+3% 過熱不追。
-    * **第二維度：動能係數**：外盤/內盤比值。≥1.4 代表主動買盤強勁。
+    * **第一維度：成本乖離率**：衡量當前價與分時均價距離。+1%~+2% 健康偏強；>+3% 過熱不追[cite: 1]。
+    * **第二維度：動能係數**：外盤/內盤比值。≥1.4 代表主動買盤強勁[cite: 2, 3]。
     * **第三維度：多空平衡點**：(高+低+收)/3。收盤價高於平衡點代表多頭領先。
 
     ---
-    ### 🎯 第二部分：怎麼找進場點？（6種常見方式）
-    1. **回踩支撐**：上漲趨勢中回測支撐再上攻。
-    2. **突破壓力**：突破前高或整理區，伴隨成交量放大。
-    3. **整理區間**：靠近區間下緣支撐買進，突破上緣加碼。
-    4. **均線進場**：股價站上重要均線（如 5日、10日線）且均線轉多。
-    5. **突破下降趨勢線**：跌勢結束突破下降趨勢線。
-    6. **缺口進場**：跳空突破缺口且有量。
+    ### 🎯 第二部分：怎麼找進場點？（6種常見方式）[cite: 1]
+    1. **回踩支撐**：上漲趨勢中回測支撐再上攻[cite: 1]。
+    2. **突破壓力**：突破前高或整理區，伴隨成交量放大[cite: 1]。
+    3. **整理區間**：靠近區間下緣支撐買進，突破上緣加碼[cite: 1]。
+    4. **均線進場**：股價站上重要均線（如 5日、10日線）且均線轉多[cite: 1]。
+    5. **突破下降趨勢線**：跌勢結束突破下降趨勢線[cite: 1]。
+    6. **缺口進場**：跳空突破缺口且有量[cite: 1]。
 
     ---
-    ### 🎯 第三部分：停損、停利怎麼設？
-    * **停損法**：支撐停損、均線停損、固定比例停損（3%~7%）。
-    * **停利法**：壓力停利（前高壓力區）、移動停利（沿5日線）、分批停利（+5%、+10%、+15%）。
-    * **短線/當沖建議**：停損設 3%~5%，停利設 5%~10%。
+    ### 🎯 第三部分：停損、停利怎麼設？[cite: 2]
+    * **停損法**：支撐停損、均線停損、固定比例停損（3%~7%）[cite: 2]。
+    * **停利法**：壓力停利（前高壓力區）、移動停利（沿5日線）、分批停利（+5%、+10%、+15%）[cite: 2]。
+    * **短線/當沖建議**：停損設 3%~5%，停利設 5%~10%[cite: 2]。
 
     ---
-    ### 🎯 第四部分：怎麼判斷股票轉弱？（6大訊號）
-    1. **跌破重要均線**：均線由多頭轉空頭排列。
-    2. **爆量長黑 K**：高檔賣壓湧現，主力出貨。
-    3. **高檔長上影線**：衝高回落，上方賣壓重。
-    4. **重要支撐跌破**：跌破前低或整理區下緣。
-    5. **量價背離**：股價創新高但成交量萎縮。
-    6. **頭部形態**：形成 M頭、頭肩頂並跌破頸線。
+    ### 🎯 第四部分：怎麼判斷股票轉弱？（6大訊號）[cite: 3]
+    1. **跌破重要均線**：均線由多頭轉空頭排列[cite: 3]。
+    2. **爆量長黑 K**：高檔賣壓湧現，主力出貨[cite: 3]。
+    3. **高檔長上影線**：衝高回落，上方賣壓重[cite: 3]。
+    4. **重要支撐跌破**：跌破前低或整理區下緣[cite: 3]。
+    5. **量價背離**：股價創新高但成交量萎縮[cite: 3]。
+    6. **頭部形態**：形成 M頭、頭肩頂並跌破頸線[cite: 3]。
     """)
 
 # 自選股快捷區
@@ -139,54 +139,66 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                             st.error("無法取得即時行情。")
                         else:
                             snap = snapshots[0]
-                            curr_price = float(getattr(snap, 'close', 0.0))
+                            curr_price = float(getattr(snap, 'close', 0.0))[cite: 1]
                             high_price = float(getattr(snap, 'high', 0.0))
                             low_price = float(getattr(snap, 'low', 0.0))
                             open_price = float(getattr(snap, 'open', curr_price))
                             volume = int(getattr(snap, 'total_volume', 0))
-                            avg_price = float(getattr(snap, 'average_price', curr_price))
+                            avg_price = float(getattr(snap, 'average_price', curr_price))[cite: 1]
                             if avg_price == 0: avg_price = curr_price
                             outer_vol = float(getattr(snap, 'ask_volume', 0.0))
                             inner_vol = float(getattr(snap, 'bid_volume', 0.0))
 
                             # 核心三維度
-                            bias_rate = ((curr_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0
+                            bias_rate = ((curr_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0[cite: 1]
                             momentum_coef = (outer_vol / inner_vol) if inner_vol > 0 else 0
                             balance_point = (high_price + low_price + curr_price) / 3
 
                             st.success(f"【{contract.code} {contract.name}】當前最新價：{curr_price} 元")
                             
                             col1, col2, col3 = st.columns(3)
-                            col1.metric("1️⃣ 成本乖離率", f"{bias_rate:+.2f}%")
+                            col1.metric("1️⃣ 成本乖離率", f"{bias_rate:+.2f}%")[cite: 1]
                             col2.metric("2️⃣ 動能係數", f"{momentum_coef:.2f}")
                             col3.metric("3️⃣ 多空平衡點", f"{balance_point:.2f}元")
 
-                            # 正確抓取歷史日 K 線 (指定 ktype 為 Day)
+                            # 抓取歷史 K 線資料 (預設為 1 分 K)
                             start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
                             end_date = datetime.now().strftime("%Y-%m-%d")
                             
                             kbars = api.kbars(
                                 contract=contract,
                                 start=start_date,
-                                end=end_date,
-                                ktype=sj.constant.KBarType.Day
+                                end=end_date
                             )
                             
-                            df_k = pd.DataFrame({
-                                "Date": kbars.ts, "Open": kbars.Open, "High": kbars.High,
+                            df_raw = pd.DataFrame({
+                                "ts": kbars.ts, "Open": kbars.Open, "High": kbars.High,
                                 "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume
                             })
                             
-                            # 轉為 datetime 與日期字串格式
-                            df_k["Date"] = pd.to_datetime(df_k["Date"] / 1000000000, unit='s', errors='coerce')
-                            df_k = df_k.dropna(subset=["Date"]).sort_values("Date").reset_index(drop=True)
+                            if len(df_raw) > 0:
+                                df_raw["Date"] = pd.to_datetime(df_raw["ts"] / 1000000000, unit='s', errors='coerce')
+                                df_raw["Day"] = df_raw["Date"].dt.date
+                                
+                                # 將 1 分 K 線按天（Day）聚合為標準日 K 線
+                                df_k = df_raw.groupby("Day").agg({
+                                    "Open": "first",
+                                    "High": "max",
+                                    "Low": "min",
+                                    "Close": "last",
+                                    "Volume": "sum"
+                                }).reset_index()
+                                df_k.rename(columns={"Day": "Date"}, inplace=True)
+                                df_k["Date"] = pd.to_datetime(df_k["Date"])
+                            else:
+                                df_k = pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close", "Volume"])
+
+                            today_date = datetime.now().date()
                             
-                            today_str = datetime.now().strftime("%Y-%m-%d")
-                            
-                            # 如果歷史日 K 的最後一筆不是今天，則把今天的即時 snapshot 補進最後一筆計算最新 5MA/20MA
-                            if len(df_k) == 0 or df_k['Date'].iloc[-1].strftime("%Y-%m-%d") != today_str:
+                            # 動態補入今日即時 Snapshot 價格以計算包含今天的最新日均線
+                            if len(df_k) == 0 or df_k['Date'].iloc[-1].date() != today_date:
                                 new_row = pd.DataFrame([{
-                                    "Date": pd.to_datetime(today_str),
+                                    "Date": pd.to_datetime(today_date),
                                     "Open": open_price,
                                     "High": high_price,
                                     "Low": low_price,
@@ -195,12 +207,11 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                                 }])
                                 df_k = pd.concat([df_k, new_row], ignore_index=True)
                             else:
-                                # 若最後一筆是今天，用盤中最新行情更新最後一筆
                                 df_k.loc[df_k.index[-1], "Close"] = curr_price
                                 df_k.loc[df_k.index[-1], "High"] = max(df_k.loc[df_k.index[-1], "High"], high_price)
                                 df_k.loc[df_k.index[-1], "Low"] = min(df_k.loc[df_k.index[-1], "Low"], low_price)
 
-                            # 正確計算 5 日均線 (5MA) 與 20 日均線 (20MA)
+                            # 精準計算 5 日均線 (5MA) 與 20 日均線 (20MA)
                             df_k["5MA"] = df_k["Close"].rolling(5).mean()
                             df_k["20MA"] = df_k["Close"].rolling(20).mean()
                             
@@ -211,50 +222,50 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
 
                             st.subheader("🛠️ 圖解戰法實戰診斷")
 
-                            # 1. 進場點診斷
-                            st.markdown("#### 🟢 1. 進場型態評估 (圖一對照)")
+                            # 1. 進場點診斷 (圖一)
+                            st.markdown("#### 🟢 1. 進場型態評估 (圖一對照)")[cite: 1]
                             entry_signals = []
                             if curr_price > ma5 and ma5 > ma20:
-                                entry_signals.append("✅ **均線進場**：股價站上 5日/20日線，均線多頭排列。")
+                                entry_signals.append("✅ **均線進場**：股價站上 5日/20日線，均線多頭排列[cite: 1]。")
                             if curr_price > prev_high:
-                                entry_signals.append("✅ **突破壓力進場**：股價已突破前一日高點壓力。")
+                                entry_signals.append("✅ **突破壓力進場**：股價已突破前一日高點壓力[cite: 1]。")
                             if 1.0 <= bias_rate <= 2.0:
-                                entry_signals.append("✅ **回踩/健康拉升**：成本乖離率介於 +1%~+2%，籌碼結構健康。")
+                                entry_signals.append("✅ **回踩/健康拉升**：成本乖離率介於 +1%~+2%，籌碼結構健康[cite: 1]。")
                             
                             if entry_signals:
                                 for sig in entry_signals: st.write(sig)
                             else:
-                                st.write("ℹ️ 當前暫無明顯突破或帶量進場型態，建議等待回測支撐或帶量突破。")
+                                st.write("ℹ️ 當前暫無明顯突破或帶量進場型態，建議等待回測支撐或帶量突破[cite: 1]。")
 
-                            # 2. 停損停利試算
-                            st.markdown("#### 🎯 2. 戰術停損與停利參考試算 (圖二對照)")
+                            # 2. 停損停利試算 (圖二)
+                            st.markdown("#### 🎯 2. 戰術停損與停利參考試算 (圖二對照)")[cite: 2]
                             col_sl, col_tp = st.columns(2)
                             with col_sl:
                                 st.error("🛡️ **建議停損點**")
-                                st.write(f"* **短線固定停損 (5%)**：`{curr_price * 0.95:.2f}` 元")
-                                st.write(f"* **5日均線停損 (5MA)**：`{ma5:.2f}` 元")
-                                st.write(f"* **20日均線停損 (20MA)**：`{ma20:.2f}` 元")
-                                st.write(f"* **平衡點停損**：`{balance_point:.2f}` 元")
+                                st.write(f"* **短線固定停損 (5%)**：`{curr_price * 0.95:.2f}` 元[cite: 2]")
+                                st.write(f"* **5日均線停損 (5MA)**：`{ma5:.2f}` 元[cite: 2, 4]")
+                                st.write(f"* **20日均線停損 (20MA)**：`{ma20:.2f}` 元[cite: 2, 4]")
+                                st.write(f"* **平衡點停損**：`{balance_point:.2f}` 元[cite: 2]")
                             with col_tp:
                                 st.success("🎯 **建議停利點**")
-                                st.write(f"* **第一目標 (+5%)**：`{curr_price * 1.05:.2f}` 元")
-                                st.write(f"* **第二目標 (+10%)**：`{curr_price * 1.10:.2f}` 元")
-                                st.write(f"* **前高壓力區停利**：`{prev_high:.2f}` 元")
+                                st.write(f"* **第一目標 (+5%)**：`{curr_price * 1.05:.2f}` 元[cite: 2]")
+                                st.write(f"* **第二目標 (+10%)**：`{curr_price * 1.10:.2f}` 元[cite: 2]")
+                                st.write(f"* **前高壓力區停利**：`{prev_high:.2f}` 元[cite: 2]")
 
-                            # 3. 轉弱風險警示
-                            st.markdown("#### 🚨 3. 轉弱訊號偵測 (圖三對照)")
+                            # 3. 轉弱風險警示 (圖三)
+                            st.markdown("#### 🚨 3. 轉弱訊號偵測 (圖三對照)")[cite: 3]
                             weak_signals = []
                             if curr_price < ma5:
-                                weak_signals.append("❌ **跌破重要均線**：股價已跌破 5 日均線。")
+                                weak_signals.append("❌ **跌破重要均線**：股價已跌破 5 日均線[cite: 3]。")
                             if bias_rate > 3.0:
-                                weak_signals.append("❌ **短線過熱/遠離均價**：乖離率 > +3%，提防高檔拉回。")
+                                weak_signals.append("❌ **短線過熱/遠離均價**：乖離率 > +3%，提防高檔拉回[cite: 1, 3]。")
                             if curr_price < balance_point:
-                                weak_signals.append("❌ **失去平衡點支撐**：收盤價低於多空平衡點，多頭結構轉弱。")
+                                weak_signals.append("❌ **失去平衡點支撐**：收盤價低於多空平衡點，多頭結構轉弱[cite: 3]。")
 
                             if weak_signals:
                                 for w_sig in weak_signals: st.warning(w_sig)
                             else:
-                                st.success("✅ 目前未偵測到明顯轉弱訊號，多頭結構正常。")
+                                st.success("✅ 目前未偵測到明顯轉弱訊號，多頭結構正常[cite: 3]。")
 
                             # 展示近 20 日 K 線圖
                             st.subheader("📜 近 20 日 K 線與日均線 (5MA / 20MA)")
