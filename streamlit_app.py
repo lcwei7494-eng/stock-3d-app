@@ -1,4 +1,4 @@
-=import streamlit as st
+import streamlit as st
 import shioaji as sj
 import pandas as pd
 import twstock
@@ -17,7 +17,7 @@ secret_key = st.secrets.get("SHIOAJI_SECRET_KEY", "")
 if "watchlist" not in st.session_state:
     st.session_state["watchlist"] = ["3624 光頡", "3006 晶豪科", "3042 晶技", "2330 台積電", "2317 鴻海"]
 
-# 側邊欄：功能頁面選單 (新增最左側「🔥 大戶投 — 盤中熱門」)
+# 側邊欄：功能頁面選單 (包含「🔥 大戶投 — 盤中熱門」)
 st.sidebar.title("📌 功能頁面選單")
 app_mode = st.sidebar.radio(
     "請選擇功能頁面",
@@ -154,7 +154,7 @@ if app_mode == "🔥 大戶投 — 盤中熱門":
                     tot_vol = int(getattr(snap, 'total_volume', 0))
                     
                     change_pct = ((close_p - open_p) / open_p) * 100 if open_p > 0 else 0
-                    amount_val = round(close_p * tot_vol / 1000) # 萬元
+                    amount_val = round(close_p * tot_vol / 1000)
                     amplitude = round(((high_p - low_p) / low_p) * 100, 2) if low_p > 0 else 0
 
                     hot_data.append({
@@ -171,7 +171,6 @@ if app_mode == "🔥 大戶投 — 盤中熱門":
 
                 df_hot = pd.DataFrame(hot_data)
 
-                # 大戶投盤中熱門 6 大標籤頁籤
                 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
                     "💰 成交值排行", "📦 成交量排行", "🚀 漲幅排行", "📉 跌幅排行", "💥 量增排行", "🌊 振幅排行"
                 ])
@@ -363,7 +362,6 @@ else:
     
     target_code, target_name = get_stock_code_and_name(stock_input)
 
-    # 檢測當前選擇的股票是否變更，若變更則重置設定並自動觸發分析
     if "last_stock" not in st.session_state or st.session_state["last_stock"] != target_code:
         st.session_state["last_stock"] = target_code
         st.session_state["custom_target"] = 0.0
@@ -409,7 +407,6 @@ else:
             else:
                 st.error(f"📉 **預估淨虧損**：`{round(net_profit)}` 元 | 報酬率：`{profit_rate:.2f}%`")
 
-    # 自動連動執行
     need_fetch = ("analysis_data" not in st.session_state) or (st.session_state["analysis_data"]["target_code"] != target_code) or auto_refresh
 
     if need_fetch:
@@ -478,7 +475,6 @@ else:
                             try: api.logout()
                             except: pass
 
-    # 渲染分析結果與多週期 K 線
     if "analysis_data" in st.session_state and st.session_state["analysis_data"]["target_code"] == target_code:
         data = st.session_state["analysis_data"]
         curr_price = data["curr_price"]
@@ -550,7 +546,6 @@ else:
             st.session_state["custom_target"] = ai_res['resistance']
             custom_target_price = ai_res['resistance']
 
-        # 分時資料處理
         if len(df_raw) > 0:
             df_raw["DateTime"] = pd.to_datetime(df_raw["ts"] / 1000000000, unit='s', errors='coerce')
             latest_trade_date = df_raw["DateTime"].dt.date.max()
@@ -562,7 +557,6 @@ else:
 
         st.subheader(f"⚡ 多週期 K 線監控雷達 ({date_label_str}) -【{data['contract_code']} {data['contract_name']}】")
         
-        # 多週期切換選項
         kbar_timeframe = st.radio(
             "請選擇 K 線圖顯示週期：",
             ["5分K (轉折雷達/預設)", "1分K (超短線當沖)", "60分K (小時波段)", "日K (多空趨勢)"],
@@ -605,7 +599,7 @@ else:
             if curr_k["Volume"] >= max_vol_day and curr_k["High"] >= max_price_day:
                 condition_alerts.append((1200, f"🔥 **【條件 2 觸發】**：【{data['contract_name']}】爆量創高！小心拉回！"))
             if upper_shadow1 > (k_body * 1.2) and upper_shadow2 > (abs(prev_k["Close"] - prev_k["Open"]) * 1.2) and curr_k["High"] <= prev_k["High"]:
-                condition_alerts.append((400, f"⚠️️ **【條件 3 觸發】**：【{data['contract_name']}】5分K 連續兩條長上影線，買盤衰竭！"))
+                condition_alerts.append((400, f"⚠️ **【條件 3 觸發】**：【{data['contract_name']}】5分K 連續兩條長上影線，買盤衰竭！"))
             if custom_stop_price > 0 and custom_stop_price < curr_price * 1.1 and curr_price <= custom_stop_price:
                 condition_alerts.append((300, f"🚨 **【條件 5 觸發】**：【{data['contract_name']}】觸及預設支撐/停損價 `{custom_stop_price}` 元！"))
 
