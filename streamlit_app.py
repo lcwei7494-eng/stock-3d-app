@@ -17,7 +17,7 @@ secret_key = st.secrets.get("SHIOAJI_SECRET_KEY", "")
 if "watchlist" not in st.session_state:
     st.session_state["watchlist"] = ["3624 光頡", "3006 晶豪科", "3042 晶技", "2330 台積電", "2317 鴻海"]
 
-# 側邊欄：功能頁面選單 (最左側加入「💡 大戶投 — 智慧選股」)
+# 側邊欄：功能頁面選單 (包含「💡 大戶投 — 智慧選股」)
 st.sidebar.title("📌 功能頁面選單")
 app_mode = st.sidebar.radio(
     "請選擇功能頁面",
@@ -124,11 +124,11 @@ def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high,
         "strategy": strategy
     }
 
-# 通用表格渲染連動函式
+# 通用表格渲染連動函式 (支援跨排行榜多重並存)
 def render_smart_stock_table(df_display, key_prefix):
     st.dataframe(df_display, use_container_width=True)
     st.markdown("##### ⚡ 一鍵帶入當沖盯盤系統或加入自選清單")
-    for idx, row in df_display.iterrows():
+    for idx, row in df_display.reset_index(drop=True).iterrows():
         c_code = str(row['股票代碼'])
         c_name = str(row['股票名稱'])
         stock_lbl = f"{c_code} {c_name}"
@@ -136,22 +136,26 @@ def render_smart_stock_table(df_display, key_prefix):
         col_lbl, col_b1, col_b2 = st.columns([4, 2, 2])
         col_lbl.write(f"**{stock_lbl}** | 現價: `{row.get('最新價', row.get('收盤價', 'N/A'))}` 元 | 評估指標: `{row.get('篩選特徵', row.get('漲跌幅(%)', '精選'))}`")
         
-        if col_b1.button(f"🔍 帶入盯盤系統", key=f"nav_{key_prefix}_{c_code}_{idx}"):
+        # 組合唯一 Key：功能Prefix + 代碼 + 索引
+        btn_nav_key = f"btn_nav_{key_prefix}_{c_code}_{idx}"
+        btn_add_key = f"btn_add_{key_prefix}_{c_code}_{idx}"
+
+        if col_b1.button(f"🔍 帶入盯盤系統", key=btn_nav_key):
             st.session_state["selected_stock"] = c_code
             st.session_state["last_stock"] = c_code
             if "analysis_data" in st.session_state: del st.session_state["analysis_data"]
             st.success(f"已帶入【{stock_lbl}】，請切換至『三維定位與當沖盯盤系統』頁面！")
 
         if stock_lbl in st.session_state["watchlist"]:
-            col_b2.button(f"✅ 已在自選", key=f"add_{key_prefix}_{c_code}_{idx}", disabled=True)
+            col_b2.button(f"✅ 已在自選", key=f"disabled_{btn_add_key}", disabled=True)
         else:
-            if col_b2.button(f"➕ 加自選", key=f"add_{key_prefix}_{c_code}_{idx}"):
+            if col_b2.button(f"➕ 加自選", key=btn_add_key):
                 st.session_state["watchlist"].append(stock_lbl)
                 st.success(f"已加入：{stock_lbl}")
                 st.rerun()
 
 # =========================================================
-# 頁面 1：💡 大戶投 — 智慧選股 (四大維度連動)
+# 頁面 1：💡 大戶投 — 智慧選股
 # =========================================================
 if app_mode == "💡 大戶投 — 智慧選股":
     st.title("💡 大戶投 — 智慧選股系統")
@@ -171,7 +175,7 @@ if app_mode == "💡 大戶投 — 智慧選股":
                 {"股票代碼": "2317", "股票名稱": "鴻海", "最新價": 185.5, "漲跌幅(%)": +3.5, "成交量(張)": 62000, "篩選特徵": "⚡ 外盤大單連續敲進"},
                 {"股票代碼": "3035", "股票名稱": "智原", "最新價": 320.0, "漲跌幅(%)": +4.8, "成交量(張)": 18000, "篩選特徵": "🚀 5分K 帶量發動 N 字勾起"},
                 {"股票代碼": "3624", "股票名稱": "光頡", "最新價": 72.5, "漲跌幅(%)": +1.8, "成交量(張)": 8500, "篩選特徵": "🎯 守住 VWAP 當日均線回升"},
-                {"股票代碼": "3006", "股票名稱": "晶豪科", "最新價": 88.0, "漲跌幅(%)": -1.2, "成交量(張)": 12000, "篩選特徵": "⚠️ 爆量拉回急殺支撐位"}
+                {"股票代碼": "3006", "股票名稱": "晶豪科", "最新價": 88.0, "漲跌幅(%)": -1.2, "成交量(張)": 12000, "篩選特徵": "⚠ 爆量拉回急殺支撐位"}
             ]
             render_smart_stock_table(pd.DataFrame(rt_data), "rt")
 
@@ -206,7 +210,7 @@ if app_mode == "💡 大戶投 — 智慧選股":
             render_smart_stock_table(pd.DataFrame(fin_data), "fin")
 
 # =========================================================
-# 頁面 2：🔥 大戶投 — 盤中熱門 (6 大排行榜標籤與一鍵連動)
+# 頁面 2：🔥 大戶投 — 盤中熱門 (支援跨排行榜並存)
 # =========================================================
 elif app_mode == "🔥 大戶投 — 盤中熱門":
     st.title("🔥 大戶投 — 盤中熱門排行榜功能")
@@ -256,42 +260,18 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
                     "💰 成交值排行", "📦 成交量排行", "🚀 漲幅排行", "📉 跌幅排行", "💥 量增排行", "🌊 振幅排行"
                 ])
 
-                def display_hot_table(df_sorted, category_name):
-                    st.write(f"### 📌 當前類別：{category_name}")
-                    st.dataframe(df_sorted, use_container_width=True)
-
-                    st.markdown("##### ⚡ 一鍵帶入當沖盯盤或加入自選")
-                    for idx, row in df_sorted.iterrows():
-                        stock_lbl = f"{row['股票代碼']} {row['股票名稱']}"
-                        col_lbl, col_b1, col_b2 = st.columns([3, 2, 2])
-                        col_lbl.write(f"**{stock_lbl}** | 現價: `{row['最新價']}` | 漲跌: `{row['漲跌幅(%)']}%`")
-                        
-                        if col_b1.button(f"🔍 帶入盯盤系統", key=f"nav_{row['股票代碼']}"):
-                            st.session_state["selected_stock"] = row['股票代碼']
-                            st.session_state["last_stock"] = row['股票代碼']
-                            if "analysis_data" in st.session_state: del st.session_state["analysis_data"]
-                            st.success(f"已帶入【{stock_lbl}】，請切換至『三維定位與當沖盯盤系統』頁面！")
-
-                        if stock_lbl in st.session_state["watchlist"]:
-                            col_b2.button(f"✅ 已在自選", key=f"add_h_{row['股票代碼']}", disabled=True)
-                        else:
-                            if col_b2.button(f"➕ 加自選", key=f"add_h_{row['股票代碼']}"):
-                                st.session_state["watchlist"].append(stock_lbl)
-                                st.success(f"已加入：{stock_lbl}")
-                                st.rerun()
-
                 with tab1:
-                    display_hot_table(df_hot.sort_values(by="成交值(萬元)", ascending=False), "💰 成交值排行榜 (當沖資金最聚焦)")
+                    render_smart_stock_table(df_hot.sort_values(by="成交值(萬元)", ascending=False), "hot_tab1_amt")
                 with tab2:
-                    display_hot_table(df_hot.sort_values(by="成交量(張)", ascending=False), "📦 成交量排行榜 (流動性最佳)")
+                    render_smart_stock_table(df_hot.sort_values(by="成交量(張)", ascending=False), "hot_tab2_vol")
                 with tab3:
-                    display_hot_table(df_hot.sort_values(by="漲跌幅(%)", ascending=False), "🚀 漲幅排行榜 (強勢領頭羊)")
+                    render_smart_stock_table(df_hot.sort_values(by="漲跌幅(%)", ascending=False), "hot_tab3_up")
                 with tab4:
-                    display_hot_table(df_hot.sort_values(by="漲跌幅(%)", ascending=True), "📉 跌幅排行榜 (弱勢/拉回標的)")
+                    render_smart_stock_table(df_hot.sort_values(by="漲跌幅(%)", ascending=True), "hot_tab4_down")
                 with tab5:
-                    display_hot_table(df_hot.sort_values(by="成交量(張)", ascending=False), "💥 量增排行榜 (爆量攻擊股)")
+                    render_smart_stock_table(df_hot.sort_values(by="成交量(張)", ascending=False), "hot_tab5_inc")
                 with tab6:
-                    display_hot_table(df_hot.sort_values(by="振幅(%)", ascending=False), "🌊 振幅排行榜 (當沖波動最大標的)")
+                    render_smart_stock_table(df_hot.sort_values(by="振幅(%)", ascending=False), "hot_tab6_amp")
 
             except Exception as e:
                 st.error(f"讀取大戶投盤中熱門資料時發生錯誤: {str(e)}")
@@ -607,7 +587,7 @@ else:
 
         chip_summary = {"foreign": 120, "investment": 50, "margin_add": -150, "day_trade_broker": True}
 
-        st.subheader("👨‍‍💼 資深證券分析師 AI 綜合評估 (30年實戰經驗)")
+        st.subheader("👨‍💼 資深證券分析師 AI 綜合評估 (30年實戰經驗)")
         ai_res = ai_senior_analyst_diagnosis_advanced(target_code, target_name, curr_price, ma5, ma20, prev_high, prev_low, balance_point, chip_summary)
         
         col_ai1, col_ai2 = st.columns(2)
@@ -676,7 +656,7 @@ else:
             if custom_target_price > 0 and curr_price >= custom_target_price:
                 condition_alerts.append((1000, f"🎯 **【條件 1 觸發】**：【{data['contract_name']}】現價 `{curr_price}` 元已達預設壓力/目標價 `{custom_target_price}` 元！"))
             if curr_price <= ai_res['support']:
-                condition_alerts.append((800, f"🛡️️ **【條件 1 觸發】**：【{data['contract_name']}】現價 `{curr_price}` 元已觸及 AI 建議支撐價 `{ai_res['support']}` 元！"))
+                condition_alerts.append((800, f"🛡 **【條件 1 觸發】**：【{data['contract_name']}】現價 `{curr_price}` 元已觸及 AI 建議支撐價 `{ai_res['support']}` 元！"))
             if curr_k["Volume"] >= max_vol_day and curr_k["High"] >= max_price_day:
                 condition_alerts.append((1200, f"🔥 **【條件 2 觸發】**：【{data['contract_name']}】爆量創高！小心拉回！"))
             if upper_shadow1 > (k_body * 1.2) and upper_shadow2 > (abs(prev_k["Close"] - prev_k["Open"]) * 1.2) and curr_k["High"] <= prev_k["High"]:
