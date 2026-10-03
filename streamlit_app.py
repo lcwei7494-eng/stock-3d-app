@@ -431,7 +431,7 @@ if submit_button or auto_refresh:
                             else: sl_pct, tp_pct = 0.12, 0.30
 
                             with col_sl_box:
-                                st.success("🛡️ **多重停損試算 (綠色)**")
+                                st.success("🛡️️ **多重停損試算 (綠色)**")
                                 st.write(f"* **百分比法 ({sl_pct*100:.0f}%)**：`{curr_price * (1 - sl_pct):.2f}` 元[cite: 13]")
                                 st.write(f"* **ATR 波動法 (1.5xATR)**：`{curr_price - (1.5 * atr_val):.2f}` 元[cite: 13]")
                                 st.write(f"* **均線/技術位法 (跌破5MA)**：`{ma5:.2f}` 元[cite: 11, 13]")
@@ -477,13 +477,15 @@ if submit_button or auto_refresh:
                             
                             df_5m = calculate_kd(df_5m)
 
+                            # =========================================================
+                            # 🎯 盤中 6 大條件極限盯盤與警示原因細節呈現
+                            # =========================================================
                             if len(df_5m) >= 3:
                                 curr_k = df_5m.iloc[-1]
                                 prev_k = df_5m.iloc[-2]
                                 prev_k2 = df_5m.iloc[-3]
                                 max_vol_day = df_5m["Volume"].max()
                                 max_price_day = df_5m["High"].max()
-                                min_vol_day = df_5m["Volume"].min()
                                 
                                 k_body = abs(curr_k["Close"] - curr_k["Open"])
                                 upper_shadow1 = curr_k["High"] - max(curr_k["Close"], curr_k["Open"])
@@ -493,11 +495,11 @@ if submit_button or auto_refresh:
 
                                 # 條件 1：股價來到目標價、支撐價或壓力價
                                 if custom_target_price > 0 and curr_price >= custom_target_price:
-                                    condition_alerts.append((1000, f"🎯 **【條件 1 觸發】**：【{contract.name}】股價 `{curr_price}` 元已達目標價 `{custom_target_price}` 元！"))
+                                    condition_alerts.append((1000, f"🎯 **【條件 1 觸發】**：【{contract.name}】現價 `{curr_price}` 元已達手動設定目標價 `{custom_target_price}` 元！"))
                                 if curr_price <= ai_res['support']:
-                                    condition_alerts.append((800, f"🛡️ **【條件 1 觸發】**：【{contract.name}】股價 `{curr_price}` 元已觸及支撐價 `{ai_res['support']}` 元！"))
+                                    condition_alerts.append((800, f"🛡️ **【條件 1 觸發】**：【{contract.name}】現價 `{curr_price}` 元已觸及 AI 建議支撐價 `{ai_res['support']}` 元！"))
                                 if curr_price >= ai_res['resistance']:
-                                    condition_alerts.append((500, f"🔴 **【條件 1 觸發】**：【{contract.name}】股價 `{curr_price}` 元已觸及壓力價 `{ai_res['resistance']}` 元！"))
+                                    condition_alerts.append((500, f"🔴 **【條件 1 觸發】**：【{contract.name}】現價 `{curr_price}` 元已觸及 AI 建議壓力價 `{ai_res['resistance']}` 元！"))
 
                                 # 條件 2：出現盤中最大量＋當日最高價
                                 if curr_k["Volume"] >= max_vol_day and curr_k["High"] >= max_price_day:
@@ -513,24 +515,19 @@ if submit_button or auto_refresh:
 
                                 # 條件 5：下殺到停損價
                                 if custom_stop_price > 0 and custom_stop_price < curr_price * 1.1 and curr_price <= custom_stop_price:
-                                    condition_alerts.append((300, f"🚨 **【條件 5 觸發】**：【{contract.name}】股價 `{curr_price}` 元已下殺觸及停損價 `{custom_stop_price}` 元！請嚴格執行停損防守！"))
+                                    condition_alerts.append((300, f"🚨 **【條件 5 觸發】**：【{contract.name}】現價 `{curr_price}` 元已下殺觸及手動停損價 `{custom_stop_price}` 元！請嚴格執行停損！"))
 
-                                # =========================================================
-                                # 🔥 新增條件 6：拉高後價跌量縮不破支撐，再次價漲大單敲進 (N字二次發動)
-                                # =========================================================
-                                # 階段1: 曾創相對高價 (拉高)
+                                # 條件 6：拉高後價跌量縮不破支撐，再度價漲大單敲進
                                 has_pulled_up = (df_5m["High"].max() > df_5m["Open"].iloc[0] * 1.01)
-                                # 階段2: 前 1~2 根 K 棒價跌量縮且守住支撐 (VWAP或AI支撐)
                                 is_volume_shrank = (prev_k["Volume"] <= df_5m["Volume"].mean())
                                 is_support_held = (prev_k["Low"] >= curr_k["VWAP"] or prev_k["Low"] >= ai_res['support'])
-                                # 階段3: 當前 K 棒收紅強攻 + 放大成交量 (外盤大單敲進)
                                 is_price_rising = (curr_k["Close"] > curr_k["Open"]) and (curr_k["Close"] > prev_k["Close"])
                                 is_volume_burst = (curr_k["Volume"] >= prev_k["Volume"] * 1.5) and (outer_vol > inner_vol * 1.4)
 
                                 if has_pulled_up and is_volume_shrank and is_support_held and is_price_rising and is_volume_burst:
-                                    condition_alerts.append((1500, f"🚀 **【條件 6 觸發】**：【{contract.name}】拉高拉回價跌量縮守住支撐，當前『再次價漲且大單敲進』！N字二次發動買點！"))
+                                    condition_alerts.append((1500, f"🚀 **【條件 6 觸發】**：【{contract.name}】拉高後價跌量縮守住支撐，當前『再度價漲且大單敲進』！N字二次發動買點！"))
 
-                                # 發聲與畫面輸出
+                                # 發聲與顯眼視窗輸出 (明確列出觸發哪一條條件與詳細原因)
                                 if condition_alerts:
                                     for freq, alert_msg in condition_alerts:
                                         play_sound(freq=freq, duration=0.8)
@@ -541,7 +538,7 @@ if submit_button or auto_refresh:
                                         else:
                                             st.info(alert_msg)
                                 else:
-                                    st.info(f"ℹ️ 【{contract.name}】盯盤進行中，未觸發上述 6 大條件警示訊號。")
+                                    st.info(f"ℹ️ 【{contract.name}】盯盤進行中，目前未觸發上述 6 大條件警示訊號。")
 
                             # 展示最近一個交易日的 5分K 線與當日均線 (VWAP)
                             st.subheader(f"📊 最近一個交易日 ({date_label_str}) 5分K 線與當日均線 (VWAP) -【{contract.name}】")
