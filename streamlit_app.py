@@ -78,7 +78,7 @@ with st.expander("📚 實戰戰法指南（三維定位法 + 進場 / 停損停
 if "watchlist" not in st.session_state:
     st.session_state["watchlist"] = ["3042 晶技", "2330 台積電", "2317 鴻海", "3006 晶豪科"]
 if "selected_stock" not in st.session_state:
-    st.session_state["selected_stock"] = "3042"
+    st.session_state["selected_stock"] = "3006"
 
 st.subheader("⭐ 自選股快捷區")
 if st.session_state["watchlist"]:
@@ -154,14 +154,14 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                             momentum_coef = (outer_vol / inner_vol) if inner_vol > 0 else 0
                             balance_point = (high_price + low_price + curr_price) / 3
 
-                            st.success(f"【{contract.code} {contract.name}】最新成交價：{curr_price} 元")
+                            st.success(f"【{contract.code} {contract.name}】最新成交價：{curr_price} 元 | 当日最低：{low_price} 元")
                             
                             col1, col2, col3 = st.columns(3)
                             col1.metric("1️⃣ 成本乖離率", f"{bias_rate:+.2f}%")
                             col2.metric("2️⃣ 動能係數", f"{momentum_coef:.2f}")
                             col3.metric("3️⃣ 多空平衡點", f"{balance_point:.2f}元")
 
-                            # 取得歷史 K 線計算 5MA / 20MA（拉長起算日補足資料庫）
+                            # 取得歷史 K 線 (動態往前推算 60 天，確保 5MA/20MA 計算基礎完整)
                             start_date = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%d")
                             kbars = api.kbars(contract, start=start_date)
                             df_k = pd.DataFrame({
@@ -169,6 +169,12 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                                 "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume
                             })
                             df_k["Date"] = pd.to_datetime(df_k["Date"])
+                            
+                            # 盤中將當前即時收盤價帶入最新一根 K 線進行計算
+                            if len(df_k) > 0 and curr_price > 0:
+                                df_k.iloc[-1, df_k.columns.get_loc("Close")] = curr_price
+
+                            # 精確計算 5MA 與 20MA
                             df_k["5MA"] = df_k["Close"].rolling(5).mean()
                             df_k["20MA"] = df_k["Close"].rolling(20).mean()
                             
@@ -203,7 +209,7 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                             with col_sl:
                                 st.error("🛡️ **建議停損點**")
                                 st.write(f"* **短線固定停損 (5%)**：`{curr_price * 0.95:.2f}` 元")
-                                st.write(f"* **均線停損 (跌破 5MA)**：`{ma5:.2f}` 元")
+                                st.write(f"* **精確 5日均線停損 (5MA)**：`{ma5:.2f}` 元")
                                 st.write(f"* **平衡點停損**：`{balance_point:.2f}` 元")
                             with col_tp:
                                 st.success("🎯 **建議停利點**")
