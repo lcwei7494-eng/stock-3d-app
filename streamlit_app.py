@@ -39,9 +39,7 @@ def get_stock_code_and_name(user_input):
             return code, info.name
     return None, None
 
-# =========================================================
-# 教學與策略指南區塊 (包含三張圖的文字解讀)
-# =========================================================
+# 教學與策略指南區塊
 with st.expander("📚 實戰戰法指南（三維定位法 + 進場 / 停損停利 / 轉弱判讀）"):
     st.markdown("""
     ### 🎯 第一部分：三維定位法
@@ -149,46 +147,40 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                             outer_vol = float(getattr(snap, 'ask_volume', 0.0))
                             inner_vol = float(getattr(snap, 'bid_volume', 0.0))
 
-                            # 核心三維度計算
+                            # 核心三維度
                             bias_rate = ((curr_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0
                             momentum_coef = (outer_vol / inner_vol) if inner_vol > 0 else 0
                             balance_point = (high_price + low_price + curr_price) / 3
 
-                            st.success(f"【{contract.code} {contract.name}】最新成交價：{curr_price} 元 | 当日最低：{low_price} 元")
+                            st.success(f"【{contract.code} {contract.name}】當前最新價：{curr_price} 元")
                             
                             col1, col2, col3 = st.columns(3)
                             col1.metric("1️⃣ 成本乖離率", f"{bias_rate:+.2f}%")
                             col2.metric("2️⃣ 動能係數", f"{momentum_coef:.2f}")
                             col3.metric("3️⃣ 多空平衡點", f"{balance_point:.2f}元")
 
-                            # 取得歷史 K 線 (動態往前推算 60 天，確保 5MA/20MA 計算基礎完整)
+                            # 動態設定抓取 60 天前的日 K 線
                             start_date = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%d")
-                            kbars = api.kbars(contract, start=start_date)
+                            kbars = api.kbars(contract, start=start_date, ktype=sj.constant.KBarType.Day)
+                            
                             df_k = pd.DataFrame({
                                 "Date": kbars.ts, "Open": kbars.Open, "High": kbars.High,
                                 "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume
                             })
                             df_k["Date"] = pd.to_datetime(df_k["Date"])
                             
-                            # 盤中將當前即時收盤價帶入最新一根 K 線進行計算
-                            if len(df_k) > 0 and curr_price > 0:
-                                df_k.iloc[-1, df_k.columns.get_loc("Close")] = curr_price
-
-                            # 精確計算 5MA 與 20MA
+                            # 正確計算 5MA 與 20MA
                             df_k["5MA"] = df_k["Close"].rolling(5).mean()
                             df_k["20MA"] = df_k["Close"].rolling(20).mean()
                             
                             last_close = df_k['Close'].iloc[-1]
                             ma5 = df_k['5MA'].iloc[-1]
                             ma20 = df_k['20MA'].iloc[-1]
-                            prev_high = df_k['High'].iloc[-2] if len(df_k) >= 2 else high_price
+                            prev_high = df_k['High'].iloc[-2] if len(df_k) > 1 else high_price
 
-                            # =========================================================
-                            # 圖片戰略綜合診斷區 (一鍵診斷)
-                            # =========================================================
                             st.subheader("🛠️ 圖解戰法實戰診斷")
 
-                            # 1. 進場點診斷 (圖一)
+                            # 1. 進場點診斷
                             st.markdown("#### 🟢 1. 進場型態評估 (圖一對照)")
                             entry_signals = []
                             if curr_price > ma5 and ma5 > ma20:
@@ -203,13 +195,13 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                             else:
                                 st.write("ℹ️ 當前暫無明顯突破或帶量進場型態，建議等待回測支撐或帶量突破。")
 
-                            # 2. 停損停利試算 (圖二)
+                            # 2. 停損停利試算
                             st.markdown("#### 🎯 2. 戰術停損與停利參考試算 (圖二對照)")
                             col_sl, col_tp = st.columns(2)
                             with col_sl:
                                 st.error("🛡️ **建議停損點**")
                                 st.write(f"* **短線固定停損 (5%)**：`{curr_price * 0.95:.2f}` 元")
-                                st.write(f"* **精確 5日均線停損 (5MA)**：`{ma5:.2f}` 元")
+                                st.write(f"* **均線停損 (5MA)**：`{ma5:.2f}` 元")
                                 st.write(f"* **平衡點停損**：`{balance_point:.2f}` 元")
                             with col_tp:
                                 st.success("🎯 **建議停利點**")
@@ -217,7 +209,7 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                                 st.write(f"* **第二目標 (+10%)**：`{curr_price * 1.10:.2f}` 元")
                                 st.write(f"* **前高壓力區停利**：`{prev_high:.2f}` 元")
 
-                            # 3. 轉弱風險警示 (圖三)
+                            # 3. 轉弱風險警示
                             st.markdown("#### 🚨 3. 轉弱訊號偵測 (圖三對照)")
                             weak_signals = []
                             if curr_price < ma5:
@@ -232,25 +224,9 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                             else:
                                 st.success("✅ 目前未偵測到明顯轉弱訊號，多頭結構正常。")
 
-                            # 即時五檔買賣價量視覺化
-                            st.subheader("📊 五檔買賣委託柱狀視覺化")
-                            bids = getattr(snap, 'bids', [])
-                            asks = getattr(snap, 'asks', [])
-                            if bids and asks:
-                                bid_prices = [f"買{i+1}: {b.price}" for i, b in enumerate(bids[:5])]
-                                bid_vols = [b.volume for b in bids[:5]]
-                                ask_prices = [f"賣{i+1}: {a.price}" for i, a in enumerate(asks[:5])]
-                                ask_vols = [a.volume for a in asks[:5]]
-
-                                fig_depth = go.Figure()
-                                fig_depth.add_trace(go.Bar(y=bid_prices[::-1], x=bid_vols[::-1], orientation='h', name='買盤掛單', marker_color='red'))
-                                fig_depth.add_trace(go.Bar(y=ask_prices[::-1], x=ask_vols[::-1], orientation='h', name='賣盤掛單', marker_color='green'))
-                                fig_depth.update_layout(title="最佳五檔掛單量對比", barmode='relative', height=300, margin=dict(l=10, r=10, t=40, b=10))
-                                st.plotly_chart(fig_depth, use_container_width=True)
-
-                            # 展示近 15 日 K 線圖
-                            st.subheader("📜 近 15 日 K 線與均線")
-                            df_k_tail = df_k.tail(15)
+                            # 展示近 20 日 K 線圖
+                            st.subheader("📜 近 20 日 K 線與日均線 (5MA / 20MA)")
+                            df_k_tail = df_k.tail(20)
                             fig_k = go.Figure(data=[go.Candlestick(
                                 x=df_k_tail['Date'].dt.strftime('%Y-%m-%d'),
                                 open=df_k_tail['Open'], high=df_k_tail['High'],
