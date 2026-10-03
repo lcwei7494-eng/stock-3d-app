@@ -6,9 +6,9 @@ import plotly.graph_objects as go
 import time
 from datetime import datetime, timedelta
 
-st.set_page_config(page_title="三維定位法與進出場策略分析器", layout="centered")
+st.set_page_config(page_title="三維定位法與5分K當沖轉折雷達", layout="centered")
 
-st.title("📈 三維定位法 & 進出場戰術分析器")
+st.title("📈 三維定位法 & 5分K當沖轉折監控雷達")
 
 # 自動從 Streamlit Secrets 讀取 API Key
 api_key = st.secrets.get("SHIOAJI_API_KEY", "")
@@ -22,10 +22,29 @@ if not api_key or not secret_key:
 else:
     st.sidebar.success("✅ 永豐金 API Key 已自動載入！")
 
-# 盤中自動刷新設定
-st.sidebar.subheader("⏱️ 盤中自動刷新設定")
-auto_refresh = st.sidebar.checkbox("開啟自動定時刷新", value=False)
+# 盤中自動刷新與聲響警示開關
+st.sidebar.subheader("⏱️ 盤中盯盤與聲響警示")
+auto_refresh = st.sidebar.checkbox("開啟自動盯盤刷新", value=False)
+enable_sound = st.sidebar.checkbox("開啟轉折警示音效", value=True)
 refresh_interval = st.sidebar.slider("刷新間隔 (秒)", min_value=5, max_value=60, value=10, step=5)
+
+# 聲音發放 HTML 函式 (瀏覽器 Web Audio API)
+def play_sound(freq=880, duration=0.5):
+    if enable_sound:
+        sound_html = f"""
+        <script>
+        var context = new (window.AudioContext || window.webkitAudioContext)();
+        var osc = context.createOscillator();
+        var gain = context.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = {freq};
+        osc.connect(gain);
+        gain.connect(context.destination);
+        osc.start();
+        gain.gain.exponentialRampToValueAtTime(0.00001, context.currentTime + {duration});
+        </script>
+        """
+        st.components.v1.html(sound_html, height=0)
 
 # 輔助函式：代碼與名稱轉換
 def get_stock_code_and_name(user_input):
@@ -39,37 +58,35 @@ def get_stock_code_and_name(user_input):
             return code, info.name
     return None, None
 
-# 教學與策略指南區塊
-with st.expander("📚 實戰戰法指南（三維定位法 + 進場 / 停損停利 / 轉弱判讀）"):
+# 5分K KD 技術指標計算
+def calculate_kd(df, n=9):
+    low_list = df['Low'].rolling(n, min_periods=1).min()
+    high_list = df['High'].rolling(n, min_periods=1).max()
+    rsv = (df['Close'] - low_list) / (high_list - low_list) * 100
+    rsv = rsv.fillna(50)
+    
+    k = [50.0]
+    d = [50.0]
+    for i in range(1, len(rsv)):
+        k_val = (2/3) * k[-1] + (1/3) * rsv.iloc[i]
+        d_val = (2/3) * d[-1] + (1/3) * k_val
+        k.append(k_val)
+        d.append(d_val)
+    
+    df['K'] = k
+    df['D'] = d
+    return df
+
+# 教學與戰法指南區塊
+with st.expander("📚 5分K當沖轉折核心觀察點與實戰戰法指南"):
     st.markdown("""
-    ### 🎯 第一部分：三維定位法
-    * **第一維度：成本乖離率**：衡量當前價與分時均價距離。+1%~+2% 健康偏強；>+3% 過熱不追。
-    * **第二維度：動能係數**：外盤/內盤比值。≥1.4 代表主動買盤強勁。
-    * **第三維度：多空平衡點**：(高+低+收)/3。收盤價高於平衡點代表多頭領先。
-
-    ---
-    ### 🎯 第二部分：怎麼找進場點？（6種常見方式）
-    1. **回踩支撐**：上漲趨勢中回測支撐再上攻。
-    2. **突破壓力**：突破前高或整理區，伴隨成交量放大。
-    3. **整理區間**：靠近區間下緣支撐買進，突破上緣加碼。
-    4. **均線進場**：股價站上重要均線（如 5日、10日線）且均線轉多。
-    5. **突破下降趨勢線**：跌勢結束突破下降趨勢線。
-    6. **缺口進場**：跳空突破缺口且有量。
-
-    ---
-    ### 🎯 第三部分：停損、停利怎麼設？
-    * **停損法**：支撐停損、均線停損、固定比例停損（3%~7%）。
-    * **停利法**：壓力停利（前高壓力區）、移動停利（沿5日線）、分批停利（+5%、+10%、+15%）。
-    * **短線/當沖建議**：停損設 3%~5%，停利設 5%~10%。
-
-    ---
-    ### 🎯 第四部分：怎麼判斷股票轉弱？（6大訊號）
-    1. **跌破重要均線**：均線由多頭轉空頭排列。
-    2. **爆量長黑 K**：高檔賣壓湧現，主力出貨。
-    3. **高檔長上影線**：衝高回落，上方賣壓重。
-    4. **重要支撐跌破**：跌破前低或整理區下緣。
-    5. **量價背離**：股價創新高但成交量萎縮。
-    6. **頭部形態**：形成 M頭、頭肩頂並跌破頸線。
+    ### 🎯 5分K當沖四大轉折觸發條件
+    1. **爆量長影線**：5分K急衝/急跌，成交量創高且留長上影線（轉折向下空）或長下影線（轉折向上多）。
+    2. **5MA 乖離修正**：股價連續拉離 5分K 5MA，出現反向吞噬K棒時引發均線靠攏修正。
+    3. **布林通道逆勢狙擊**：觸及布林上軌+收黑K（空點）或觸及下軌+站回軌道內（多點）。
+    4. **吞噬訊號與 KD 配合**：
+       * **多頭轉折**：陽線吞噬 + KD < 20 低檔黃金交叉（停損設轉折K最低點）。
+       * **空頭轉折**：陰線吞噬 + KD > 80 高檔死亡交叉（停損設轉折K最高點）。
     """)
 
 # 自選股快捷區
@@ -97,20 +114,15 @@ with st.expander("⚙️ 管理/刪除自選股清單"):
             st.success(f"已移除：{remove_item}")
             st.rerun()
 
-# =========================================================
-# 表單輸入區（支援 Enter 鍵直接觸發查詢）
-# =========================================================
+# 表單輸入區
 with st.form(key="search_form"):
     col_input, col_add_btn = st.columns([3, 1])
     with col_input:
         stock_input = st.text_input("請輸入股票代碼或公司名稱（按下 Enter 即可分析）", value=st.session_state["selected_stock"])
-    
     target_code, target_name = get_stock_code_and_name(stock_input)
-    
-    # 表單提交按鈕（按下 Enter 鍵也會等同點擊此按鈕）
     submit_button = st.form_submit_button("🚀 抓取數據並分析 (Enter)", type="primary")
 
-# 獨立的「加自選」快捷按鈕處理
+# 加自選按鈕
 if target_code and target_name:
     current_label = f"{target_code} {target_name}"
     col_info, col_btn = st.columns([3, 1])
@@ -133,7 +145,7 @@ if submit_button or auto_refresh:
         if not target_code:
             st.error(f"找不到股票：『{stock_input}』")
         else:
-            with st.spinner(f"正在讀取【{target_code}】數據..."):
+            with st.spinner(f"正在讀取【{target_code}】數據與5分K即時監控..."):
                 api = None
                 try:
                     api = sj.Shioaji(simulation=True)
@@ -158,7 +170,7 @@ if submit_button or auto_refresh:
                             outer_vol = float(getattr(snap, 'ask_volume', 0.0))
                             inner_vol = float(getattr(snap, 'bid_volume', 0.0))
 
-                            # 核心三維度
+                            # 三維度計算
                             bias_rate = ((curr_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0
                             momentum_coef = (outer_vol / inner_vol) if inner_vol > 0 else 0
                             balance_point = (high_price + low_price + curr_price) / 3
@@ -170,15 +182,11 @@ if submit_button or auto_refresh:
                             col2.metric("2️⃣ 動能係數", f"{momentum_coef:.2f}")
                             col3.metric("3️⃣ 多空平衡點", f"{balance_point:.2f}元")
 
-                            # 抓取歷史 K 線資料
-                            start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+                            # 抓取近 3 日的 5 分 K 線
+                            start_date = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d")
                             end_date = datetime.now().strftime("%Y-%m-%d")
                             
-                            kbars = api.kbars(
-                                contract=contract,
-                                start=start_date,
-                                end=end_date
-                            )
+                            kbars = api.kbars(contract=contract, start=start_date, end=end_date)
                             
                             df_raw = pd.DataFrame({
                                 "ts": kbars.ts, "Open": kbars.Open, "High": kbars.High,
@@ -186,108 +194,96 @@ if submit_button or auto_refresh:
                             })
                             
                             if len(df_raw) > 0:
-                                df_raw["Date"] = pd.to_datetime(df_raw["ts"] / 1000000000, unit='s', errors='coerce')
-                                df_raw["Day"] = df_raw["Date"].dt.date
+                                df_raw["DateTime"] = pd.to_datetime(df_raw["ts"] / 1000000000, unit='s', errors='coerce')
+                                df_5m = df_raw.set_index("DateTime").resample("5min").agg({
+                                    "Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"
+                                }).dropna().reset_index()
+                            else:
+                                df_5m = pd.DataFrame(columns=["DateTime", "Open", "High", "Low", "Close", "Volume"])
+
+                            # 計算 5分K 的 5MA、布林通道 (20MA, 2倍標準差)、KD 指標
+                            df_5m["5MA"] = df_5m["Close"].rolling(5).mean()
+                            df_5m["20MA"] = df_5m["Close"].rolling(20).mean()
+                            df_5m["Std"] = df_5m["Close"].rolling(20).std()
+                            df_5m["UpperBand"] = df_5m["20MA"] + (df_5m["Std"] * 2)
+                            df_5m["LowerBand"] = df_5m["20MA"] - (df_5m["Std"] * 2)
+                            df_5m = calculate_kd(df_5m)
+
+                            # =========================================================
+                            # 🎯 5 分 K 線當沖轉折核心條件偵測與聲音警示
+                            # =========================================================
+                            st.subheader("⚡ 5分K 當沖轉折雷達與即時警示")
+                            
+                            if len(df_5m) >= 2:
+                                curr_k = df_5m.iloc[-1]
+                                prev_k = df_5m.iloc[-2]
+                                max_vol = df_5m["Volume"].tail(10).max()
                                 
-                                # 將分 K 線按天聚合為日 K 線
-                                df_k = df_raw.groupby("Day").agg({
-                                    "Open": "first",
-                                    "High": "max",
-                                    "Low": "min",
-                                    "Close": "last",
-                                    "Volume": "sum"
-                                }).reset_index()
-                                df_k.rename(columns={"Day": "Date"}, inplace=True)
-                                df_k["Date"] = pd.to_datetime(df_k["Date"])
-                            else:
-                                df_k = pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close", "Volume"])
+                                # K棒特徵計算
+                                k_body = abs(curr_k["Close"] - curr_k["Open"])
+                                upper_shadow = curr_k["High"] - max(curr_k["Close"], curr_k["Open"])
+                                lower_shadow = min(curr_k["Close"], curr_k["Open"]) - curr_k["Low"]
+                                
+                                bull_turn_signals = []
+                                bear_turn_signals = []
+                                
+                                # 1. 爆量長影線
+                                if curr_k["Volume"] >= max_vol and lower_shadow > (k_body * 1.5):
+                                    bull_turn_signals.append("🔥 **爆量長下影線**：低檔支撐強勁，短線多頭超跌 V 轉 Signal！")
+                                if curr_k["Volume"] >= max_vol and upper_shadow > (k_body * 1.5):
+                                    bear_turn_signals.append("⚠️ **爆量長上影線**：高檔主力出貨，短線空頭 A 轉 Signal！")
+                                
+                                # 2. 布林通道觸軌
+                                if curr_k["High"] >= curr_k["UpperBand"] and curr_k["Close"] < curr_k["Open"]:
+                                    bear_turn_signals.append("⚠️ **觸及布林上軌+收黑**：多頭受阻於軌道頂部，短線轉折向下！")
+                                if curr_k["Low"] <= curr_k["LowerBand"] and curr_k["Close"] > curr_k["Open"]:
+                                    bull_turn_signals.append("🔥 **觸及布林下軌+站回**：超跌破軌後收紅，V 轉買點發起！")
+                                
+                                # 3. 吞噬訊號與 KD 高低檔交叉
+                                # 陽線吞噬 + KD 低檔黃金交叉
+                                if (prev_k["Close"] < prev_k["Open"]) and (curr_k["Close"] > curr_k["Open"]) and \
+                                   (curr_k["Close"] > prev_k["Open"]) and (curr_k["Open"] < prev_k["Close"]) and \
+                                   (curr_k["K"] < 30 and curr_k["K"] > curr_k["D"]):
+                                    bull_turn_signals.append(f"🔥 **陽線吞噬 + KD低檔金叉**：極佳多單進場點！建議停損設前低 `{curr_k['Low']:.2f}` 元。")
+                                
+                                # 陰線吞噬 + KD 高檔死亡交叉
+                                if (prev_k["Close"] > prev_k["Open"]) and (curr_k["Close"] < curr_k["Open"]) and \
+                                   (curr_k["Close"] < prev_k["Open"]) and (curr_k["Open"] > prev_k["Close"]) and \
+                                   (curr_k["K"] > 70 and curr_k["K"] < curr_k["D"]):
+                                    bear_turn_signals.append(f"⚠️ **陰線吞噬 + KD高檔死叉**：極佳空單進場點！建議停損設前高 `{curr_k['High']:.2f}` 元。")
 
-                            today_date = datetime.now().date()
-                            
-                            # 動態補入今日即時行情以計算包含今天的最新日均線
-                            if len(df_k) == 0 or df_k['Date'].iloc[-1].date() != today_date:
-                                new_row = pd.DataFrame([{
-                                    "Date": pd.to_datetime(today_date),
-                                    "Open": open_price,
-                                    "High": high_price,
-                                    "Low": low_price,
-                                    "Close": curr_price,
-                                    "Volume": volume
-                                }])
-                                df_k = pd.concat([df_k, new_row], ignore_index=True)
-                            else:
-                                df_k.loc[df_k.index[-1], "Close"] = curr_price
-                                df_k.loc[df_k.index[-1], "High"] = max(df_k.loc[df_k.index[-1], "High"], high_price)
-                                df_k.loc[df_k.index[-1], "Low"] = min(df_k.loc[df_k.index[-1], "Low"], low_price)
+                                # 4. 時間變盤點提醒 (09:30, 10:00, 10:30, 12:00)
+                                now_time_str = datetime.now().strftime("%H:%M")
+                                if now_time_str in ["09:30", "10:00", "10:30", "12:00"]:
+                                    st.warning(f"🕒 **關鍵時間變盤點 ({now_time_str})**：主力常在此時發動收割或V轉/A轉，密切注意五檔量價變化！")
 
-                            # 計算 5 日均線 (5MA) 與 20 日均線 (20MA)
-                            df_k["5MA"] = df_k["Close"].rolling(5).mean()
-                            df_k["20MA"] = df_k["Close"].rolling(20).mean()
-                            
-                            last_close = df_k['Close'].iloc[-1]
-                            ma5 = df_k['5MA'].iloc[-1]
-                            ma20 = df_k['20MA'].iloc[-1]
-                            prev_high = df_k['High'].iloc[-2] if len(df_k) > 1 else high_price
+                                # 顯示警示與播放警示音效
+                                if bull_turn_signals:
+                                    play_sound(freq=1000, duration=0.8) # 高音警示多頭
+                                    for b_sig in bull_turn_signals:
+                                        st.success(b_sig)
+                                
+                                if bear_turn_signals:
+                                    play_sound(freq=400, duration=0.8) # 低音警示空頭
+                                    for r_sig in bear_turn_signals:
+                                        st.error(r_sig)
+                                
+                                if not bull_turn_signals and not bear_turn_signals:
+                                    st.info("ℹ️ 5分K 當前趨勢正常，未觸發極端轉折訊號（持續即時盯盤中...）。")
 
-                            st.subheader("🛠️ 圖解戰法實戰診斷")
-
-                            # 1. 進場點診斷
-                            st.markdown("#### 🟢 1. 進場型態評估 (圖一對照)")
-                            entry_signals = []
-                            if curr_price > ma5 and ma5 > ma20:
-                                entry_signals.append("✅ **均線進場**：股價站上 5日/20日線，均線多頭排列。")
-                            if curr_price > prev_high:
-                                entry_signals.append("✅ **突破壓力進場**：股價已突破前一日高點壓力。")
-                            if 1.0 <= bias_rate <= 2.0:
-                                entry_signals.append("✅ **回踩/健康拉升**：成本乖離率介於 +1%~+2%，籌碼結構健康。")
-                            
-                            if entry_signals:
-                                for sig in entry_signals: st.write(sig)
-                            else:
-                                st.write("ℹ️ 當前暫無明顯突破或帶量進場型態，建議等待回測支撐或帶量突破。")
-
-                            # 2. 停損停利試算
-                            st.markdown("#### 🎯 2. 戰術停損與停利參考試算 (圖二對照)")
-                            col_sl, col_tp = st.columns(2)
-                            with col_sl:
-                                st.error("🛡️ **建議停損點**")
-                                st.write(f"* **短線固定停損 (5%)**：`{curr_price * 0.95:.2f}` 元")
-                                st.write(f"* **5日均線停損 (5MA)**：`{ma5:.2f}` 元")
-                                st.write(f"* **20日均線停損 (20MA)**：`{ma20:.2f}` 元")
-                                st.write(f"* **平衡點停損**：`{balance_point:.2f}` 元")
-                            with col_tp:
-                                st.success("🎯 **建議停利點**")
-                                st.write(f"* **第一目標 (+5%)**：`{curr_price * 1.05:.2f}` 元")
-                                st.write(f"* **第二目標 (+10%)**：`{curr_price * 1.10:.2f}` 元")
-                                st.write(f"* **前高壓力區停利**：`{prev_high:.2f}` 元")
-
-                            # 3. 轉弱風險警示
-                            st.markdown("#### 🚨 3. 轉弱訊號偵測 (圖三對照)")
-                            weak_signals = []
-                            if curr_price < ma5:
-                                weak_signals.append("❌ **跌破重要均線**：股價已跌破 5 日均線。")
-                            if bias_rate > 3.0:
-                                weak_signals.append("❌ **短線過熱/遠離均價**：乖離率 > +3%，提防高檔拉回。")
-                            if curr_price < balance_point:
-                                weak_signals.append("❌ **失去平衡點支撐**：收盤價低於多空平衡點，多頭結構轉弱。")
-
-                            if weak_signals:
-                                for w_sig in weak_signals: st.warning(w_sig)
-                            else:
-                                st.success("✅ 目前未偵測到明顯轉弱訊號，多頭結構正常。")
-
-                            # 展示近 20 日 K 線圖
-                            st.subheader("📜 近 20 日 K 線與日均線 (5MA / 20MA)")
-                            df_k_tail = df_k.tail(20)
-                            fig_k = go.Figure(data=[go.Candlestick(
-                                x=df_k_tail['Date'].dt.strftime('%Y-%m-%d'),
-                                open=df_k_tail['Open'], high=df_k_tail['High'],
-                                low=df_k_tail['Low'], close=df_k_tail['Close'], name="日K"
+                            # 展示 5 分 K 線與布林通道圖表
+                            st.subheader("📊 近 30 根 5分K 線與布林通道 (20MA, 2倍標準差)")
+                            df_5m_tail = df_5m.tail(30)
+                            fig_5m = go.Figure(data=[go.Candlestick(
+                                x=df_5m_tail['DateTime'].dt.strftime('%H:%M'),
+                                open=df_5m_tail['Open'], high=df_5m_tail['High'],
+                                low=df_5m_tail['Low'], close=df_5m_tail['Close'], name="5分K"
                             )])
-                            fig_k.add_trace(go.Scatter(x=df_k_tail['Date'].dt.strftime('%Y-%m-%d'), y=df_k_tail['5MA'], mode='lines', name='5MA', line=dict(color='orange', width=1.5)))
-                            fig_k.add_trace(go.Scatter(x=df_k_tail['Date'].dt.strftime('%Y-%m-%d'), y=df_k_tail['20MA'], mode='lines', name='20MA', line=dict(color='purple', width=1.5)))
-                            fig_k.update_layout(xaxis_rangeslider_visible=False, height=350, margin=dict(l=10, r=10, t=30, b=10))
-                            st.plotly_chart(fig_k, use_container_width=True)
+                            fig_5m.add_trace(go.Scatter(x=df_5m_tail['DateTime'].dt.strftime('%H:%M'), y=df_5m_tail['UpperBand'], mode='lines', name='布林上軌', line=dict(color='red', width=1, dash='dash')))
+                            fig_5m.add_trace(go.Scatter(x=df_5m_tail['DateTime'].dt.strftime('%H:%M'), y=df_5m_tail['20MA'], mode='lines', name='20MA(中軌)', line=dict(color='blue', width=1.5)))
+                            fig_5m.add_trace(go.Scatter(x=df_5m_tail['DateTime'].dt.strftime('%Y-%m-%d %H:%M'), y=df_5m_tail['LowerBand'], mode='lines', name='布林下軌', line=dict(color='green', width=1, dash='dash')))
+                            fig_5m.update_layout(xaxis_rangeslider_visible=False, height=380, margin=dict(l=10, r=10, t=30, b=10))
+                            st.plotly_chart(fig_5m, use_container_width=True)
 
                 except Exception as e:
                     st.error(f"連線失敗或發生錯誤: {str(e)}")
