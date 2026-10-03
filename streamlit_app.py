@@ -77,14 +77,26 @@ def calculate_kd(df, n=9):
     df['D'] = d
     return df
 
-# 教學與戰法指南區塊 (四圖合一精華)
-with st.expander("📚 實戰戰法指南（支撐壓力/移動停利/進場點/轉弱避險圖解）"):
+# 計算 ATR (真實波幅)
+def calculate_atr(df, period=14):
+    df['TR'] = pd.concat([
+        df['High'] - df['Low'],
+        abs(df['High'] - df['Close'].shift(1)),
+        abs(df['Low'] - df['Close'].shift(1))
+    ], axis=1).max(axis=1)
+    df['ATR'] = df['TR'].rolling(period).mean()
+    return df
+
+# 教學與戰法指南區塊 (4張圖表精華)
+with st.expander("📚 實戰戰法指南（進場點 / 停損停利 / 轉弱判讀 / 阿宇策略圖解）"):
     st.markdown("""
-    ### 🎯 戰術四大圖解標準 (圖片 1 ~ 4 精華)
-    1. **圖一：支撐壓力**：前高為壓、前低為撐，站上 5/20/60MA 多頭排列，注意 50/100/500 整數關卡[cite: 5]。
-    2. **圖二：移動停利**：停利只往上移、不往下放！突破前高沿 5MA / 10MA 移動停利鎖住獲利[cite: 6]。
-    3. **圖三：進場型態**：回踩支撐、突破前高/整理區帶量、突破下降趨勢線或缺口進場[cite: 7]。
-    4. **圖四：轉弱訊號**：跌破重要均線、爆量長黑 K、高檔長上影線、量價背離、頭部型態[cite: 8]。
+    ### 🎯 四大圖卡實戰判讀標準
+    1. **圖一：6種進場點**：回踩支撐、突破壓力/整理區帶量、站上5/10日均線、突破下降趨勢線、缺口進場[cite: 10]。
+    2. **圖二：停損停利法**：支撐停損、均線停損、固定比例停損，壓力停利與沿5日線移動停利[cite: 11]。
+    3. **圖三：6大轉弱訊號**：跌破重要均線/支撐、爆量長黑K、高檔長上影線、量價背離、頭部型態[cite: 12]。
+    4. **圖四：阿宇停損停利指南**：
+       * **四大設定法**：百分比法、技術位法、K線法、ATR波幅法（1~2倍ATR停損，2~4倍ATR停利）[cite: 13]。
+       * **風格定位**：短線當沖 (停損3~5%/停利5~8%)、波段 (停損5~10%/停利10~20%)、長線 (停損10~15%/停利20~50%)[cite: 13]。
     """)
 
 # 自選股快捷區
@@ -116,14 +128,16 @@ with st.expander("⚙️ 管理/刪除自選股清單"):
 # 表單輸入區（支援 Enter 鍵直接觸發查詢）
 # =========================================================
 with st.form(key="search_form"):
-    col_input, col_add_btn = st.columns([3, 1])
+    col_input, col_style = st.columns([2, 1])
     with col_input:
         stock_input = st.text_input("請輸入股票代碼或公司名稱（按下 Enter 即可分析）", value=st.session_state["selected_stock"])
+    with col_style:
+        trade_style = st.selectbox("🎯 交易風格選單 (圖四對照)", ["短線/當沖 (1~3天)", "波段操作 (幾天~幾週)", "長線投資 (1個月以上)"])
     
     target_code, target_name = get_stock_code_and_name(stock_input)
     submit_button = st.form_submit_button("🚀 抓取數據並分析 (Enter)", type="primary")
 
-# 獨立的「加自選」快捷按鈕處理
+# 加自選按鈕
 if target_code and target_name:
     current_label = f"{target_code} {target_name}"
     col_info, col_btn = st.columns([3, 1])
@@ -183,7 +197,7 @@ if submit_button or auto_refresh:
                             col2.metric("2️⃣ 動能係數", f"{momentum_coef:.2f}")
                             col3.metric("3️⃣ 多空平衡點", f"{balance_point:.2f}元")
 
-                            # 抓取歷史 K 線資料（1分K重組為日K，確保精準計算 5MA / 20MA / 60MA）
+                            # 抓取歷史 K 線資料
                             start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
                             end_date = datetime.now().strftime("%Y-%m-%d")
                             
@@ -216,67 +230,77 @@ if submit_button or auto_refresh:
                                 df_k.loc[df_k.index[-1], "High"] = max(df_k.loc[df_k.index[-1], "High"], high_price)
                                 df_k.loc[df_k.index[-1], "Low"] = min(df_k.loc[df_k.index[-1], "Low"], low_price)
 
-                            # 計算日層級 5MA、20MA 與 60MA
+                            # 計算日均線與 ATR
                             df_k["5MA"] = df_k["Close"].rolling(5).mean()
                             df_k["20MA"] = df_k["Close"].rolling(20).mean()
-                            df_k["60MA"] = df_k["Close"].rolling(60).mean()
+                            df_k = calculate_atr(df_k)
                             
                             ma5 = df_k['5MA'].iloc[-1]
                             ma20 = df_k['20MA'].iloc[-1]
-                            ma60 = df_k['60MA'].iloc[-1] if not pd.isna(df_k['60MA'].iloc[-1]) else ma20
+                            atr_val = df_k['ATR'].iloc[-1] if not pd.isna(df_k['ATR'].iloc[-1]) else (curr_price * 0.02)
                             prev_high = df_k['High'].iloc[-2] if len(df_k) > 1 else high_price
                             prev_low = df_k['Low'].iloc[-2] if len(df_k) > 1 else low_price
 
                             # =========================================================
-                            # 🔍 盤前全表檢視與四圖對照檢驗
+                            # 🔍 盤前數據全表檢視 (四大圖卡檢驗標準)
                             # =========================================================
-                            st.subheader("🔍 盤前全表檢視 (四圖標準綜合診斷)")
+                            st.subheader("🔍 盤前數據全表檢視 (四大圖卡標準綜合診斷)")
 
-                            # 1. 支撐壓力檢驗 (圖一)
-                            st.markdown("#### 1️⃣ 支撐與壓力關卡檢驗 (圖一對照)")
-                            col_sup, col_res = st.columns(2)
-                            with col_sup:
-                                st.info("🟢 **下方關鍵支撐區**")
-                                st.write(f"* **前低支撐**：`{prev_low:.2f}` 元[cite: 5]")
-                                st.write(f"* **5日均線 (5MA)**：`{ma5:.2f}` 元[cite: 5]")
-                                st.write(f"* **20日均線 (月線)**：`{ma20:.2f}` 元[cite: 5]")
-                            with col_res:
-                                st.warning("🔴 **上方關鍵壓力區**")
-                                st.write(f"* **前高壓力**：`{prev_high:.2f}` 元[cite: 5]")
-                                st.write(f"* **多空平衡點壓力**：`{balance_point:.2f}` 元[cite: 5]")
+                            # 1. 6種進場型態檢驗 (圖一)
+                            st.markdown("#### 1️⃣ 6種進場型態評估 (圖一對照)")
+                            entry_list = []
+                            if curr_price > ma5 and ma5 > ma20:
+                                entry_list.append("✅ **均線進場**：股價站上 5日/20日均線，多頭排列[cite: 10]。")
+                            if curr_price > prev_high:
+                                entry_list.append("✅ **突破壓力進場**：股價突破前一日高點壓力[cite: 10]。")
+                            if 1.0 <= bias_rate <= 2.0:
+                                entry_list.append("✅ **回踩/健康拉升**：成本乖離率介於 +1%~+2%，結構健康[cite: 10]。")
+                            
+                            if entry_list:
+                                for entry in entry_list: st.write(entry)
+                            else:
+                                st.write("ℹ️ 當前暫無明顯突破型態，建議等待回測支撐或帶量突破[cite: 10]。")
 
-                            # 2. 進場型態與移動停利試算 (圖二與圖三)
-                            st.markdown("#### 2️⃣ 進場型態與移動停利機制 (圖二、三對照)")
-                            col_entry, col_tp = st.columns(2)
-                            with col_entry:
-                                st.success("🎯 **進場型態評估**")
-                                if curr_price > ma5 and ma5 > ma20:
-                                    st.write("✅ **均線多頭進場**：站上 5日/20日線[cite: 7]。")
-                                if curr_price > prev_high:
-                                    st.write("✅ **突破前高進場**：站上前高壓力[cite: 7]。")
-                                if 1.0 <= bias_rate <= 2.0:
-                                    st.write("✅ **健康回踩/拉升**：乖離率介於 +1%~+2%[cite: 7]。")
-                            with col_tp:
-                                st.success("📈 **移動停利關卡 (只進不上退)**")
-                                st.write(f"* **移動停利線 (沿5MA)**：`{ma5:.2f}` 元[cite: 6]")
-                                st.write(f"* **第一目標 (+5%)**：`{curr_price * 1.05:.2f}` 元[cite: 6]")
-                                st.write(f"* **第二目標 (+10%)**：`{curr_price * 1.10:.2f}` 元[cite: 6]")
+                            # 2. 停損停利四大設定法 (圖二與圖四)
+                            st.markdown("#### 2️⃣ 四大停損停利參考設定 (圖二、圖四對照)")
+                            col_sl_box, col_tp_box = st.columns(2)
+                            
+                            # 風格參數判定
+                            if "短線" in trade_style:
+                                sl_pct, tp_pct = 0.04, 0.06
+                            elif "波段" in trade_style:
+                                sl_pct, tp_pct = 0.07, 0.15
+                            else:
+                                sl_pct, tp_pct = 0.12, 0.30
 
-                            # 3. 轉弱訊號防範 (圖四)
-                            st.markdown("#### 3️⃣ 轉弱與避險訊號 (圖四對照)")
+                            with col_sl_box:
+                                st.error("🛡️ **多重停損試算 (阿宇圖卡)**")
+                                st.write(f"* **百分比法 ({sl_pct*100:.0f}%)**：`{curr_price * (1 - sl_pct):.2f}` 元[cite: 13]")
+                                st.write(f"* **ATR 波動法 (1.5xATR)**：`{curr_price - (1.5 * atr_val):.2f}` 元[cite: 13]")
+                                st.write(f"* **均線/技術位法 (跌破5MA)**：`{ma5:.2f}` 元[cite: 11, 13]")
+                                st.write(f"* **K線法 (前低支撐)**：`{prev_low:.2f}` 元[cite: 12, 13]")
+
+                            with col_tp_box:
+                                st.success("🎯 **多重停利試算 (阿宇圖卡)**")
+                                st.write(f"* **百分比法 ({tp_pct*100:.0f}%)**：`{curr_price * (1 + tp_pct):.2f}` 元[cite: 13]")
+                                st.write(f"* **ATR 波動法 (3xATR)**：`{curr_price + (3 * atr_val):.2f}` 元[cite: 13]")
+                                st.write(f"* **移動停利線 (沿5MA)**：`{ma5:.2f}` 元[cite: 11, 13]")
+                                st.write(f"* **前高壓力區停利**：`{prev_high:.2f}` 元[cite: 11, 13]")
+
+                            # 3. 6大轉弱避險訊號 (圖三)
+                            st.markdown("#### 3️⃣ 6大轉弱訊號防范 (圖三對照)")
                             if curr_price < ma5:
-                                st.error("❌ **跌破重要均線**：股價跌破 5 日均線，短線轉弱[cite: 8]。")
+                                st.error("❌ **跌破重要均線**：股價已跌破 5 日均線[cite: 12]。")
                             if bias_rate > 3.0:
-                                st.warning("⚠️ **短線過熱/遠離均價**：乖離率 > +3%，提防拉回[cite: 8]。")
+                                st.warning("⚠️ **短線過熱/遠離均價**：乖離率 > +3%，提防拉回[cite: 10, 12]。")
                             if curr_price < balance_point:
-                                st.error("❌ **失去平衡點**：收盤低於多空平衡點[cite: 8]。")
+                                st.error("❌ **失去平衡點**：收盤價低於多空平衡點[cite: 12]。")
 
                             # =========================================================
                             # ⚡ 5 分 K 線當沖轉折即時盯盤與聲響警示
                             # =========================================================
                             st.subheader("⚡ 5分K 當沖轉折雷達與即時警示")
                             
-                            # 重組 5 分 K 線
                             if len(df_raw) > 0:
                                 df_raw["DateTime"] = pd.to_datetime(df_raw["ts"] / 1000000000, unit='s', errors='coerce')
                                 df_5m = df_raw.set_index("DateTime").resample("5min").agg({
@@ -312,7 +336,7 @@ if submit_button or auto_refresh:
                                 
                                 # 2. 布林通道觸軌
                                 if curr_k["High"] >= curr_k["UpperBand"] and curr_k["Close"] < curr_k["Open"]:
-                                    bear_turn_signals.append("⚠️ **觸及布林上軌+收黑**：多頭受阻於頂部，短線轉折向下！")
+                                    bear_turn_signals.append("⚠️️ **觸及布林上軌+收黑**：多頭受阻於頂部，短線轉折向下！")
                                 if curr_k["Low"] <= curr_k["LowerBand"] and curr_k["Close"] > curr_k["Open"]:
                                     bull_turn_signals.append("🔥 **觸及布林下軌+站回**：超跌破軌收紅，V 轉買點！")
                                 
@@ -354,7 +378,7 @@ if submit_button or auto_refresh:
                             )])
                             fig_5m.add_trace(go.Scatter(x=df_5m_tail['DateTime'].dt.strftime('%H:%M'), y=df_5m_tail['UpperBand'], mode='lines', name='布林上軌', line=dict(color='red', width=1, dash='dash')))
                             fig_5m.add_trace(go.Scatter(x=df_5m_tail['DateTime'].dt.strftime('%H:%M'), y=df_5m_tail['20MA'], mode='lines', name='20MA(中軌)', line=dict(color='blue', width=1.5)))
-                            fig_5m.add_trace(go.Scatter(x=df_5m_tail['DateTime'].dt.strftime('%H:%M'), y=df_5m_tail['LowerBand'], mode='lines', name='布林下軌', line=dict(color='green', width=1, dash='dash')))
+                            fig_5m.add_trace(go.Scatter(x=df_5m_tail['DateTime'].dt.strftime('%Y-%m-%d %H:%M'), y=df_5m_tail['LowerBand'], mode='lines', name='布林下軌', line=dict(color='green', width=1, dash='dash')))
                             fig_5m.update_layout(xaxis_rangeslider_visible=False, height=380, margin=dict(l=10, r=10, t=30, b=10))
                             st.plotly_chart(fig_5m, use_container_width=True)
 
