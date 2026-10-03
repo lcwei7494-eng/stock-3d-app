@@ -48,13 +48,13 @@ def get_stock_code_and_name(user_input):
 with st.expander("📚 點此查看【三維定位法】三個維度的核心含義與實戰判讀"):
     st.markdown("""
     ### 1️⃣ 第一維度：成本乖離率
-    * **算式**：$\\text{成本乖離率} = \\frac{\\text{目前價格} - \\text{今日分時均價}}{\\text{今日分時均價}} \\times 100\\%$[cite: 1]
+    * **算式**：$\\text{成本乖離率} = \\frac{\\text{目前價格} - \\text{今日分時均價}}{\\text{今日分時均價}} \\times 100\\%$
     * **核心含義**：衡量當前股價與今日市場平均交易成本的差距。
     * **實戰判讀**：
-      * **正乖離率（> 0%）**：當前股價高於均價，多數買方獲利，買盤意願較強[cite: 1]。
-      * **健康偏強（+1% ~ +2%）**：主力穩健拉升且籌碼經充分換手，結構健康[cite: 1]。
+      * **正乖離率（> 0%）**：當前股價高於均價，多數買方獲利，買盤意願較強。
+      * **健康偏強（+1% ~ +2%）**：主力穩健拉升且籌碼經充分換手，結構健康。
       * **短線過熱（> +3% ~ +5%）**：拉離均價過遠，容易引發獲利了結賣壓，不宜盲目追高。
-      * **負乖離率（< 0%）**：股價跌破均價，買方多數套牢，短線結構轉弱[cite: 1]。
+      * **負乖離率（< 0%）**：股價跌破均價，買方多數套牢，短線結構轉弱。
 
     ---
 
@@ -148,12 +148,12 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                             st.error("無法取得即時行情（可能非開盤時間或 API 權限問題）。")
                         else:
                             snap = snapshots[0]
-                            curr_price = float(getattr(snap, 'close', 0.0))[cite: 1]
+                            curr_price = float(getattr(snap, 'close', 0.0))
                             high_price = float(getattr(snap, 'high', 0.0))
                             low_price = float(getattr(snap, 'low', 0.0))
                             
                             # 取得均價
-                            avg_price = float(getattr(snap, 'average_price', curr_price))[cite: 1]
+                            avg_price = float(getattr(snap, 'average_price', curr_price))
                             if avg_price == 0:
                                 avg_price = curr_price
                             
@@ -162,12 +162,12 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                             inner_vol = float(getattr(snap, 'bid_volume', 0.0))
 
                             # 三維度計算
-                            bias_rate = ((curr_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0[cite: 1]
+                            bias_rate = ((curr_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0
                             momentum_coef = (outer_vol / inner_vol) if inner_vol > 0 else 0
                             balance_point = (high_price + low_price + curr_price) / 3
 
                             # 評估邏輯
-                            bias_eval = "健康偏強 (+1%~+2%)" if 1 <= bias_rate <= 2 else ("短線過熱 (>+2%)" if bias_rate > 2 else "結構偏弱/回落")[cite: 1]
+                            bias_eval = "健康偏強 (+1%~+2%)" if 1 <= bias_rate <= 2 else ("短線過熱 (>+2%)" if bias_rate > 2 else "結構偏弱/回落")
                             momentum_eval = "買氣主動攻擊意願強 (≥1.4)" if momentum_coef >= 1.4 else ("買氣平平 (1.0~1.4)" if momentum_coef >= 1.0 else "賣壓偏強 (<1.0)")
                             balance_eval = f"多頭領先 ({curr_price} > 平衡點 {balance_point:.2f})" if curr_price >= balance_point else f"多頭防守 ({curr_price} < 平衡點 {balance_point:.2f})"
 
@@ -186,16 +186,16 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
 
                             # 核心三維度指標卡片
                             col1, col2, col3 = st.columns(3)
-                            col1.metric("1️⃣ 成本乖離率", f"{bias_rate:+.2f}%")[cite: 1]
+                            col1.metric("1️⃣ 成本乖離率", f"{bias_rate:+.2f}%")
                             col2.metric("2️⃣ 動能係數", f"{momentum_coef:.2f}")
                             col3.metric("3️⃣ 多空平衡點", f"{balance_point:.2f}元")
 
                             # 診斷表
                             st.subheader("📋 綜合判定診斷表")
                             df = pd.DataFrame({
-                                "維度": ["第一維度（成本乖離率）", "第二維度（動能係數）", "第三維度（多空平衡點）"],[cite: 1]
-                                "數值": [f"{bias_rate:+.2f}%", f"{momentum_coef:.2f}", f"{balance_point:.2f}元"],[cite: 1]
-                                "系統判定": [bias_eval, momentum_eval, balance_eval][cite: 1]
+                                "維度": ["第一維度（成本乖離率）", "第二維度（動能係數）", "第三維度（多空平衡點）"],
+                                "數值": [f"{bias_rate:+.2f}%", f"{momentum_coef:.2f}", f"{balance_point:.2f}元"],
+                                "系統判定": [bias_eval, momentum_eval, balance_eval]
                             })
                             st.table(df)
 
