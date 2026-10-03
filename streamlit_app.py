@@ -23,7 +23,7 @@ else:
     st.sidebar.success("✅ 永豐金 API Key 已自動載入！")
 
 # 盤中自動刷新與聲響警示開關
-st.sidebar.subheader("⏱️️ 盤中自動盯盤與聲響警示")
+st.sidebar.subheader("⏱ 盤中自動盯盤與聲響警示")
 auto_refresh = st.sidebar.checkbox("開啟自動盯盤刷新", value=False)
 enable_sound = st.sidebar.checkbox("開啟轉折警示音效", value=True)
 refresh_interval = st.sidebar.slider("刷新間隔 (秒)", min_value=5, max_value=60, value=10, step=5)
@@ -89,11 +89,6 @@ def calculate_atr(df, period=14):
 
 # 資深證券分析師 AI 技術面診斷模組 (帶入 30 年資深分析師提示詞)
 def ai_senior_analyst_diagnosis(code, name, curr, ma5, ma20, prev_high, prev_low, balance_point):
-    """
-    提示詞設定：
-    「你是一名年資30年的資深證券分析師，擁有豐富的技術面分析和形態學分析的知識和高勝率的實戰經驗，
-      請根據所查詢的股票，進行分析多空判斷，並給出操作的策略建議」
-    """
     support_price = round(min(ma5, prev_low), 2)
     resistance_price = round(max(prev_high, balance_point * 1.02), 2)
     
@@ -108,7 +103,6 @@ def ai_senior_analyst_diagnosis(code, name, curr, ma5, ma20, prev_high, prev_low
     else:
         trend = "震盪整理 (多空對峙交戰)"
         entry_price = round(balance_point, 2)
-        reason_price = round(balance_point, 2)
         strategy = "股價於均線區間內反覆震盪，多空力量拉鋸。策略上建議嚴守區間操作，接近支撐價不跌破時小試多單，接近壓力價受阻時分批獲利了結。"
 
     return {
@@ -133,9 +127,9 @@ with st.expander("📚 實戰戰法指南（進場點 / 停損停利 / 轉弱判
 
 # 自選股快捷區
 if "watchlist" not in st.session_state:
-    st.session_state["watchlist"] = ["3006 晶豪科", "3042 晶技", "2330 台積電", "2317 鴻海"]
+    st.session_state["watchlist"] = ["3624 光頡", "3006 晶豪科", "3042 晶技", "2330 台積電", "2317 鴻海"]
 if "selected_stock" not in st.session_state:
-    st.session_state["selected_stock"] = "3006"
+    st.session_state["selected_stock"] = "3624"
 
 st.subheader("⭐ 自選股快捷區")
 if st.session_state["watchlist"]:
@@ -144,6 +138,11 @@ if st.session_state["watchlist"]:
         col_idx = idx % 5
         code_part = item.split(" ")[0]
         if cols[col_idx].button(item, key=f"btn_{code_part}_{idx}"):
+            # 切換股票時清空上一檔股票的目標/停損暫存
+            if st.session_state["selected_stock"] != code_part:
+                st.session_state["last_stock"] = code_part
+                st.session_state["custom_target"] = 0.0
+                st.session_state["custom_stop"] = 0.0
             st.session_state["selected_stock"] = code_part
             st.rerun()
 
@@ -156,8 +155,15 @@ with st.expander("⚙️ 管理/刪除自選股清單"):
             st.success(f"已移除：{remove_item}")
             st.rerun()
 
+# 檢測當前選擇的股票是否變更，若變更則重置目標價與停損價
+current_input_code, _ = get_stock_code_and_name(st.session_state["selected_stock"])
+if "last_stock" not in st.session_state or st.session_state["last_stock"] != current_input_code:
+    st.session_state["last_stock"] = current_input_code
+    st.session_state["custom_target"] = 0.0
+    st.session_state["custom_stop"] = 0.0
+
 # =========================================================
-# 表單輸入與手動交易計畫設定區 (左綠右紅設定)
+# 表單輸入與手動交易計畫設定區
 # =========================================================
 with st.form(key="search_form"):
     col_input, col_style = st.columns([2, 1])
@@ -171,7 +177,7 @@ with st.form(key="search_form"):
     st.markdown("##### ⚙️ 手動交易計劃設定 (左側目標價綠色 / 右側停損價紅色)")
     col_target, col_stop = st.columns(2)
     with col_target:
-        st.markdown("<h6 style='color: green;'>🎯 手動目標價 (左側 / 綠色)</h6>", unsafe_allow_html=True)
+        st.markdown("<h6 style='color: green;'>🎯 手動目標价 (左側 / 綠色)</h6>", unsafe_allow_html=True)
         custom_target_price = st.number_input("目標價 (元)", value=float(st.session_state.get("custom_target", 0.0)), step=0.5, label_visibility="collapsed")
     with col_stop:
         st.markdown("<h6 style='color: red;'>🛡️ 手動停損價 (右側 / 紅色)</h6>", unsafe_allow_html=True)
@@ -202,7 +208,7 @@ if submit_button or auto_refresh:
         if not target_code:
             st.error(f"找不到股票：『{stock_input}』")
         else:
-            with st.spinner(f"正在讀取【{target_code}】數據與 5 分 K 即時監控..."):
+            with st.spinner(f"正在讀取【{target_code} {target_name}】數據與 5 分 K 即時監控..."):
                 api = None
                 try:
                     api = sj.Shioaji(simulation=True)
@@ -284,7 +290,7 @@ if submit_button or auto_refresh:
                             prev_low = df_k['Low'].iloc[-2] if len(df_k) > 1 else low_price
 
                             # =========================================================
-                            # 👨‍💼 資深證券分析師 AI 鏈接評估 (30年經驗 Prompt)
+                            # 👨‍💼 資深證券分析師 AI 鏈接評估
                             # =========================================================
                             st.subheader("👨‍💼 資深證券分析師 AI 策略評估 (30年實戰經驗)")
                             ai_res = ai_senior_analyst_diagnosis(target_code, target_name, curr_price, ma5, ma20, prev_high, prev_low, balance_point)
@@ -299,18 +305,20 @@ if submit_button or auto_refresh:
                             
                             st.markdown(f"> **💡 資深分析師操作策略建議**：\n> {ai_res['strategy']}")
 
-                            # 自動為手動設定更新 AI 建議值 (若原本為 0.0)
+                            # 自動為當前股票帶入 AI 建議的壓力價與支撐價
                             if custom_target_price == 0.0:
                                 st.session_state["custom_target"] = ai_res['resistance']
+                                custom_target_price = ai_res['resistance']
                             if custom_stop_price == 0.0:
                                 st.session_state["custom_stop"] = ai_res['support']
+                                custom_stop_price = ai_res['support']
 
                             # =========================================================
-                            # 🔍 盤前數據全表檢視 (四大圖卡檢驗標準)
+                            # 🔍 盤前數據全表檢視
                             # =========================================================
-                            st.subheader("🔍 盤前數據全表檢視 (四大圖卡標準綜合診斷)")
+                            st.subheader(f"🔍 盤前數據全表檢視 -【{contract.code} {contract.name}】")
 
-                            # 1. 6種進場型態檢驗 (圖一)
+                            # 1. 6種進場型態檢驗
                             st.markdown("#### 1️⃣ 6種進場型態評估 (圖一對照)")
                             entry_list = []
                             if curr_price > ma5 and ma5 > ma20:
@@ -325,11 +333,10 @@ if submit_button or auto_refresh:
                             else:
                                 st.write("ℹ️ 當前暫無明顯突破型態，建議等待回測支撐或帶量突破[cite: 10]。")
 
-                            # 2. 停損停利設定 (多重停損綠色 / 多重停利紅色)
+                            # 2. 停損停利設定
                             st.markdown("#### 2️⃣ 四大停損與停利參考設定 (多重停損綠色 / 多重停利紅色)")
                             col_sl_box, col_tp_box = st.columns(2)
                             
-                            # 風格參數判定
                             if "短線" in trade_style:
                                 sl_pct, tp_pct = 0.04, 0.06
                             elif "波段" in trade_style:
@@ -337,7 +344,6 @@ if submit_button or auto_refresh:
                             else:
                                 sl_pct, tp_pct = 0.12, 0.30
 
-                            # 多重停損改用綠色提示框 (st.success)
                             with col_sl_box:
                                 st.success("🛡️ **多重停損試算 (綠色)**")
                                 st.write(f"* **百分比法 ({sl_pct*100:.0f}%)**：`{curr_price * (1 - sl_pct):.2f}` 元[cite: 13]")
@@ -345,7 +351,6 @@ if submit_button or auto_refresh:
                                 st.write(f"* **均線/技術位法 (跌破5MA)**：`{ma5:.2f}` 元[cite: 11, 13]")
                                 st.write(f"* **K線法 (前低支撐)**：`{prev_low:.2f}` 元[cite: 12, 13]")
 
-                            # 多重停利改用紅色警示框 (st.error)
                             with col_tp_box:
                                 st.error("🎯 **多重停利試算 (紅色)**")
                                 st.write(f"* **百分比法 ({tp_pct*100:.0f}%)**：`{curr_price * (1 + tp_pct):.2f}` 元[cite: 13]")
@@ -353,19 +358,19 @@ if submit_button or auto_refresh:
                                 st.write(f"* **移動停利線 (沿5MA)**：`{ma5:.2f}` 元[cite: 11, 13]")
                                 st.write(f"* **前高壓力區停利**：`{prev_high:.2f}` 元[cite: 11, 13]")
 
-                            # 3. 6大轉弱避險訊號 (圖三)
+                            # 3. 6大轉弱避險訊號
                             st.markdown("#### 3️⃣ 6大轉弱訊號防範 (圖三對照)")
                             if curr_price < ma5:
                                 st.error("❌ **跌破重要均線**：股價已跌破 5 日均線[cite: 12]。")
                             if bias_rate > 3.0:
-                                st.warning("⚠️️ **短線過熱/遠離均價**：乖離率 > +3%，提防拉回[cite: 10, 12]。")
+                                st.warning("⚠️ **短線過熱/遠離均價**：乖離率 > +3%，提防拉回[cite: 10, 12]。")
                             if curr_price < balance_point:
                                 st.error("❌ **失去平衡點**：收盤價低於多空平衡點[cite: 12]。")
 
                             # =========================================================
                             # ⚡ 5 分 K 線當沖轉折即時盯盤與五大條件聲響警示
                             # =========================================================
-                            st.subheader("⚡ 5分K 當沖轉折雷達與盤中 5 大觸發條件盯盤")
+                            st.subheader(f"⚡ 5分K 當沖轉折雷達 -【{contract.code} {contract.name}】")
                             
                             if len(df_raw) > 0:
                                 df_raw["DateTime"] = pd.to_datetime(df_raw["ts"] / 1000000000, unit='s', errors='coerce')
@@ -395,29 +400,29 @@ if submit_button or auto_refresh:
                                 
                                 condition_alerts = []
 
-                                # 條件 1：股價來到目標價、支撐價或壓力價
+                                # 條件 1：股價來到目標價、支撐價或壓力價 (僅在設定的目標價精準符合目前股價區間時發出警示)
                                 if custom_target_price > 0 and curr_price >= custom_target_price:
-                                    condition_alerts.append((1000, f"🎯 **【條件 1 觸發】**：股價已達手動目標價 `{custom_target_price}` 元！"))
+                                    condition_alerts.append((1000, f"🎯 **【條件 1 觸發】**：【{contract.name}】股價 `{curr_price}` 元已達目標價 `{custom_target_price}` 元！"))
                                 if curr_price <= ai_res['support']:
-                                    condition_alerts.append((800, f"🛡️ **【條件 1 觸發】**：股價已觸及資深分析師建議支撐價 `{ai_res['support']}` 元！"))
+                                    condition_alerts.append((800, f"🛡️ **【條件 1 觸發】**：【{contract.name}】股價 `{curr_price}` 元已觸及支撐價 `{ai_res['support']}` 元！"))
                                 if curr_price >= ai_res['resistance']:
-                                    condition_alerts.append((500, f"🔴 **【條件 1 觸發】**：股價已觸及資深分析師建議壓力價 `{ai_res['resistance']}` 元！"))
+                                    condition_alerts.append((500, f"🔴 **【條件 1 觸發】**：【{contract.name}】股價 `{curr_price}` 元已觸及壓力價 `{ai_res['resistance']}` 元！"))
 
                                 # 條件 2：出現盤中最大量＋當日最高價
                                 if curr_k["Volume"] >= max_vol_day and curr_k["High"] >= max_price_day:
-                                    condition_alerts.append((1200, "🔥 **【條件 2 觸發】**：出現當日最大量且同時創下盤中最高價！小心高檔爆量拉回！"))
+                                    condition_alerts.append((1200, f"🔥 **【條件 2 觸發】**：【{contract.name}】出現當日最大量且同時創下盤中最高價 `{curr_k['High']}` 元！小心高檔爆量拉回！"))
 
                                 # 條件 3：5分K出現兩條長長的上影線且不再創高
                                 if upper_shadow1 > (k_body * 1.2) and upper_shadow2 > (abs(prev_k["Close"] - prev_k["Open"]) * 1.2) and curr_k["High"] <= prev_k["High"]:
-                                    condition_alerts.append((400, "⚠️ **【條件 3 觸發】**：5分K 連續出現兩條長上影線且不再創高，高檔買盤衰竭！"))
+                                    condition_alerts.append((400, f"⚠️ **【條件 3 觸發】**：【{contract.name}】5分K 連續出現兩條長上影線且不再創高，高檔買盤衰竭！"))
 
                                 # 條件 4：量能縮減而股價不再續漲/續跌或站不上目標價
                                 if curr_k["Volume"] < (df_5m["Volume"].mean() * 0.6) and abs(curr_k["Close"] - prev_k["Close"]) < (curr_price * 0.002):
-                                    condition_alerts.append((600, "ℹ️ **【條件 4 觸發】**：量能顯著縮減，股價呈現滯漲/滯跌或站不上目標價！"))
+                                    condition_alerts.append((600, f"ℹ️ **【條件 4 觸發】**：【{contract.name}】量能顯著縮減，股價呈現滯漲/滯跌或站不上目標價！"))
 
-                                # 條件 5：下殺到停損價
-                                if custom_stop_price > 0 and curr_price <= custom_stop_price:
-                                    condition_alerts.append((300, f"🚨 **【條件 5 觸發】**：股價下殺已觸及停損價 `{custom_stop_price}` 元！請嚴格執行停損防守！"))
+                                # 條件 5：下殺到停損價 (僅在停損價 < 當前股價，且跌破時才觸發)
+                                if custom_stop_price > 0 and custom_stop_price < curr_price * 1.1 and curr_price <= custom_stop_price:
+                                    condition_alerts.append((300, f"🚨 **【條件 5 觸發】**：【{contract.name}】股價 `{curr_price}` 元已下殺觸及停損價 `{custom_stop_price}` 元！請嚴格執行停損防守！"))
 
                                 # 發聲與畫面輸出
                                 if condition_alerts:
@@ -430,10 +435,10 @@ if submit_button or auto_refresh:
                                         else:
                                             st.info(alert_msg)
                                 else:
-                                    st.info("ℹ️ 盤中盯盤進行中，未觸發上述 5 大條件警示訊號。")
+                                    st.info(f"ℹ️ 【{contract.name}】盤中盯盤進行中，未觸發上述 5 大條件警示訊號。")
 
                             # 展示近 30 根 5分K 與布林通道圖表
-                            st.subheader("📊 近 30 根 5分K 線與布林通道")
+                            st.subheader(f"📊 近 30 根 5分K 線與布林通道 -【{contract.name}】")
                             df_5m_tail = df_5m.tail(30)
                             fig_5m = go.Figure(data=[go.Candlestick(
                                 x=df_5m_tail['DateTime'].dt.strftime('%H:%M'),
