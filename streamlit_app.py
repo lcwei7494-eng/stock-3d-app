@@ -133,7 +133,7 @@ with st.expander("📚 實戰戰法指南（進場點 / 停損停利 / 轉弱判
     2. **圖二：停損停利法**：支撐停損、均線停損、固定比例停損，壓力停利與沿5日線移動停利[cite: 11]。
     3. **圖三：6大轉弱訊號**：跌破重要均線/支撐、爆量長黑K、高檔長上影線、量價背離、頭部型態[cite: 12]。
     4. **圖四：停損停利指南**：
-       * **四大設定法**：百分比法、技術位法、K線法、ATR波幅法（1~2倍ATR停損，2~4倍ATR停利）[cite: 13]。
+       * **四大設定法**：百分比法、技術位法、K線法、ATR波幅法（1~2倍ATR停損，2~4倍ATR停利）。
        * **風格定位**：短線當沖 (停損3~5%/停利5~8%)、波段 (停損5~10%/停利10~20%)、長線 (停損10~15%/停利20~50%)[cite: 13]。
     """)
 
@@ -362,7 +362,7 @@ if submit_button or auto_refresh:
                             col_chip1.metric("外資買賣超", f"{chip_summary['foreign']:+} 張")
                             col_chip2.metric("投信買賣超", f"{chip_summary['investment']:+} 張")
                             col_chip3.metric("融資增減", f"{chip_summary['margin_add']:+} 張")
-                            col_chip4.metric("隔日沖分點影子", "⚠️️ 顯著存在" if chip_summary['day_trade_broker'] else "✅ 相對乾淨")
+                            col_chip4.metric("隔日沖分點影子", "⚠ 顯著存在" if chip_summary['day_trade_broker'] else "✅ 相對乾淨")
 
                             if custom_target_price == 0.0:
                                 st.session_state["custom_target"] = ai_res['resistance']
@@ -413,32 +413,36 @@ if submit_button or auto_refresh:
                             # 3. 6大轉弱避險訊號
                             st.markdown("#### 3️⃣ 6大轉弱訊號防範 (圖三對照)")
                             if curr_price < ma5: st.error("❌ **跌破重要均線**：股價已跌破 5 日均線[cite: 12]。")
-                            if bias_rate > 3.0: st.warning("⚠️ **短線過熱/遠離均價**：乖離率 > +3%，提防拉回[cite: 10, 12]。")
+                            if bias_rate > 3.0: st.warning("⚠️️ **短線過熱/遠離均價**：乖離率 > +3%，提防拉回[cite: 10, 12]。")
                             if curr_price < balance_point: st.error("❌ **失去平衡點**：收盤價低於多空平衡點[cite: 12]。")
 
                             # =========================================================
-                            # ⚡ 5 分 K 線當沖轉折即時盯盤與五大條件聲響警示
+                            # ⚡ 最近一個交易日 5 分 K 線當沖轉折即時盯盤與聲響警示
                             # =========================================================
-                            st.subheader(f"⚡ 當日 5分K 當沖轉折雷達 -【{contract.code} {contract.name}】")
-                            
                             if len(df_raw) > 0:
                                 df_raw["DateTime"] = pd.to_datetime(df_raw["ts"] / 1000000000, unit='s', errors='coerce')
+                                # 自動找出數據中最近一個有交易的日期 (Last Available Trading Date)
+                                latest_trade_date = df_raw["DateTime"].dt.date.max()
                                 
-                                # 僅過濾當日 (Today) 開盤至今的 5 分 K 線
-                                df_5m = df_raw[df_raw["DateTime"].dt.date == today_date].set_index("DateTime").resample("5min").agg({
+                                # 過濾最近一個交易日的 5 分 K 線
+                                df_5m = df_raw[df_raw["DateTime"].dt.date == latest_trade_date].set_index("DateTime").resample("5min").agg({
                                     "Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"
                                 }).dropna().reset_index()
+                                date_label_str = latest_trade_date.strftime('%Y-%m-%d')
                             else:
                                 df_5m = pd.DataFrame(columns=["DateTime", "Open", "High", "Low", "Close", "Volume"])
+                                date_label_str = "最新交易日"
 
-                            # 計算當日 5分K 的 5MA、20MA、布林通道與當日分時均價線 (VWAP)
+                            st.subheader(f"⚡ 5分K 當沖轉折雷達 ({date_label_str}) -【{contract.code} {contract.name}】")
+
+                            # 計算 5分K 的 5MA、20MA、布林通道與分時均價線 (VWAP)
                             df_5m["5MA"] = df_5m["Close"].rolling(5).mean()
                             df_5m["20MA"] = df_5m["Close"].rolling(20).mean()
                             df_5m["Std"] = df_5m["Close"].rolling(20).std()
                             df_5m["UpperBand"] = df_5m["20MA"] + (df_5m["Std"] * 2)
                             df_5m["LowerBand"] = df_5m["20MA"] - (df_5m["Std"] * 2)
                             
-                            # 計算當日累積分時均價線 (VWAP)
+                            # 計算累積分時均價線 (VWAP)
                             df_5m["Cum_Vol"] = df_5m["Volume"].cumsum()
                             df_5m["Cum_Val"] = (df_5m["Close"] * df_5m["Volume"]).cumsum()
                             df_5m["VWAP"] = df_5m["Cum_Val"] / df_5m["Cum_Vol"]
@@ -473,7 +477,7 @@ if submit_button or auto_refresh:
 
                                 # 條件 3：5分K出現兩條長長的上影線且不再創高
                                 if upper_shadow1 > (k_body * 1.2) and upper_shadow2 > (abs(prev_k["Close"] - prev_k["Open"]) * 1.2) and curr_k["High"] <= prev_k["High"]:
-                                    condition_alerts.append((400, f"⚠️️ **【條件 3 觸發】**：【{contract.name}】5分K 連續出現兩條長上影線且不再創高，高檔買盤衰竭！"))
+                                    condition_alerts.append((400, f"⚠ **【條件 3 觸發】**：【{contract.name}】5分K 連續出現兩條長上影線且不再創高，高檔買盤衰竭！"))
 
                                 # 條件 4：量能縮減而股價不再續漲/續跌或站不上目標價
                                 if curr_k["Volume"] < (df_5m["Volume"].mean() * 0.6) and abs(curr_k["Close"] - prev_k["Close"]) < (curr_price * 0.002):
@@ -494,10 +498,10 @@ if submit_button or auto_refresh:
                                         else:
                                             st.info(alert_msg)
                                 else:
-                                    st.info(f"ℹ️️ 【{contract.name}】盤中盯盤進行中，未觸發上述 5 大條件警示訊號。")
+                                    st.info(f"ℹ️ 【{contract.name}】盯盤進行中，未觸發上述 5 大條件警示訊號。")
 
-                            # 展示當日 5分K 線與當日均線 (VWAP)
-                            st.subheader(f"📊 當日 5分K 線與當日均線 (VWAP) -【{contract.name}】")
+                            # 展示最近一個交易日的 5分K 線與當日均線 (VWAP)
+                            st.subheader(f"📊 最近一個交易日 ({date_label_str}) 5分K 線與當日均線 (VWAP) -【{contract.name}】")
                             if len(df_5m) > 0:
                                 fig_5m = go.Figure(data=[go.Candlestick(
                                     x=df_5m['DateTime'].dt.strftime('%H:%M'),
@@ -511,7 +515,7 @@ if submit_button or auto_refresh:
                                 fig_5m.update_layout(xaxis_rangeslider_visible=False, height=380, margin=dict(l=10, r=10, t=30, b=10))
                                 st.plotly_chart(fig_5m, use_container_width=True)
                             else:
-                                st.caption("（非盤中開盤時間或尚未產生當日 5分K 數據）")
+                                st.caption("（未能取得最近一個交易日之 5分K 數據）")
 
                 except Exception as e:
                     st.error(f"連線失敗或發生錯誤: {str(e)}")
@@ -523,3 +527,4 @@ if submit_button or auto_refresh:
 if auto_refresh:
     time.sleep(refresh_interval)
     st.rerun()
+    
