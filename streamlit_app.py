@@ -22,23 +22,25 @@ else:
     st.sidebar.success("✅ 永豐金 API Key 已自動載入！")
 
 # =========================================================
-# 新增功能 3：盤中自動刷新設定（側邊欄）
+# 盤中自動刷新設定（側邊欄）
 # =========================================================
 st.sidebar.subheader("⏱️ 盤中自動刷新設定")
 auto_refresh = st.sidebar.checkbox("開啟自動定時刷新", value=False)
 refresh_interval = st.sidebar.slider("刷新間隔 (秒)", min_value=5, max_value=60, value=10, step=5)
 
 # =========================================================
-# 輔助函式：將中文公司名稱或代碼統一轉為股票代碼
+# 輔助函式：將中文公司名稱或代碼統一轉為股票代碼與名稱
 # =========================================================
-def get_stock_code(user_input):
+def get_stock_code_and_name(user_input):
     target = user_input.strip()
     if target.isdigit():
-        return target
+        if target in twstock.codes:
+            return target, twstock.codes[target].name
+        return target, target
     for code, info in twstock.codes.items():
         if info.type == '股票' and (target == info.name or target in info.name):
-            return code
-    return None
+            return code, info.name
+    return None, None
 
 # =========================================================
 # 三維定位法完整教學與說明區塊
@@ -46,13 +48,13 @@ def get_stock_code(user_input):
 with st.expander("📚 點此查看【三維定位法】三個維度的核心含義與實戰判讀"):
     st.markdown("""
     ### 1️⃣ 第一維度：成本乖離率
-    * **算式**：$\\text{成本乖離率} = \\frac{\\text{目前價格} - \\text{今日分時均價}}{\\text{今日分時均價}} \\times 100\\%$
+    * **算式**：$\\text{成本乖離率} = \\frac{\\text{目前價格} - \\text{今日分時均價}}{\\text{今日分時均價}} \\times 100\\%$[cite: 1]
     * **核心含義**：衡量當前股價與今日市場平均交易成本的差距。
     * **實戰判讀**：
-      * **正乖離率（> 0%）**：當前股價高於均價，多數買方獲利，買盤意願較強。
-      * **健康偏強（+1% ~ +2%）**：主力穩健拉升且籌碼經充分換手，結構健康。
+      * **正乖離率（> 0%）**：當前股價高於均價，多數買方獲利，買盤意願較強[cite: 1]。
+      * **健康偏強（+1% ~ +2%）**：主力穩健拉升且籌碼經充分換手，結構健康[cite: 1]。
       * **短線過熱（> +3% ~ +5%）**：拉離均價過遠，容易引發獲利了結賣壓，不宜盲目追高。
-      * **負乖離率（< 0%）**：股價跌破均價，買方多數套牢，短線結構轉弱。
+      * **負乖離率（< 0%）**：股價跌破均價，買方多數套牢，短線結構轉弱[cite: 1]。
 
     ---
 
@@ -75,33 +77,61 @@ with st.expander("📚 點此查看【三維定位法】三個維度的核心含
     """)
 
 # =========================================================
-# 新增功能 5：常用自選股快捷按鈕
+# 可動態自訂管理（新增/刪除）的自選股清單
 # =========================================================
-st.subheader("⭐ 常用自選股快選")
-quick_stocks = ["3042 晶技", "2330 台積電", "2317 鴻海", "2454 聯發科", "2308 台達電"]
-cols = st.columns(len(quick_stocks))
+if "watchlist" not in st.session_state:
+    st.session_state["watchlist"] = ["3042 晶技", "2330 台積電", "2317 鴻海"]
 
-# 初始化 Session State
 if "selected_stock" not in st.session_state:
     st.session_state["selected_stock"] = "3042"
 
-for idx, item in enumerate(quick_stocks):
-    code_name = item.split(" ")[0]
-    if cols[idx].button(item, key=f"btn_{code_name}"):
-        st.session_state["selected_stock"] = code_name
+st.subheader("⭐ 自選股快捷區")
 
-# 輸入框與自選股按鈕同步
+# 顯示自選股按鈕
+if st.session_state["watchlist"]:
+    cols = st.columns(min(len(st.session_state["watchlist"]), 5))
+    for idx, item in enumerate(st.session_state["watchlist"]):
+        col_idx = idx % 5
+        code_part = item.split(" ")[0]
+        if cols[col_idx].button(item, key=f"btn_{code_part}_{idx}"):
+            st.session_state["selected_stock"] = code_part
+            st.rerun()
+
+# 自選股管理選單（可手動刪除）
+with st.expander("⚙️ 管理/刪除自選股清單"):
+    remove_item = st.selectbox("選擇要刪除的自選股", ["（請選擇）"] + st.session_state["watchlist"])
+    if st.button("❌ 刪除選取的自選股"):
+        if remove_item != "（請選擇）":
+            st.session_state["watchlist"].remove(remove_item)
+            st.success(f"已從自選股移除：{remove_item}")
+            st.rerun()
+
+# 股票輸入框
 stock_input = st.text_input("請輸入股票代碼或公司名稱", value=st.session_state["selected_stock"])
 
 if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
     if not api_key or not secret_key:
         st.error("請在左側選單填寫 API Key 與 Secret Key，或設定 Streamlit Secrets！")
     else:
-        target_code = get_stock_code(stock_input)
+        target_code, target_name = get_stock_code_and_name(stock_input)
         
         if not target_code:
             st.error(f"找不到股票：『{stock_input}』，請確認公司名稱或直接輸入 4 位數代碼。")
         else:
+            # 搜尋完畢後提供一鍵加入自選股按鈕
+            stock_label = f"{target_code} {target_name}"
+            col_add1, col_add2 = st.columns([3, 1])
+            with col_add1:
+                st.info(f"當前分析目標：**{stock_label}**")
+            with col_add2:
+                if stock_label in st.session_state["watchlist"]:
+                    st.button("✅ 已在自選股中", disabled=True)
+                else:
+                    if st.button("➕ 加入自選股"):
+                        st.session_state["watchlist"].append(stock_label)
+                        st.success(f"已成功加入：{stock_label}")
+                        st.rerun()
+
             with st.spinner(f"已識別股票代碼【{target_code}】，正在讀取即時與日線數據..."):
                 api = None
                 try:
@@ -118,12 +148,12 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                             st.error("無法取得即時行情（可能非開盤時間或 API 權限問題）。")
                         else:
                             snap = snapshots[0]
-                            curr_price = float(getattr(snap, 'close', 0.0))
+                            curr_price = float(getattr(snap, 'close', 0.0))[cite: 1]
                             high_price = float(getattr(snap, 'high', 0.0))
                             low_price = float(getattr(snap, 'low', 0.0))
                             
                             # 取得均價
-                            avg_price = float(getattr(snap, 'average_price', curr_price))
+                            avg_price = float(getattr(snap, 'average_price', curr_price))[cite: 1]
                             if avg_price == 0:
                                 avg_price = curr_price
                             
@@ -132,21 +162,18 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                             inner_vol = float(getattr(snap, 'bid_volume', 0.0))
 
                             # 三維度計算
-                            bias_rate = ((curr_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0
+                            bias_rate = ((curr_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0[cite: 1]
                             momentum_coef = (outer_vol / inner_vol) if inner_vol > 0 else 0
                             balance_point = (high_price + low_price + curr_price) / 3
 
                             # 評估邏輯
-                            bias_eval = "健康偏強 (+1%~+2%)" if 1 <= bias_rate <= 2 else ("短線過熱 (>+2%)" if bias_rate > 2 else "結構偏弱/回落")
+                            bias_eval = "健康偏強 (+1%~+2%)" if 1 <= bias_rate <= 2 else ("短線過熱 (>+2%)" if bias_rate > 2 else "結構偏弱/回落")[cite: 1]
                             momentum_eval = "買氣主動攻擊意願強 (≥1.4)" if momentum_coef >= 1.4 else ("買氣平平 (1.0~1.4)" if momentum_coef >= 1.0 else "賣壓偏強 (<1.0)")
                             balance_eval = f"多頭領先 ({curr_price} > 平衡點 {balance_point:.2f})" if curr_price >= balance_point else f"多頭防守 ({curr_price} < 平衡點 {balance_point:.2f})"
 
-                            # =========================================================
-                            # 新增功能 2：關鍵位分級警告與自動訊號燈警示
-                            # =========================================================
+                            # 綜合強弱度評價與訊號燈判定
                             st.success(f"【{contract.code} {contract.name}】數據讀取成功！")
                             
-                            # 綜合強弱度評價與訊號燈判定
                             if bias_rate >= 1.0 and bias_rate <= 2.5 and momentum_coef >= 1.4 and curr_price >= balance_point:
                                 st.balloons()
                                 st.success("🔥 **【黃金攻擊訊號】**：成本乖離健康、買氣攻擊強勁且站穩多空平衡點，短線多頭結構完美！")
@@ -159,22 +186,20 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
 
                             # 核心三維度指標卡片
                             col1, col2, col3 = st.columns(3)
-                            col1.metric("1️⃣ 成本乖離率", f"{bias_rate:+.2f}%")
+                            col1.metric("1️⃣ 成本乖離率", f"{bias_rate:+.2f}%")[cite: 1]
                             col2.metric("2️⃣ 動能係數", f"{momentum_coef:.2f}")
                             col3.metric("3️⃣ 多空平衡點", f"{balance_point:.2f}元")
 
                             # 診斷表
                             st.subheader("📋 綜合判定診斷表")
                             df = pd.DataFrame({
-                                "維度": ["第一維度（成本乖離率）", "第二維度（動能係數）", "第三維度（多空平衡點）"],
-                                "數值": [f"{bias_rate:+.2f}%", f"{momentum_coef:.2f}", f"{balance_point:.2f}元"],
-                                "系統判定": [bias_eval, momentum_eval, balance_eval]
+                                "維度": ["第一維度（成本乖離率）", "第二維度（動能係數）", "第三維度（多空平衡點）"],[cite: 1]
+                                "數值": [f"{bias_rate:+.2f}%", f"{momentum_coef:.2f}", f"{balance_point:.2f}元"],[cite: 1]
+                                "系統判定": [bias_eval, momentum_eval, balance_eval][cite: 1]
                             })
                             st.table(df)
 
-                            # =========================================================
-                            # 新增功能 1：即時五檔買賣價量視覺化
-                            # =========================================================
+                            # 即時五檔買賣價量視覺化
                             st.subheader("📊 五檔買賣委託柱狀視覺化")
                             bids = getattr(snap, 'bids', [])
                             asks = getattr(snap, 'asks', [])
@@ -191,9 +216,7 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                                 fig_depth.update_layout(title="最佳五檔掛單量對比", barmode='relative', height=300, margin=dict(l=10, r=10, t=40, b=10))
                                 st.plotly_chart(fig_depth, use_container_width=True)
 
-                            # =========================================================
-                            # 新增功能 4：近 15 日 K 線圖與日層級均線對比 (5MA/20MA)
-                            # =========================================================
+                            # 近 15 日 K 線圖與日層級均線對比
                             st.subheader("📜 近 15 日 K 線與日均線對比")
                             try:
                                 kbars = api.kbars(contract, start="2026-09-01")
@@ -221,7 +244,6 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                                 fig_k.update_layout(xaxis_rangeslider_visible=False, height=350, margin=dict(l=10, r=10, t=30, b=10))
                                 st.plotly_chart(fig_k, use_container_width=True)
 
-                                # 日線層級趨勢判斷
                                 last_close = df_k['Close'].iloc[-1]
                                 ma5 = df_k['5MA'].iloc[-1]
                                 ma20 = df_k['20MA'].iloc[-1]
