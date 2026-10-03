@@ -7,13 +7,13 @@ from plotly.subplots import make_subplots
 import time
 from datetime import datetime, timedelta
 
-st.set_page_config(page_title="三維定位法 & 5分K當沖監控與強勢股篩選系統", layout="wide")
+st.set_page_config(page_title="三維定位法 & 多週期當沖監控與強勢股篩選系統", layout="wide")
 
 # 自動從 Streamlit Secrets 讀取 API Key
 api_key = st.secrets.get("SHIOAJI_API_KEY", "")
 secret_key = st.secrets.get("SHIOAJI_SECRET_KEY", "")
 
-# 側邊欄：分頁導覽切換 (新增最左側「當沖強勢股篩選」)
+# 側邊欄：分頁導覽切換 (包含最左側「當沖強勢股篩選」)
 st.sidebar.title("📌 功能頁面選單")
 app_mode = st.sidebar.radio(
     "請選擇功能頁面",
@@ -58,7 +58,7 @@ def get_stock_code_and_name(user_input):
             return code, info.name
     return None, None
 
-# 5分K KD 技術指標計算
+# KD 技術指標計算
 def calculate_kd(df, n=9):
     low_list = df['Low'].rolling(n, min_periods=1).min()
     high_list = df['High'].rolling(n, min_periods=1).max()
@@ -147,7 +147,6 @@ if app_mode == "當沖強勢股篩選":
                     api_filter = sj.Shioaji(simulation=True)
                     api_filter.login(api_key=api_key, secret_key=secret_key)
                     
-                    # 選取熱門標的清單
                     target_candidates = ["2330", "2317", "2454", "3035", "3037", "3624", "3006", "3042", "2382", "3231", "2303", "2603", "2609", "2615", "1513", "1519", "1504"]
                     filter_results = []
 
@@ -171,34 +170,27 @@ if app_mode == "當沖強勢股篩選":
                             "Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"
                         }).reset_index()
 
-                        # 計算日線指標
                         df_k["5MA"] = df_k["Close"].rolling(5).mean()
                         df_k["10MA"] = df_k["Close"].rolling(10).mean()
                         df_k["20MA"] = df_k["Close"].rolling(20).mean()
                         df_k["60MA"] = df_k["Close"].rolling(60).mean()
                         df_k["Vol_5MA"] = df_k["Volume"].rolling(5).mean()
-                        df_k["Amount"] = df_k["Close"] * df_k["Volume"] / 10000 # 萬元
+                        df_k["Amount"] = df_k["Close"] * df_k["Volume"] / 10000
                         df_k["Amplitude"] = ((df_k["High"] - df_k["Low"]) / df_k["Low"]) * 100
 
                         curr_row = df_k.iloc[-1]
                         prev_5_vol_avg = df_k["Volume"].iloc[-6:-1].mean()
                         
-                        # ① 量能配合突破 (量增倍數且非無量假突破)
                         cond1 = (curr_row["Volume"] >= prev_5_vol_avg * param_vol_mult) and (curr_row["Volume"] > 1000)
-                        
-                        # ② 均線多頭排列 (5MA > 10MA > 20MA、均線走平向上、60MA未明顯下彎)
                         cond2 = (curr_row["5MA"] > curr_row["10MA"] > curr_row["20MA"]) and (curr_row["20MA"] >= df_k["20MA"].iloc[-5]) and (curr_row["60MA"] >= df_k["60MA"].iloc[-10] * 0.99)
                         
-                        # ③ 站上前 N 日高點 (預設 60日)
                         max_prev_high = df_k["High"].iloc[-(param_break_days+1):-1].max()
                         cond3 = (curr_row["Close"] >= max_prev_high)
                         
-                        # ④ 非死股：近 20日均成交額、近 60日均振幅過濾
                         avg_20_amount = df_k["Amount"].tail(20).mean()
                         avg_60_amp = df_k["Amplitude"].tail(60).mean()
                         cond4 = (avg_20_amount >= param_min_amount) and (avg_60_amp >= param_min_amplitude)
 
-                        # ⑤ 高位警示：計算 30日累積漲幅
                         close_30_ago = df_k["Close"].iloc[-30] if len(df_k) >= 30 else df_k["Close"].iloc[0]
                         accum_gain_30d = ((curr_row["Close"] - close_30_ago) / close_30_ago) * 100
                         high_risk_warn = accum_gain_30d >= param_high_warn_pct
@@ -243,16 +235,15 @@ if app_mode == "當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 2：📈 三維定位與當沖盯盤系統（原有主系統）
+# 頁面 2：📈 三維定位與當沖盯盤系統（多週期 K 線選單升級）
 # =========================================================
 else:
-    st.title("📈 三維定位法 & 盤前檢視/5分K當沖監控系統")
+    st.title("📈 三維定位法 & 盤前檢視/多週期當沖監控系統")
 
     auto_refresh = st.sidebar.checkbox("開啟自動盯盤刷新", value=False)
     enable_sound = st.sidebar.checkbox("開啟轉折警示音效", value=True)
     refresh_interval = st.sidebar.slider("刷新間隔 (秒)", min_value=3, max_value=60, value=5, step=1)
 
-    # 自選股快捷區
     if "selected_stock" not in st.session_state:
         st.session_state["selected_stock"] = "3624"
 
@@ -270,7 +261,6 @@ else:
                 st.session_state["selected_stock"] = code_part
                 st.rerun()
 
-    # 檢測當前選擇的股票是否變更
     current_input_code, _ = get_stock_code_and_name(st.session_state["selected_stock"])
     if "last_stock" not in st.session_state or st.session_state["last_stock"] != current_input_code:
         st.session_state["last_stock"] = current_input_code
@@ -290,7 +280,7 @@ else:
         st.markdown("##### ⚙️ 手動交易計劃設定 (左側預設支撐價 / 右側預設壓力價)")
         col_stop, col_target = st.columns(2)
         with col_stop:
-            st.markdown("<h6 style='color: green;'>🛡️ 手動停損/支撐價 (左側 / 綠色)</h6>", unsafe_allow_html=True)
+            st.markdown("<h6 style='color: green;'>🛡️️ 手動停損/支撐價 (左側 / 綠色)</h6>", unsafe_allow_html=True)
             custom_stop_price = st.number_input("停損價 (元)", value=float(st.session_state.get("custom_stop", 0.0)), step=0.5, label_visibility="collapsed")
         with col_target:
             st.markdown("<h6 style='color: red;'>🎯 手動目標/壓力價 (右側 / 紅色)</h6>", unsafe_allow_html=True)
@@ -336,7 +326,7 @@ else:
             if not target_code:
                 st.error(f"找不到股票：『{stock_input}』")
             else:
-                with st.spinner(f"正在讀取【{target_code} {target_name}】數據與 5 分 K 即時監控..."):
+                with st.spinner(f"正在讀取【{target_code} {target_name}】數據與多週期 K 線監控..."):
                     api = None
                     try:
                         api = sj.Shioaji(simulation=True)
@@ -367,7 +357,7 @@ else:
                                 col2.metric("2️⃣ 動能係數", f"{momentum_coef:.2f}")
                                 col3.metric("3️⃣ 多空平衡點", f"{balance_point:.2f}元")
 
-                                start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+                                start_date = (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d")
                                 end_date = datetime.now().strftime("%Y-%m-%d")
                                 kbars = api.kbars(contract=contract, start=start_date, end=end_date)
                                 df_raw = pd.DataFrame({
@@ -426,19 +416,37 @@ else:
                                     st.session_state["custom_target"] = ai_res['resistance']
                                     custom_target_price = ai_res['resistance']
 
-                                # 最近交易日 5 分 K
+                                # 最近交易日分時資料處理
                                 if len(df_raw) > 0:
                                     df_raw["DateTime"] = pd.to_datetime(df_raw["ts"] / 1000000000, unit='s', errors='coerce')
                                     latest_trade_date = df_raw["DateTime"].dt.date.max()
-                                    df_5m = df_raw[df_raw["DateTime"].dt.date == latest_trade_date].set_index("DateTime").resample("5min").agg({
-                                        "Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"
-                                    }).dropna().reset_index()
                                     date_label_str = latest_trade_date.strftime('%Y-%m-%d')
+                                    
+                                    # 過濾最近一個交易日之資料
+                                    df_today_raw = df_raw[df_raw["DateTime"].dt.date == latest_trade_date].copy()
                                 else:
-                                    df_5m = pd.DataFrame(columns=["DateTime", "Open", "High", "Low", "Close", "Volume"])
+                                    df_today_raw = pd.DataFrame(columns=["DateTime", "Open", "High", "Low", "Close", "Volume"])
                                     date_label_str = "最新交易日"
 
-                                st.subheader(f"⚡ 5分K 當沖轉折雷達 ({date_label_str}) -【{contract.code} {contract.name}】")
+                                # =========================================================
+                                # 📊 多週期 K 線選項與當沖轉折雷達 (新增 1分/5分/60分/日K)
+                                # =========================================================
+                                st.subheader(f"⚡ 多週期 K 線監控雷達 ({date_label_str}) -【{contract.code} {contract.name}】")
+                                
+                                # 多週期選單切換
+                                kbar_timeframe = st.radio(
+                                    "請選擇 K 線圖顯示週期：",
+                                    ["5分K (轉折雷達/預設)", "1分K (超短線當沖)", "60分K (小時波段)", "日K (多空趨勢)"],
+                                    horizontal=True
+                                )
+
+                                # 1. 計算 5分K (用於 6 大條件盯盤觸發)
+                                if len(df_today_raw) > 0:
+                                    df_5m = df_today_raw.set_index("DateTime").resample("5min").agg({
+                                        "Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"
+                                    }).dropna().reset_index()
+                                else:
+                                    df_5m = pd.DataFrame(columns=["DateTime", "Open", "High", "Low", "Close", "Volume"])
 
                                 df_5m["5MA"] = df_5m["Close"].rolling(5).mean()
                                 df_5m["20MA"] = df_5m["Close"].rolling(20).mean()
@@ -451,6 +459,7 @@ else:
                                 df_5m["VWAP"] = df_5m["VWAP"].fillna(df_5m["Close"])
                                 df_5m = calculate_kd(df_5m)
 
+                                # 盤中 6 大條件極限盯盤 (維持使用 5分K 精準比對)
                                 if len(df_5m) >= 3:
                                     curr_k = df_5m.iloc[-1]
                                     prev_k = df_5m.iloc[-2]
@@ -489,19 +498,54 @@ else:
                                             elif "條件 6" in alert_msg or "條件 2" in alert_msg: st.success(alert_msg)
                                             else: st.info(alert_msg)
 
-                                # 圖表繪製
-                                if len(df_5m) > 0:
-                                    fig_5m = go.Figure(data=[go.Candlestick(
-                                        x=df_5m['DateTime'].dt.strftime('%H:%M'),
-                                        open=df_5m['Open'], high=df_5m['High'],
-                                        low=df_5m['Low'], close=df_5m['Close'], name="5分K"
+                                # 根據使用者選擇的週期重採樣並繪製 K 線圖
+                                if "1分K" in kbar_timeframe:
+                                    df_chart = df_today_raw.set_index("DateTime").resample("1min").agg({
+                                        "Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"
+                                    }).dropna().reset_index()
+                                    time_fmt = '%H:%M'
+                                elif "60分K" in kbar_timeframe:
+                                    df_chart = df_raw.set_index("DateTime").resample("60min").agg({
+                                        "Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"
+                                    }).dropna().reset_index().tail(60)
+                                    time_fmt = '%m-%d %H:%M'
+                                elif "日K" in kbar_timeframe:
+                                    df_chart = df_k.tail(60).copy()
+                                    df_chart.rename(columns={"Date": "DateTime"}, inplace=True)
+                                    time_fmt = '%Y-%m-%d'
+                                else:
+                                    df_chart = df_5m.copy()
+                                    time_fmt = '%H:%M'
+
+                                # 計算繪圖均線
+                                df_chart["5MA"] = df_chart["Close"].rolling(5).mean()
+                                df_chart["20MA"] = df_chart["Close"].rolling(20).mean()
+                                df_chart["Std"] = df_chart["Close"].rolling(20).std()
+                                df_chart["UpperBand"] = df_chart["20MA"] + (df_chart["Std"] * 2)
+                                df_chart["LowerBand"] = df_chart["20MA"] - (df_chart["Std"] * 2)
+
+                                if "1分K" in kbar_timeframe or "5分K" in kbar_timeframe:
+                                    df_chart["Cum_Vol"] = df_chart["Volume"].cumsum()
+                                    df_chart["Cum_Val"] = (df_chart["Close"] * df_chart["Volume"]).cumsum()
+                                    df_chart["VWAP"] = df_chart["Cum_Val"] / df_chart["Cum_Vol"]
+                                    df_chart["VWAP"] = df_chart["VWAP"].fillna(df_chart["Close"])
+
+                                if len(df_chart) > 0:
+                                    fig_k = go.Figure(data=[go.Candlestick(
+                                        x=df_chart['DateTime'].dt.strftime(time_fmt),
+                                        open=df_chart['Open'], high=df_chart['High'],
+                                        low=df_chart['Low'], close=df_chart['Close'], name=kbar_timeframe.split(" ")[0]
                                     )])
-                                    fig_5m.add_trace(go.Scatter(x=df_5m['DateTime'].dt.strftime('%H:%M'), y=df_5m['VWAP'], mode='lines', name='當日均線(VWAP)', line=dict(color='gold', width=2.5)))
-                                    fig_5m.add_trace(go.Scatter(x=df_5m['DateTime'].dt.strftime('%H:%M'), y=df_5m['UpperBand'], mode='lines', name='布林上軌', line=dict(color='red', width=1, dash='dash')))
-                                    fig_5m.add_trace(go.Scatter(x=df_5m['DateTime'].dt.strftime('%H:%M'), y=df_5m['20MA'], mode='lines', name='20MA', line=dict(color='blue', width=1.5)))
-                                    fig_5m.add_trace(go.Scatter(x=df_5m['DateTime'].dt.strftime('%H:%M'), y=df_5m['LowerBand'], mode='lines', name='布林下軌', line=dict(color='green', width=1, dash='dash')))
-                                    fig_5m.update_layout(xaxis_rangeslider_visible=False, height=380, margin=dict(l=10, r=10, t=30, b=10))
-                                    st.plotly_chart(fig_5m, use_container_width=True)
+                                    
+                                    # 1分K / 5分K 繪製當日均線 VWAP
+                                    if "VWAP" in df_chart.columns:
+                                        fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['VWAP'], mode='lines', name='當日均線(VWAP)', line=dict(color='gold', width=2.5)))
+                                    
+                                    fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['UpperBand'], mode='lines', name='布林上軌', line=dict(color='red', width=1, dash='dash')))
+                                    fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['20MA'], mode='lines', name='20MA', line=dict(color='blue', width=1.5)))
+                                    fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['LowerBand'], mode='lines', name='布林下軌', line=dict(color='green', width=1, dash='dash')))
+                                    fig_k.update_layout(xaxis_rangeslider_visible=False, height=420, margin=dict(l=10, r=10, t=30, b=10))
+                                    st.plotly_chart(fig_k, use_container_width=True)
 
                     except Exception as e:
                         st.error(f"連線失敗或發生錯誤: {str(e)}")
