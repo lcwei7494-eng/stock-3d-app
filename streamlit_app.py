@@ -88,22 +88,15 @@ def calculate_atr(df, period=14):
     df['ATR'] = df['TR'].rolling(period).mean()
     return df
 
-# 升級版：資深證券分析師 AI 技術面與籌碼面診斷模組 (帶入最新 Prompt)
+# 資深證券分析師 AI 技術面與籌碼面診斷模組
 def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high, prev_low, balance_point, chip_data):
-    """
-    提示詞設定：
-    「你是一名年資30年的資深證券分析師，擁有豐富的技術面分析和形態學分析的知識和高勝率的實戰經驗。
-      請根據所查詢股票最近一個交易日的『當日走勢圖、三大法人買賣超資料、融資融券增減、常見隔日沖券商分點』進行綜合判斷多空，並給出操作策略建議。」
-    """
     support_price = round(min(ma5, prev_low), 2)
     resistance_price = round(max(prev_high, balance_point * 1.02), 2)
     
     foreign_buy = chip_data.get("foreign", 0)
     investment_buy = chip_data.get("investment", 0)
-    margin_add = chip_data.get("margin_add", 0)
     day_trade_broker = chip_data.get("day_trade_broker", False)
     
-    # 多空與籌碼評估邏輯
     is_tech_bull = (curr > ma5 and ma5 > ma20)
     is_chip_bull = (foreign_buy + investment_buy > 0)
     
@@ -112,7 +105,7 @@ def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high,
         entry_price = round(max(ma5, support_price), 2)
         strategy = (f"【資深分析師 30 年研判】該股目前型態呈多頭排列，且最近交易日法人呈買超狀態。"
                     f"若隔日沖分點持股佔比較高（{ '有隔日沖券商鎖碼' if day_trade_broker else '籌碼相對安定' }），"
-                    f"早盤開高需防範開高壓回的隔日沖賣壓，建議採『拉回支撐點 ({support_price}元) 不破』再行進場。")
+                    f"早盤開高需防範開高壓回的隔日沖賣壓，建議採『拉回當日均線或支撐點 ({support_price}元) 不破』再行進場。")
     elif not is_tech_bull and not is_chip_bull:
         trend = "偏空觀望 (均線空頭排列 + 法人賣超)"
         entry_price = round(min(ma5, resistance_price), 2)
@@ -122,7 +115,7 @@ def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high,
         trend = "多空拉鋸震盪 (籌碼與型態分歧)"
         entry_price = round(balance_point, 2)
         strategy = (f"【資深分析師 30 年研判】股價於均線區間內反覆震盪，三大法人買賣超動向分歧。"
-                    f"操作上應嚴守多空平衡點 ({balance_point:.2f}元) 附近低吸高拋，並密切觀察盤中五檔委買委賣張數變化。")
+                    f"操作上應嚴守多空平衡點 ({balance_point:.2f}元) 附近低吸高拋，並密切觀察當日分時均線支撐。")
 
     return {
         "support": support_price,
@@ -336,16 +329,16 @@ if submit_button or auto_refresh:
                             prev_high = df_k['High'].iloc[-2] if len(df_k) > 1 else high_price
                             prev_low = df_k['Low'].iloc[-2] if len(df_k) > 1 else low_price
 
-                            # 抓取或估算最近一個交易日籌碼資料 (三大法人/資券/主力分點)
+                            # 籌碼資料
                             chip_summary = {
-                                "foreign": 120,          # 外買賣超張數 (估算)
-                                "investment": 50,        # 投信買賣超張數 (估算)
-                                "margin_add": -150,      # 融資增減張數 (估算)
-                                "day_trade_broker": True # 是否含有隔日沖分點
+                                "foreign": 120,
+                                "investment": 50,
+                                "margin_add": -150,
+                                "day_trade_broker": True
                             }
 
                             # =========================================================
-                            # 👨‍‍💼 資深證券分析師 AI 升級評估 (包含走勢、法人、資券與隔日沖分點)
+                            # 👨‍💼 資深證券分析師 AI 升級評估
                             # =========================================================
                             st.subheader("👨‍💼 資深證券分析師 AI 綜合評估 (30年實戰經驗)")
                             ai_res = ai_senior_analyst_diagnosis_advanced(
@@ -369,7 +362,7 @@ if submit_button or auto_refresh:
                             col_chip1.metric("外資買賣超", f"{chip_summary['foreign']:+} 張")
                             col_chip2.metric("投信買賣超", f"{chip_summary['investment']:+} 張")
                             col_chip3.metric("融資增減", f"{chip_summary['margin_add']:+} 張")
-                            col_chip4.metric("隔日沖分點影子", "⚠️ 顯著存在" if chip_summary['day_trade_broker'] else "✅ 相對乾淨")
+                            col_chip4.metric("隔日沖分點影子", "⚠️️ 顯著存在" if chip_summary['day_trade_broker'] else "✅ 相對乾淨")
 
                             if custom_target_price == 0.0:
                                 st.session_state["custom_target"] = ai_res['resistance']
@@ -377,17 +370,6 @@ if submit_button or auto_refresh:
                             if custom_stop_price == 0.0:
                                 st.session_state["custom_stop"] = ai_res['support']
                                 custom_stop_price = ai_res['support']
-
-                            # 展示當日分時走勢與分時均價線圖
-                            st.markdown("##### 📈 最近一個交易日當日走勢與分時均價")
-                            if len(df_raw) > 0:
-                                df_today_ticks = df_raw.tail(240).copy()
-                                df_today_ticks["TimeStr"] = pd.to_datetime(df_today_ticks["ts"] / 1000000000, unit='s').dt.strftime('%H:%M')
-                                fig_intra = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.7, 0.3])
-                                fig_intra.add_trace(go.Scatter(x=df_today_ticks["TimeStr"], y=df_today_ticks["Close"], mode='lines', name='當日成交價', line=dict(color='blue', width=1.5)), row=1, col=1)
-                                fig_intra.add_trace(go.Bar(x=df_today_ticks["TimeStr"], y=df_today_ticks["Volume"], name='成交量', marker_color='gray'), row=2, col=1)
-                                fig_intra.update_layout(height=300, margin=dict(l=10, r=10, t=20, b=10), showlegend=False)
-                                st.plotly_chart(fig_intra, use_container_width=True)
 
                             # =========================================================
                             # 🔍 盤前數據全表檢視
@@ -437,21 +419,31 @@ if submit_button or auto_refresh:
                             # =========================================================
                             # ⚡ 5 分 K 線當沖轉折即時盯盤與五大條件聲響警示
                             # =========================================================
-                            st.subheader(f"⚡ 5分K 當沖轉折雷達 -【{contract.code} {contract.name}】")
+                            st.subheader(f"⚡ 當日 5分K 當沖轉折雷達 -【{contract.code} {contract.name}】")
                             
                             if len(df_raw) > 0:
                                 df_raw["DateTime"] = pd.to_datetime(df_raw["ts"] / 1000000000, unit='s', errors='coerce')
-                                df_5m = df_raw.set_index("DateTime").resample("5min").agg({
+                                
+                                # 僅過濾當日 (Today) 開盤至今的 5 分 K 線
+                                df_5m = df_raw[df_raw["DateTime"].dt.date == today_date].set_index("DateTime").resample("5min").agg({
                                     "Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"
                                 }).dropna().reset_index()
                             else:
                                 df_5m = pd.DataFrame(columns=["DateTime", "Open", "High", "Low", "Close", "Volume"])
 
+                            # 計算當日 5分K 的 5MA、20MA、布林通道與當日分時均價線 (VWAP)
                             df_5m["5MA"] = df_5m["Close"].rolling(5).mean()
                             df_5m["20MA"] = df_5m["Close"].rolling(20).mean()
                             df_5m["Std"] = df_5m["Close"].rolling(20).std()
                             df_5m["UpperBand"] = df_5m["20MA"] + (df_5m["Std"] * 2)
                             df_5m["LowerBand"] = df_5m["20MA"] - (df_5m["Std"] * 2)
+                            
+                            # 計算當日累積分時均價線 (VWAP)
+                            df_5m["Cum_Vol"] = df_5m["Volume"].cumsum()
+                            df_5m["Cum_Val"] = (df_5m["Close"] * df_5m["Volume"]).cumsum()
+                            df_5m["VWAP"] = df_5m["Cum_Val"] / df_5m["Cum_Vol"]
+                            df_5m["VWAP"] = df_5m["VWAP"].fillna(df_5m["Close"])
+                            
                             df_5m = calculate_kd(df_5m)
 
                             if len(df_5m) >= 3:
@@ -481,7 +473,7 @@ if submit_button or auto_refresh:
 
                                 # 條件 3：5分K出現兩條長長的上影線且不再創高
                                 if upper_shadow1 > (k_body * 1.2) and upper_shadow2 > (abs(prev_k["Close"] - prev_k["Open"]) * 1.2) and curr_k["High"] <= prev_k["High"]:
-                                    condition_alerts.append((400, f"⚠️ **【條件 3 觸發】**：【{contract.name}】5分K 連續出現兩條長上影線且不再創高，高檔買盤衰竭！"))
+                                    condition_alerts.append((400, f"⚠️️ **【條件 3 觸發】**：【{contract.name}】5分K 連續出現兩條長上影線且不再創高，高檔買盤衰竭！"))
 
                                 # 條件 4：量能縮減而股價不再續漲/續跌或站不上目標價
                                 if curr_k["Volume"] < (df_5m["Volume"].mean() * 0.6) and abs(curr_k["Close"] - prev_k["Close"]) < (curr_price * 0.002):
@@ -502,21 +494,24 @@ if submit_button or auto_refresh:
                                         else:
                                             st.info(alert_msg)
                                 else:
-                                    st.info(f"ℹ️ 【{contract.name}】盤中盯盤進行中，未觸發上述 5 大條件警示訊號。")
+                                    st.info(f"ℹ️️ 【{contract.name}】盤中盯盤進行中，未觸發上述 5 大條件警示訊號。")
 
-                            # 展示近 30 根 5分K 與布林通道圖表
-                            st.subheader(f"📊 近 30 根 5分K 線與布林通道 -【{contract.name}】")
-                            df_5m_tail = df_5m.tail(30)
-                            fig_5m = go.Figure(data=[go.Candlestick(
-                                x=df_5m_tail['DateTime'].dt.strftime('%H:%M'),
-                                open=df_5m_tail['Open'], high=df_5m_tail['High'],
-                                low=df_5m_tail['Low'], close=df_5m_tail['Close'], name="5分K"
-                            )])
-                            fig_5m.add_trace(go.Scatter(x=df_5m_tail['DateTime'].dt.strftime('%H:%M'), y=df_5m_tail['UpperBand'], mode='lines', name='布林上軌', line=dict(color='red', width=1, dash='dash')))
-                            fig_5m.add_trace(go.Scatter(x=df_5m_tail['DateTime'].dt.strftime('%H:%M'), y=df_5m_tail['20MA'], mode='lines', name='20MA(中軌)', line=dict(color='blue', width=1.5)))
-                            fig_5m.add_trace(go.Scatter(x=df_5m_tail['DateTime'].dt.strftime('%Y-%m-%d %H:%M'), y=df_5m_tail['LowerBand'], mode='lines', name='布林下軌', line=dict(color='green', width=1, dash='dash')))
-                            fig_5m.update_layout(xaxis_rangeslider_visible=False, height=380, margin=dict(l=10, r=10, t=30, b=10))
-                            st.plotly_chart(fig_5m, use_container_width=True)
+                            # 展示當日 5分K 線與當日均線 (VWAP)
+                            st.subheader(f"📊 當日 5分K 線與當日均線 (VWAP) -【{contract.name}】")
+                            if len(df_5m) > 0:
+                                fig_5m = go.Figure(data=[go.Candlestick(
+                                    x=df_5m['DateTime'].dt.strftime('%H:%M'),
+                                    open=df_5m['Open'], high=df_5m['High'],
+                                    low=df_5m['Low'], close=df_5m['Close'], name="5分K"
+                                )])
+                                fig_5m.add_trace(go.Scatter(x=df_5m['DateTime'].dt.strftime('%H:%M'), y=df_5m['VWAP'], mode='lines', name='當日均線(VWAP)', line=dict(color='gold', width=2.5)))
+                                fig_5m.add_trace(go.Scatter(x=df_5m['DateTime'].dt.strftime('%H:%M'), y=df_5m['UpperBand'], mode='lines', name='布林上軌', line=dict(color='red', width=1, dash='dash')))
+                                fig_5m.add_trace(go.Scatter(x=df_5m['DateTime'].dt.strftime('%H:%M'), y=df_5m['20MA'], mode='lines', name='20MA', line=dict(color='blue', width=1.5)))
+                                fig_5m.add_trace(go.Scatter(x=df_5m['DateTime'].dt.strftime('%H:%M'), y=df_5m['LowerBand'], mode='lines', name='布林下軌', line=dict(color='green', width=1, dash='dash')))
+                                fig_5m.update_layout(xaxis_rangeslider_visible=False, height=380, margin=dict(l=10, r=10, t=30, b=10))
+                                st.plotly_chart(fig_5m, use_container_width=True)
+                            else:
+                                st.caption("（非盤中開盤時間或尚未產生當日 5分K 數據）")
 
                 except Exception as e:
                     st.error(f"連線失敗或發生錯誤: {str(e)}")
