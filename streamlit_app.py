@@ -3,13 +3,12 @@ import shioaji as sj
 import pandas as pd
 import twstock
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import time
 from datetime import datetime, timedelta
 
-st.set_page_config(page_title="三維定位法 & 盤前檢視/5分K當沖監控系統", layout="centered")
+st.set_page_config(page_title="三維定位法 & 自選股外盤急拉雷達", layout="centered")
 
-st.title("📈 三維定位法 & 盤前檢視/5分K當沖監控系統")
+st.title("📈 三維定位法 & 自選股外盤急拉雷達")
 
 # 自動從 Streamlit Secrets 讀取 API Key
 api_key = st.secrets.get("SHIOAJI_API_KEY", "")
@@ -24,20 +23,20 @@ else:
     st.sidebar.success("✅ 永豐金 API Key 已自動載入！")
 
 # 盤中自動刷新與聲響警示開關
-st.sidebar.subheader("⏱ 盤中自動盯盤與聲響警示")
-auto_refresh = st.sidebar.checkbox("開啟自動盯盤刷新", value=False)
-enable_sound = st.sidebar.checkbox("開啟轉折警示音效", value=True)
-refresh_interval = st.sidebar.slider("刷新間隔 (秒)", min_value=5, max_value=60, value=10, step=5)
+st.sidebar.subheader("⏱ 盤中自動盯盤與外盤急拉雷達")
+auto_refresh = st.sidebar.checkbox("開啟自選股全自動巡邏盯盤", value=False)
+enable_sound = st.sidebar.checkbox("開啟外盤急拉警示音效", value=True)
+refresh_interval = st.sidebar.slider("巡邏掃描間隔 (秒)", min_value=3, max_value=60, value=5, step=1)
 
 # 聲音發放 HTML 函式 (瀏覽器 Web Audio API)
-def play_sound(freq=880, duration=0.5):
+def play_sound(freq=1200, duration=0.8):
     if enable_sound:
         sound_html = f"""
         <script>
         var context = new (window.AudioContext || window.webkitAudioContext)();
         var osc = context.createOscillator();
         var gain = context.createGain();
-        osc.type = 'sine';
+        osc.type = 'sawtooth';
         osc.frequency.value = {freq};
         osc.connect(gain);
         gain.connect(context.destination);
@@ -66,8 +65,7 @@ def calculate_kd(df, n=9):
     rsv = (df['Close'] - low_list) / (high_list - low_list) * 100
     rsv = rsv.fillna(50)
     
-    k = [50.0]
-    d = [50.0]
+    k, d = [50.0], [50.0]
     for i in range(1, len(rsv)):
         k_val = (2/3) * k[-1] + (1/3) * rsv.iloc[i]
         d_val = (2/3) * d[-1] + (1/3) * k_val
@@ -129,12 +127,12 @@ def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high,
 with st.expander("📚 實戰戰法指南（進場點 / 停損停利 / 轉弱判讀 / 策略圖解）"):
     st.markdown("""
     ### 🎯 四大圖卡實戰判讀標準
-    1. **圖一：6種進場點**：回踩支撐、突破壓力/整理區帶量、站上5/10日均線、突破下降趨勢線、缺口進場[cite: 10]。
-    2. **圖二：停損停利法**：支撐停損、均線停損、固定比例停損，壓力停利與沿5日線移動停利[cite: 11]。
-    3. **圖三：6大轉弱訊號**：跌破重要均線/支撐、爆量長黑K、高檔長上影線、量價背離、頭部型態[cite: 12]。
+    1. **圖一：6種進場點**：回踩支撐、突破壓力/整理區帶量、站上5/10日均線、突破下降趨勢線、缺口進場。
+    2. **圖二：停損停利法**：支撐停損、均線停損、固定比例停損，壓力停利與沿5日線移動停利。
+    3. **圖三：6大轉弱訊號**：跌破重要均線/支撐、爆量長黑K、高檔長上影線、量價背離、頭部型態。
     4. **圖四：停損停利指南**：
        * **四大設定法**：百分比法、技術位法、K線法、ATR波幅法（1~2倍ATR停損，2~4倍ATR停利）。
-       * **風格定位**：短線當沖 (停損3~5%/停利5~8%)、波段 (停損5~10%/停利10~20%)、長線 (停損10~15%/停利20~50%)[cite: 13]。
+       * **風格定位**：短線當沖 (停損3~5%/停利5~8%)、波段 (停損5~10%/停利10~20%)、長線 (停損10~15%/停利20~50%)。
     """)
 
 # 自選股快捷區
@@ -173,9 +171,7 @@ if "last_stock" not in st.session_state or st.session_state["last_stock"] != cur
     st.session_state["custom_target"] = 0.0
     st.session_state["custom_stop"] = 0.0
 
-# =========================================================
-# 表單輸入與手動交易計畫設定區 (左綠停損 / 右紅目標)
-# =========================================================
+# 表單輸入與手動交易計畫設定區
 with st.form(key="search_form"):
     col_input, col_style = st.columns([2, 1])
     with col_input:
@@ -239,6 +235,58 @@ if target_code and target_name:
                 st.session_state["watchlist"].append(current_label)
                 st.success(f"已加入：{current_label}")
                 st.rerun()
+
+# =========================================================
+# 🔥 新增功能：自選股清單「瞬間外盤大單急拉」全自動巡邏監控
+# =========================================================
+if auto_refresh and api_key and secret_key:
+    st.subheader("🚨 自選股「瞬間外盤大單急拉」巡邏告警雷達")
+    watchlist_alerts = []
+    
+    try:
+        api_scan = sj.Shioaji(simulation=True)
+        api_scan.login(api_key=api_key, secret_key=secret_key)
+        
+        # 批量抓取自選股合約
+        scan_contracts = []
+        for stock_item in st.session_state["watchlist"]:
+            s_code = stock_item.split(" ")[0]
+            c = api_scan.Contracts.Stocks.get(s_code)
+            if c: scan_contracts.append(c)
+            
+        if scan_contracts:
+            snaps = api_scan.snapshots(scan_contracts)
+            for snap in snaps:
+                code = snap.code
+                s_name = twstock.codes[code].name if code in twstock.codes else code
+                c_price = float(getattr(snap, 'close', 0.0))
+                o_vol = float(getattr(snap, 'ask_volume', 0.0))
+                i_vol = float(getattr(snap, 'bid_volume', 0.0))
+                tot_vol = float(getattr(snap, 'total_volume', 0.0))
+                
+                # 計算外盤比例
+                outer_ratio = (o_vol / (o_vol + i_vol)) * 100 if (o_vol + i_vol) > 0 else 0
+                
+                # 瞬間外盤急拉條件：外盤比 > 65% 且外盤張數明顯急拉
+                if outer_ratio >= 65 and o_vol >= 100:
+                    watchlist_alerts.append({
+                        "code": code,
+                        "name": s_name,
+                        "price": c_price,
+                        "outer_ratio": outer_ratio,
+                        "outer_vol": o_vol
+                    })
+
+        api_scan.logout()
+    except Exception as e_scan:
+        st.caption(f"（巡邏中，離線獲取資料：{str(e_scan)}）")
+
+    if watchlist_alerts:
+        play_sound(freq=1200, duration=0.8) # 播放高頻外盤急拉告警音效
+        for alert in watchlist_alerts:
+            st.error(f"⚡ **【外盤瞬間大單急拉告警】**【{alert['code']} {alert['name']}】現價 `{alert['price']}` 元 | 外盤急拉比例：`{alert['outer_ratio']:.1f}%` (外盤量: `{int(alert['outer_vol'])}` 張)！")
+    else:
+        st.success("✅ 自選股巡邏中：目前無個股觸發「外盤瞬間大單急拉」極端條件。")
 
 # 分析執行區
 if submit_button or auto_refresh:
@@ -337,9 +385,7 @@ if submit_button or auto_refresh:
                                 "day_trade_broker": True
                             }
 
-                            # =========================================================
-                            # 👨‍💼 資深證券分析師 AI 升級評估
-                            # =========================================================
+                            # 資深證券分析師 AI 升級評估
                             st.subheader("👨‍💼 資深證券分析師 AI 綜合評估 (30年實戰經驗)")
                             ai_res = ai_senior_analyst_diagnosis_advanced(
                                 target_code, target_name, curr_price, ma5, ma20, 
@@ -371,22 +417,20 @@ if submit_button or auto_refresh:
                                 st.session_state["custom_stop"] = ai_res['support']
                                 custom_stop_price = ai_res['support']
 
-                            # =========================================================
-                            # 🔍 盤前數據全表檢視
-                            # =========================================================
+                            # 盤前數據全表檢視
                             st.subheader(f"🔍 盤前數據全表檢視 -【{contract.code} {contract.name}】")
 
                             # 1. 6種進場型態檢驗
                             st.markdown("#### 1️⃣ 6種進場型態評估 (圖一對照)")
                             entry_list = []
-                            if curr_price > ma5 and ma5 > ma20: entry_list.append("✅ **均線進場**：股價站上 5日/20日均線，多頭排列[cite: 10]。")
-                            if curr_price > prev_high: entry_list.append("✅ **突破壓力進場**：股價突破前一日高點壓力[cite: 10]。")
-                            if 1.0 <= bias_rate <= 2.0: entry_list.append("✅ **回踩/健康拉升**：成本乖離率介於 +1%~+2%，結構健康[cite: 10]。")
+                            if curr_price > ma5 and ma5 > ma20: entry_list.append("✅ **均線進場**：股價站上 5日/20日均線，多頭排列。")
+                            if curr_price > prev_high: entry_list.append("✅ **突破壓力進場**：股價突破前一日高點壓力。")
+                            if 1.0 <= bias_rate <= 2.0: entry_list.append("✅ **回踩/健康拉升**：成本乖離率介於 +1%~+2%，結構健康。")
                             
                             if entry_list:
                                 for entry in entry_list: st.write(entry)
                             else:
-                                st.write("ℹ️ 當前暫無明顯突破型態，建議等待回測支撐或帶量突破[cite: 10]。")
+                                st.write("ℹ️ 當前暫無明顯突破型態，建議等待回測支撐或帶量突破。")
 
                             # 2. 停損停利設定
                             st.markdown("#### 2️⃣ 四大停損與停利參考設定 (多重停損綠色 / 多重停利紅色)")
@@ -398,33 +442,28 @@ if submit_button or auto_refresh:
 
                             with col_sl_box:
                                 st.success("🛡️ **多重停損試算 (綠色)**")
-                                st.write(f"* **百分比法 ({sl_pct*100:.0f}%)**：`{curr_price * (1 - sl_pct):.2f}` 元[cite: 13]")
-                                st.write(f"* **ATR 波動法 (1.5xATR)**：`{curr_price - (1.5 * atr_val):.2f}` 元[cite: 13]")
-                                st.write(f"* **均線/技術位法 (跌破5MA)**：`{ma5:.2f}` 元[cite: 11, 13]")
-                                st.write(f"* **K線法 (前低支撐)**：`{prev_low:.2f}` 元[cite: 12, 13]")
+                                st.write(f"* **百分比法 ({sl_pct*100:.0f}%)**：`{curr_price * (1 - sl_pct):.2f}` 元")
+                                st.write(f"* **ATR 波動法 (1.5xATR)**：`{curr_price - (1.5 * atr_val):.2f}` 元")
+                                st.write(f"* **均線/技術位法 (跌破5MA)**：`{ma5:.2f}` 元")
+                                st.write(f"* **K線法 (前低支撐)**：`{prev_low:.2f}` 元")
 
                             with col_tp_box:
                                 st.error("🎯 **多重停利試算 (紅色)**")
-                                st.write(f"* **百分比法 ({tp_pct*100:.0f}%)**：`{curr_price * (1 + tp_pct):.2f}` 元[cite: 13]")
-                                st.write(f"* **ATR 波動法 (3xATR)**：`{curr_price + (3 * atr_val):.2f}` 元[cite: 13]")
-                                st.write(f"* **移動停利線 (沿5MA)**：`{ma5:.2f}` 元[cite: 11, 13]")
-                                st.write(f"* **前高壓力區停利**：`{prev_high:.2f}` 元[cite: 11, 13]")
+                                st.write(f"* **百分比法 ({tp_pct*100:.0f}%)**：`{curr_price * (1 + tp_pct):.2f}` 元")
+                                st.write(f"* **ATR 波動法 (3xATR)**：`{curr_price + (3 * atr_val):.2f}` 元")
+                                st.write(f"* **移動停利線 (沿5MA)**：`{ma5:.2f}` 元")
+                                st.write(f"* **前高壓力區停利**：`{prev_high:.2f}` 元")
 
                             # 3. 6大轉弱避險訊號
                             st.markdown("#### 3️⃣ 6大轉弱訊號防範 (圖三對照)")
-                            if curr_price < ma5: st.error("❌ **跌破重要均線**：股價已跌破 5 日均線[cite: 12]。")
-                            if bias_rate > 3.0: st.warning("⚠️️ **短線過熱/遠離均價**：乖離率 > +3%，提防拉回[cite: 10, 12]。")
-                            if curr_price < balance_point: st.error("❌ **失去平衡點**：收盤價低於多空平衡點[cite: 12]。")
+                            if curr_price < ma5: st.error("❌ **跌破重要均線**：股價已跌破 5 日均線。")
+                            if bias_rate > 3.0: st.warning("⚠️ **短線過熱/遠離均價**：乖離率 > +3%，提防拉回。")
+                            if curr_price < balance_point: st.error("❌ **失去平衡點**：收盤價低於多空平衡點。")
 
-                            # =========================================================
-                            # ⚡ 最近一個交易日 5 分 K 線當沖轉折即時盯盤與聲響警示
-                            # =========================================================
+                            # 最近一個交易日 5 分 K 線
                             if len(df_raw) > 0:
                                 df_raw["DateTime"] = pd.to_datetime(df_raw["ts"] / 1000000000, unit='s', errors='coerce')
-                                # 自動找出數據中最近一個有交易的日期 (Last Available Trading Date)
                                 latest_trade_date = df_raw["DateTime"].dt.date.max()
-                                
-                                # 過濾最近一個交易日的 5 分 K 線
                                 df_5m = df_raw[df_raw["DateTime"].dt.date == latest_trade_date].set_index("DateTime").resample("5min").agg({
                                     "Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"
                                 }).dropna().reset_index()
@@ -435,14 +474,12 @@ if submit_button or auto_refresh:
 
                             st.subheader(f"⚡ 5分K 當沖轉折雷達 ({date_label_str}) -【{contract.code} {contract.name}】")
 
-                            # 計算 5分K 的 5MA、20MA、布林通道與分時均價線 (VWAP)
                             df_5m["5MA"] = df_5m["Close"].rolling(5).mean()
                             df_5m["20MA"] = df_5m["Close"].rolling(20).mean()
                             df_5m["Std"] = df_5m["Close"].rolling(20).std()
                             df_5m["UpperBand"] = df_5m["20MA"] + (df_5m["Std"] * 2)
                             df_5m["LowerBand"] = df_5m["20MA"] - (df_5m["Std"] * 2)
                             
-                            # 計算累積分時均價線 (VWAP)
                             df_5m["Cum_Vol"] = df_5m["Volume"].cumsum()
                             df_5m["Cum_Val"] = (df_5m["Close"] * df_5m["Volume"]).cumsum()
                             df_5m["VWAP"] = df_5m["Cum_Val"] / df_5m["Cum_Vol"]
@@ -527,4 +564,3 @@ if submit_button or auto_refresh:
 if auto_refresh:
     time.sleep(refresh_interval)
     st.rerun()
-    
