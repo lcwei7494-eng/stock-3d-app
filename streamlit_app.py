@@ -3,7 +3,7 @@ import shioaji as sj
 import pandas as pd
 import twstock
 import plotly.graph_objects as go
-from streamlit_autorun import autorun if False else None  # 相容性保留
+import time
 
 st.set_page_config(page_title="三維定位法分析器 - 專業旗艦版", layout="centered")
 
@@ -28,13 +28,6 @@ st.sidebar.subheader("⏱️ 盤中自動刷新設定")
 auto_refresh = st.sidebar.checkbox("開啟自動定時刷新", value=False)
 refresh_interval = st.sidebar.slider("刷新間隔 (秒)", min_value=5, max_value=60, value=10, step=5)
 
-if auto_refresh:
-    # 利用 Streamlit 原生 rerun 實現自動定時刷新
-    st.empty()
-    import time
-    time.sleep(refresh_interval)
-    st.rerun()
-
 # =========================================================
 # 輔助函式：將中文公司名稱或代碼統一轉為股票代碼
 # =========================================================
@@ -57,9 +50,9 @@ with st.expander("📚 點此查看【三維定位法】三個維度的核心含
     * **核心含義**：衡量當前股價與今日市場平均交易成本的差距。
     * **實戰判讀**：
       * **正乖離率（> 0%）**：當前股價高於均價，多數買方獲利，買盤意願較強。
-      * **健康偏強（+1% ~ +2%）**：主力穩健拉升且籌碼經充分換手，結構健康[cite: 1]。
+      * **健康偏強（+1% ~ +2%）**：主力穩健拉升且籌碼經充分換手，結構健康。
       * **短線過熱（> +3% ~ +5%）**：拉離均價過遠，容易引發獲利了結賣壓，不宜盲目追高。
-      * **負乖離率（< 0%）**：股價跌破均價，買方多數套牢，短線結構轉弱[cite: 1]。
+      * **負乖離率（< 0%）**：股價跌破均價，買方多數套牢，短線結構轉弱。
 
     ---
 
@@ -125,12 +118,12 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                             st.error("無法取得即時行情（可能非開盤時間或 API 權限問題）。")
                         else:
                             snap = snapshots[0]
-                            curr_price = float(getattr(snap, 'close', 0.0))[cite: 1]
+                            curr_price = float(getattr(snap, 'close', 0.0))
                             high_price = float(getattr(snap, 'high', 0.0))
                             low_price = float(getattr(snap, 'low', 0.0))
                             
                             # 取得均價
-                            avg_price = float(getattr(snap, 'average_price', curr_price))[cite: 1]
+                            avg_price = float(getattr(snap, 'average_price', curr_price))
                             if avg_price == 0:
                                 avg_price = curr_price
                             
@@ -139,12 +132,12 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                             inner_vol = float(getattr(snap, 'bid_volume', 0.0))
 
                             # 三維度計算
-                            bias_rate = ((curr_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0[cite: 1]
+                            bias_rate = ((curr_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0
                             momentum_coef = (outer_vol / inner_vol) if inner_vol > 0 else 0
                             balance_point = (high_price + low_price + curr_price) / 3
 
                             # 評估邏輯
-                            bias_eval = "健康偏強 (+1%~+2%)" if 1 <= bias_rate <= 2 else ("短線過熱 (>+2%)" if bias_rate > 2 else "結構偏弱/回落")[cite: 1]
+                            bias_eval = "健康偏強 (+1%~+2%)" if 1 <= bias_rate <= 2 else ("短線過熱 (>+2%)" if bias_rate > 2 else "結構偏弱/回落")
                             momentum_eval = "買氣主動攻擊意願強 (≥1.4)" if momentum_coef >= 1.4 else ("買氣平平 (1.0~1.4)" if momentum_coef >= 1.0 else "賣壓偏強 (<1.0)")
                             balance_eval = f"多頭領先 ({curr_price} > 平衡點 {balance_point:.2f})" if curr_price >= balance_point else f"多頭防守 ({curr_price} < 平衡點 {balance_point:.2f})"
 
@@ -166,7 +159,7 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
 
                             # 核心三維度指標卡片
                             col1, col2, col3 = st.columns(3)
-                            col1.metric("1️⃣ 成本乖離率", f"{bias_rate:+.2f}%")[cite: 1]
+                            col1.metric("1️⃣ 成本乖離率", f"{bias_rate:+.2f}%")
                             col2.metric("2️⃣ 動能係數", f"{momentum_coef:.2f}")
                             col3.metric("3️⃣ 多空平衡點", f"{balance_point:.2f}元")
 
@@ -195,7 +188,7 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                                 fig_depth = go.Figure()
                                 fig_depth.add_trace(go.Bar(y=bid_prices[::-1], x=bid_vols[::-1], orientation='h', name='買盤掛單', marker_color='red'))
                                 fig_depth.add_trace(go.Bar(y=ask_prices[::-1], x=ask_vols[::-1], orientation='h', name='賣盤掛單', marker_color='green'))
-                                fig_depth.update_layout(title="最佳五檔挂單量對比", barmode='relative', height=300, margin=dict(l=10, r=10, t=40, b=10))
+                                fig_depth.update_layout(title="最佳五檔掛單量對比", barmode='relative', height=300, margin=dict(l=10, r=10, t=40, b=10))
                                 st.plotly_chart(fig_depth, use_container_width=True)
 
                             # =========================================================
@@ -246,3 +239,8 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                             api.logout()
                         except:
                             pass
+
+# 處理盤中自動刷新延遲
+if auto_refresh:
+    time.sleep(refresh_interval)
+    st.rerun()
