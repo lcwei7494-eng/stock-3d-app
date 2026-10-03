@@ -19,14 +19,13 @@ else:
     st.sidebar.success("✅ 永豐金 API Key 已自動載入！")
 
 # =========================================================
-# 使用 Streamlit 快取機制，防止 Shioaji API 重複初始化與連線衝突
+# 輕量化 API 初始化與快取 (不在此處耗時下載全量合約)
 # =========================================================
 @st.cache_resource(show_spinner=False)
 def get_shioaji_api(key, secret):
-    """初始化 API 並載入全台股合約清單（全域僅執行一次）"""
+    """初始化 API 連線實體"""
     api = sj.Shioaji(simulation=True)
     api.login(api_key=key, secret_key=secret)
-    api.fetch_contracts(contract_type=['Stock'])
     return api
 
 # =========================================================
@@ -72,25 +71,33 @@ if st.button("🚀 抓取數據並分析", type="primary"):
     else:
         with st.spinner("正在讀取股票數據..."):
             try:
-                # 取得已快取的 API 物件 (避開多線程獨佔衝突)
+                # 取得已快取的 API 物件
                 api = get_shioaji_api(api_key, secret_key)
                 
                 target_input = stock_input.strip()
                 contract = None
                 
-                # 1. 優先嘗試當作股票代碼直接取得合約
-                contract = api.Contracts.Stocks.get(target_input)
+                # 1. 若輸入純數字，直接當作股票代碼提取（毫秒級快速響應）
+                if target_input.isdigit():
+                    contract = api.Contracts.Stocks.get(target_input)
                 
-                # 2. 若找不到代碼，走訪上市與上櫃搜尋中文名稱
+                # 2. 若輸入非數字（中文名稱），才進行合約比對
                 if not contract:
-                    for market in [api.Contracts.Stocks.TSE, api.Contracts.Stocks.OTC]:
-                        for code, stock in market.items():
-                            stock_name = getattr(stock, 'name', '')
-                            if target_input == stock_name or (stock_name and target_input in stock_name):
-                                contract = stock
+                    # 確保合約下載
+                    api.fetch_contracts(contract_type=['Stock'])
+                    
+                    # 優先從代碼嘗試
+                    contract = api.Contracts.Stocks.get(target_input)
+                    if not contract:
+                        # 快速比對上市與上櫃股票中文名稱
+                        for market in [api.Contracts.Stocks.TSE, api.Contracts.Stocks.OTC]:
+                            if contract:
                                 break
-                        if contract:
-                            break
+                            for code, stock in market.items():
+                                name = getattr(stock, 'name', '')
+                                if target_input == name or (name and target_input in name):
+                                    contract = stock
+                                    break
 
                 if not contract:
                     st.error(f"找不到股票代碼或公司名稱：『{stock_input}』，請確認名稱是否正確（例：晶技、台積電 或 3042）。")
