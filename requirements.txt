@@ -2,3 +2,4 @@ streamlit
 shioaji
 pandas
 twstock
+plotly
