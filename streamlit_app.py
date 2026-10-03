@@ -7,7 +7,7 @@ from plotly.subplots import make_subplots
 import time
 from datetime import datetime, timedelta
 
-st.set_page_config(page_title="三維定位法 & 大戶投智慧選股/盤中熱門與當沖監控系統", layout="wide")
+st.set_page_config(page_title="三維定位法 & 形態學技術雷達與當沖監控系統", layout="wide")
 
 # 自動從 Streamlit Secrets 讀取 API Key
 api_key = st.secrets.get("SHIOAJI_API_KEY", "")
@@ -17,11 +17,17 @@ secret_key = st.secrets.get("SHIOAJI_SECRET_KEY", "")
 if "watchlist" not in st.session_state:
     st.session_state["watchlist"] = ["3624 光頡", "3006 晶豪科", "3042 晶技", "2330 台積電", "2317 鴻海"]
 
-# 側邊欄：功能頁面選單 (包含「💡 大戶投 — 智慧選股」)
+# 側邊欄：功能頁面選單 (最左側加入「🔍 全面形態與技術面雷達」)
 st.sidebar.title("📌 功能頁面選單")
 app_mode = st.sidebar.radio(
     "請選擇功能頁面",
-    ["💡 大戶投 — 智慧選股", "🔥 大戶投 — 盤中熱門", "⚡ 當沖強勢股篩選", "📈 三維定位與當沖盯盤系統"]
+    [
+        "🔍 全面形態與技術面雷達",
+        "💡 大戶投 — 智慧選股",
+        "🔥 大戶投 — 盤中熱門",
+        "⚡ 當沖強勢股篩選",
+        "📈 三維定位與當沖盯盤系統"
+    ]
 )
 
 # 側邊欄 API 設定備援
@@ -124,7 +130,86 @@ def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high,
         "strategy": strategy
     }
 
-# 通用表格渲染連動函式 (支援跨排行榜多重並存)
+# 深度形態學與技術面掃描器引擎
+def scan_pattern_and_indicators(df_k):
+    if len(df_k) < 60:
+        return "資料不足", []
+
+    df_k["5MA"] = df_k["Close"].rolling(5).mean()
+    df_k["10MA"] = df_k["Close"].rolling(10).mean()
+    df_k["20MA"] = df_k["Close"].rolling(20).mean()
+    df_k["60MA"] = df_k["Close"].rolling(60).mean()
+    df_k["Std"] = df_k["Close"].rolling(20).std()
+    df_k["UpperBand"] = df_k["20MA"] + (df_k["Std"] * 2)
+    df_k["LowerBand"] = df_k["20MA"] - (df_k["Std"] * 2)
+    df_k["BandWidth"] = (df_k["UpperBand"] - df_k["LowerBand"]) / df_k["20MA"]
+    df_k = calculate_kd(df_k)
+
+    curr = df_k.iloc[-1]
+    prev1 = df_k.iloc[-2]
+    prev2 = df_k.iloc[-3]
+    vol_5avg = df_k["Volume"].iloc[-6:-1].mean()
+
+    bull_signals = []
+    low_base_signals = []
+    bear_signals = []
+
+    # 1. 均線多頭/空頭
+    if curr["5MA"] > curr["10MA"] > curr["20MA"]:
+        bull_signals.append("📈 均線多頭排列 (5MA>10MA>20MA)")
+    elif curr["5MA"] < curr["10MA"] < curr["20MA"]:
+        bear_signals.append("📉 均線空頭排列 (5MA<10MA<20MA)")
+
+    # 2. 突破前高 / 箱體突破
+    max_prev_60 = df_k["High"].iloc[-61:-1].max()
+    if curr["Close"] >= max_prev_60:
+        bull_signals.append("💥 突破前 60 日高點壓力區")
+
+    # 3. N字二次發動 (拉回量縮守均線再爆量長紅)
+    if (df_k["High"].iloc[-10:-2].max() > df_k["Open"].iloc[-10]) and (prev1["Volume"] < vol_5avg) and (curr["Close"] > curr["Open"]) and (curr["Volume"] >= vol_5avg * 1.5):
+        bull_signals.append("🚀 N字型態二次發動 (量縮洗盤後再攻擊)")
+
+    # 4. KD 黃金交叉與低檔/高檔評估
+    if prev1["K"] < prev1["D"] and curr["K"] > curr["D"]:
+        if curr["K"] <= 30:
+            low_base_signals.append("✨ KD低檔區黃金交叉 (底基期轉強)")
+        else:
+            bull_signals.append("⚡ KD黃金交叉")
+    if curr["K"] >= 80:
+        bull_signals.append("🔥 KD進入高檔鈍化強勢區")
+
+    # 5. 布林通道壓縮後爆發
+    if df_k["BandWidth"].iloc[-5:-1].mean() < 0.10 and curr["Close"] > curr["UpperBand"]:
+        bull_signals.append("🔔 布林通道壓縮後帶量開口向上爆發")
+
+    # 6. 低基期 W 底 / 築底型態檢測
+    min_prev_60 = df_k["Low"].iloc[-60:].min()
+    if (curr["Close"] <= min_prev_60 * 1.15) and (curr["20MA"] >= df_k["20MA"].iloc[-5]):
+        low_base_signals.append("🌱 低基期築底完成 / 接近長線支撐區")
+
+    # 7. 量能過濾 (量縮蓄勢 vs 高檔爆量拉回)
+    if curr["Volume"] < vol_5avg * 0.5:
+        low_base_signals.append("📦 股價橫盤且成交量極致萎縮 (窒息量蓄勢)")
+    
+    k_body = abs(curr["Close"] - curr["Open"])
+    upper_shadow = curr["High"] - max(curr["Close"], curr_price if 'curr_price' in locals() else curr["Close"])
+    if upper_shadow > k_body * 1.5 and curr["Volume"] > vol_5avg * 1.5:
+        bear_signals.append("⚠️ 高檔爆量長上影線 (主力出貨/A轉預警)")
+
+    # 評定歸類
+    if len(bull_signals) >= 2 or ("突破前 60 日" in str(bull_signals) and len(bull_signals) >= 1):
+        category = "🔥 強勢攻擊股"
+    elif len(low_base_signals) >= 1 or ("低基期" in str(low_base_signals)):
+        category = "🌱 低基期潛力股"
+    elif len(bear_signals) >= 1:
+        category = "⚠️ 弱勢/避險警示股"
+    else:
+        category = "⚖️ 區間震盪整理股"
+
+    all_signals = bull_signals + low_base_signals + bear_signals
+    return category, all_signals if all_signals else ["ℹ️ 暫無極端形態訊號，屬於一般區間震盪。"]
+
+# 通用表格渲染連動函式
 def render_smart_stock_table(df_display, key_prefix):
     st.dataframe(df_display, use_container_width=True)
     st.markdown("##### ⚡ 一鍵帶入當沖盯盤系統或加入自選清單")
@@ -134,9 +219,8 @@ def render_smart_stock_table(df_display, key_prefix):
         stock_lbl = f"{c_code} {c_name}"
         
         col_lbl, col_b1, col_b2 = st.columns([4, 2, 2])
-        col_lbl.write(f"**{stock_lbl}** | 現價: `{row.get('最新價', row.get('收盤價', 'N/A'))}` 元 | 評估指標: `{row.get('篩選特徵', row.get('漲跌幅(%)', '精選'))}`")
+        col_lbl.write(f"**{stock_lbl}** | 現價: `{row.get('最新價', row.get('收盤價', 'N/A'))}` 元 | 評估指標: `{row.get('形態/技術特徵', row.get('篩選特徵', '精選'))}`")
         
-        # 組合唯一 Key：功能Prefix + 代碼 + 索引
         btn_nav_key = f"btn_nav_{key_prefix}_{c_code}_{idx}"
         btn_add_key = f"btn_add_{key_prefix}_{c_code}_{idx}"
 
@@ -155,9 +239,104 @@ def render_smart_stock_table(df_display, key_prefix):
                 st.rerun()
 
 # =========================================================
-# 頁面 1：💡 大戶投 — 智慧選股
+# 頁面 1：🔍 全面形態與技術面雷達 (強勢 / 低基期 / 弱勢 掃描)
 # =========================================================
-if app_mode == "💡 大戶投 — 智慧選股":
+if app_mode == "🔍 全面形態與技術面雷達":
+    st.title("🔍 全面形態與技術面雷達 — 強弱勢與低基期精選系統")
+    st.caption("結合 12 種經典技術面與形態學理論（W底/頭部、N字發動、均線多空排列、KD金叉/鈍化、布林開口爆發），全自動掃描分類。")
+
+    if not api_key or not secret_key:
+        st.error("請先在左側選單填寫永豐金 API Key 與 Secret Key！")
+    else:
+        if st.button("🚀 啟動台股熱門標的『全面形態與技術指標』深度掃描", type="primary"):
+            with st.spinner("正在抓取歷史 K 線，進行 12 大技術面與形態學指標精密運算..."):
+                try:
+                    api_scan = sj.Shioaji(simulation=True)
+                    api_scan.login(api_key=api_key, secret_key=secret_key)
+
+                    scan_pool = ["2330", "2317", "2454", "3035", "3037", "3624", "3006", "3042", "2382", "3231", "2303", "2603", "2609", "2615", "1513", "1519", "1504"]
+                    
+                    bull_list = []
+                    low_base_list = []
+                    bear_list = []
+
+                    start_date = (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d")
+                    end_date = datetime.now().strftime("%Y-%m-%d")
+
+                    for code in scan_pool:
+                        contract = api_scan.Contracts.Stocks.get(code)
+                        if not contract: continue
+                        
+                        kbars = api_scan.kbars(contract=contract, start=start_date, end=end_date)
+                        df_raw = pd.DataFrame({
+                            "ts": kbars.ts, "Open": kbars.Open, "High": kbars.High,
+                            "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume
+                        })
+                        if len(df_raw) < 60: continue
+
+                        df_raw["Date"] = pd.to_datetime(df_raw["ts"] / 1000000000, unit='s', errors='coerce')
+                        df_raw["Day"] = df_raw["Date"].dt.date
+                        df_k = df_raw.groupby("Day").agg({
+                            "Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"
+                        }).reset_index()
+
+                        category, signals = scan_pattern_and_indicators(df_k)
+                        stock_name = twstock.codes[code].name if code in twstock.codes else code
+                        curr_p = df_k["Close"].iloc[-1]
+
+                        item_info = {
+                            "股票代碼": code,
+                            "股票名稱": stock_name,
+                            "最新價": curr_p,
+                            "分類等級": category,
+                            "形態/技術特徵": " | ".join(signals)
+                        }
+
+                        if category == "🔥 強勢攻擊股":
+                            bull_list.append(item_info)
+                        elif category == "🌱 低基期潛力股":
+                            low_base_list.append(item_info)
+                        elif category == "⚠️ 弱勢/避險警示股":
+                            bear_list.append(item_info)
+                        else:
+                            low_base_list.append(item_info)
+
+                    api_scan.logout()
+
+                    tab_a, tab_b, tab_c = st.tabs([
+                        f"🔥 強勢攻擊股 ({len(bull_list)})",
+                        f"🌱 低基期潛力股 ({len(low_base_list)})",
+                        f"⚠️ 弱勢避險股 ({len(bear_list)})"
+                    ])
+
+                    with tab_a:
+                        st.subheader("🔥 強勢攻擊股 (具突破/N字發動/多頭排列強者恆強特徵)")
+                        if bull_list:
+                            render_smart_stock_table(pd.DataFrame(bull_list), "radar_bull")
+                        else:
+                            st.info("當前池中暫無符合極限強勢突破條件的個股。")
+
+                    with tab_b:
+                        st.subheader("🌱 低基期潛力股 (打底完成/KD低位金叉/量縮蓄勢潛力股)")
+                        if low_base_list:
+                            render_smart_stock_table(pd.DataFrame(low_base_list), "radar_low")
+                        else:
+                            st.info("當前池中暫無低基期打底完成之個股。")
+
+                    with tab_c:
+                        st.subheader("⚠️ 弱勢/避險警示股 (空頭排列/高檔長上影線/提防A轉拉回)")
+                        if bear_list:
+                            render_smart_stock_table(pd.DataFrame(bear_list), "radar_bear")
+                        else:
+                            st.success("✅ 當前池中無個股出現高檔出貨或嚴重空頭排列危險訊號。")
+
+                except Exception as e:
+                    st.error(f"形態與技術面掃描失敗: {str(e)}")
+
+# =========================================================
+# 頁面 2：💡 大戶投 — 智慧選股
+# =========================================================
+elif app_mode == "💡 大戶投 — 智慧選股":
     st.title("💡 大戶投 — 智慧選股系統")
     st.caption("同步永豐金大戶投 APP 核心智慧選股架構：即時排行、價量指標、籌碼精選與經營績效。")
 
@@ -210,7 +389,7 @@ if app_mode == "💡 大戶投 — 智慧選股":
             render_smart_stock_table(pd.DataFrame(fin_data), "fin")
 
 # =========================================================
-# 頁面 2：🔥 大戶投 — 盤中熱門 (支援跨排行榜並存)
+# 頁面 3：🔥 大戶投 — 盤中熱門
 # =========================================================
 elif app_mode == "🔥 大戶投 — 盤中熱門":
     st.title("🔥 大戶投 — 盤中熱門排行榜功能")
@@ -277,7 +456,7 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
                 st.error(f"讀取大戶投盤中熱門資料時發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 3：⚡ 當沖強勢股篩選（短線多頭精選 5 大條件）
+# 頁面 4：⚡ 當沖強勢股篩選（短線多頭精選 5 大條件）
 # =========================================================
 elif app_mode == "⚡ 當沖強勢股篩選":
     st.title("🔥 短線多頭精選 — 當沖強勢股篩選雷達")
@@ -387,7 +566,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 4：📈 三維定位與當沖盯盤系統（選股自動聯動分析）
+# 頁面 5：📈 三維定位與當沖盯盤系統
 # =========================================================
 else:
     st.title("📈 三維定位法 & 盤前檢視/多週期當沖監控系統")
