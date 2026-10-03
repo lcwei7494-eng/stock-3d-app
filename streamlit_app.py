@@ -176,10 +176,10 @@ with st.form(key="search_form"):
     st.markdown("##### ⚙️ 手動交易計劃設定 (左側停損價綠色 / 右側目標價紅色)")
     col_stop, col_target = st.columns(2)
     with col_stop:
-        st.markdown("<h6 style='color: green;'>🛡️ 手動停損價 (左側 / 綠色)</h6>", unsafe_allow_html=True)
+        st.markdown("<h6 style='color: green;'>🛡️ 手動停損價 </h6>", unsafe_allow_html=True)
         custom_stop_price = st.number_input("停損價 (元)", value=float(st.session_state.get("custom_stop", 0.0)), step=0.5, label_visibility="collapsed")
     with col_target:
-        st.markdown("<h6 style='color: red;'>🎯 手動目標價 (右側 / 紅色)</h6>", unsafe_allow_html=True)
+        st.markdown("<h6 style='color: red;'>🎯 手動目標價 </h6>", unsafe_allow_html=True)
         custom_target_price = st.number_input("目標價 (元)", value=float(st.session_state.get("custom_target", 0.0)), step=0.5, label_visibility="collapsed")
 
     submit_button = st.form_submit_button("🚀 抓取數據並分析 (Enter)", type="primary")
