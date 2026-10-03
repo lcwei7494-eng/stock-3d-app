@@ -93,7 +93,7 @@ def calculate_atr(df, period=14):
     df['ATR'] = df['TR'].rolling(period).mean()
     return df
 
-# 資深證券分析師 AI 技術面與籌碼面診斷模組 (完全恢復)
+# 資深證券分析師 AI 技術面與籌碼面診斷模組
 def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high, prev_low, balance_point, chip_data):
     support_price = round(min(ma5, prev_low), 2)
     resistance_price = round(max(prev_high, balance_point * 1.02), 2)
@@ -422,10 +422,22 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (完全恢復 AI 綜合評估 + 多週期即時繪圖)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (完全恢復指南圖卡、AI診斷、停損停利試算)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 盤前檢視/多週期當沖監控系統")
+
+    # 📚 恢復實戰戰法指南與四大圖卡精華展延區
+    with st.expander("📚 實戰戰法指南（進場點 / 停損停利 / 轉弱判讀 / 策略圖解）", expanded=False):
+        st.markdown("""
+        ### 🎯 四大圖卡實戰判讀標準
+        1. **圖一：6種進場點**：回踩支撐、突破壓力/整理區帶量、站上5/10日均線、突破下降趨勢線、缺口進場。
+        2. **圖二：停損停利法**：支撐停損、均線停損、固定比例停損，壓力停利與沿5日線移動停利。
+        3. **圖三：6大轉弱訊號**：跌破重要均線/支撐、爆量長黑K、高檔長上影線、量價背離、頭部型態。
+        4. **圖四：停損停利指南**：
+           * **四大設定法**：百分比法、技術位法、K線法、ATR波幅法（1~2倍ATR停損，2~4倍ATR停利）。
+           * **風格定位**：短線當沖 (停損3~5%/停利5~8%)、波段 (停損5~10%/停利10~20%)、長線 (停損10~15%/停利20~50%)。
+        """)
 
     auto_refresh = st.sidebar.checkbox("開啟自動盯盤刷新", value=False)
     enable_sound = st.sidebar.checkbox("開啟轉折警示音效", value=True)
@@ -539,14 +551,15 @@ else:
 
             ma5 = df_k_daily['5MA'].iloc[-1]
             ma20 = df_k_daily['20MA'].iloc[-1]
+            atr_val = df_k_daily['ATR'].iloc[-1] if not pd.isna(df_k_daily['ATR'].iloc[-1]) else (curr_price * 0.02)
             prev_high = df_k_daily['High'].iloc[-2] if len(df_k_daily) > 1 else high_price
             prev_low = df_k_daily['Low'].iloc[-2] if len(df_k_daily) > 1 else low_price
         else:
-            ma5, ma20, prev_high, prev_low = curr_price, curr_price, high_price, low_price
+            ma5, ma20, atr_val, prev_high, prev_low = curr_price, curr_price, curr_price * 0.02, high_price, low_price
 
         chip_summary = {"foreign": 120, "investment": 50, "margin_add": -150, "day_trade_broker": True}
 
-        # 🤖 恢復資深證券分析師 AI 綜合評估與關鍵支撐/壓力建議
+        # 🤖 資深證券分析師 AI 綜合評估與關鍵支撐/壓力建議
         st.subheader("👨‍💼 資深證券分析師 AI 綜合評估 (30年實戰經驗)")
         ai_res = ai_senior_analyst_diagnosis_advanced(target_code, target_name, curr_price, ma5, ma20, prev_high, prev_low, balance_point, chip_summary)
         
@@ -567,6 +580,28 @@ else:
         if custom_target_price == 0.0:
             st.session_state["custom_target"] = ai_res['resistance']
             custom_target_price = ai_res['resistance']
+
+        # 🎯 恢復：四大停損與停利參考多重試算模組
+        st.markdown("#### 2️⃣ 四大停損與停利參考設定 (多重停損綠色 / 多重停利紅色)")
+        col_sl_box, col_tp_box = st.columns(2)
+        
+        if "短線" in trade_style: sl_pct, tp_pct = 0.04, 0.06
+        elif "波段" in trade_style: sl_pct, tp_pct = 0.07, 0.15
+        else: sl_pct, tp_pct = 0.12, 0.30
+
+        with col_sl_box:
+            st.success("🛡️ **多重停損參考試算 (綠色)**")
+            st.write(f"* **百分比法 ({sl_pct*100:.0f}%)**：`{curr_price * (1 - sl_pct):.2f}` 元")
+            st.write(f"* **ATR 波動法 (1.5xATR)**：`{curr_price - (1.5 * atr_val):.2f}` 元")
+            st.write(f"* **均線/技術位法 (跌破5MA)**：`{ma5:.2f}` 元")
+            st.write(f"* **K線法 (前低支撐)**：`{prev_low:.2f}` 元")
+
+        with col_tp_box:
+            st.error("🎯 **多重停利參考試算 (紅色)**")
+            st.write(f"* **百分比法 ({tp_pct*100:.0f}%)**：`{curr_price * (1 + tp_pct):.2f}` 元")
+            st.write(f"* **ATR 波動法 (3xATR)**：`{curr_price + (3 * atr_val):.2f}` 元")
+            st.write(f"* **移動停利線 (沿5MA)**：`{ma5:.2f}` 元")
+            st.write(f"* **前高壓力區停利**：`{prev_high:.2f}` 元")
 
         # 處理分時與多週期歷史資料
         if len(df_raw) > 0:
