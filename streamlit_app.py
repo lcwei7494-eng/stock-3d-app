@@ -74,7 +74,7 @@ with st.expander("📚 實戰戰法指南（三維定位法 + 進場 / 停損停
 
 # 自選股快捷區
 if "watchlist" not in st.session_state:
-    st.session_state["watchlist"] = ["3042 晶技", "2330 台積電", "2317 鴻海", "3006 晶豪科"]
+    st.session_state["watchlist"] = ["3006 晶豪科", "3042 晶技", "2330 台積電", "2317 鴻海"]
 if "selected_stock" not in st.session_state:
     st.session_state["selected_stock"] = "3006"
 
@@ -142,6 +142,8 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                             curr_price = float(getattr(snap, 'close', 0.0))
                             high_price = float(getattr(snap, 'high', 0.0))
                             low_price = float(getattr(snap, 'low', 0.0))
+                            open_price = float(getattr(snap, 'open', curr_price))
+                            volume = int(getattr(snap, 'total_volume', 0))
                             avg_price = float(getattr(snap, 'average_price', curr_price))
                             if avg_price == 0: avg_price = curr_price
                             outer_vol = float(getattr(snap, 'ask_volume', 0.0))
@@ -159,17 +161,46 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                             col2.metric("2️⃣ 動能係數", f"{momentum_coef:.2f}")
                             col3.metric("3️⃣ 多空平衡點", f"{balance_point:.2f}元")
 
-                            # 動態設定抓取 60 天前的日 K 線
-                            start_date = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%d")
-                            kbars = api.kbars(contract, start=start_date, ktype=sj.constant.KBarType.Day)
+                            # 正確抓取歷史日 K 線 (指定 ktype 為 Day)
+                            start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+                            end_date = datetime.now().strftime("%Y-%m-%d")
+                            
+                            kbars = api.kbars(
+                                contract=contract,
+                                start=start_date,
+                                end=end_date,
+                                ktype=sj.constant.KBarType.Day
+                            )
                             
                             df_k = pd.DataFrame({
                                 "Date": kbars.ts, "Open": kbars.Open, "High": kbars.High,
                                 "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume
                             })
-                            df_k["Date"] = pd.to_datetime(df_k["Date"])
                             
-                            # 正確計算 5MA 與 20MA
+                            # 轉為 datetime 與日期字串格式
+                            df_k["Date"] = pd.to_datetime(df_k["Date"] / 1000000000, unit='s', errors='coerce')
+                            df_k = df_k.dropna(subset=["Date"]).sort_values("Date").reset_index(drop=True)
+                            
+                            today_str = datetime.now().strftime("%Y-%m-%d")
+                            
+                            # 如果歷史日 K 的最後一筆不是今天，則把今天的即時 snapshot 補進最後一筆計算最新 5MA/20MA
+                            if len(df_k) == 0 or df_k['Date'].iloc[-1].strftime("%Y-%m-%d") != today_str:
+                                new_row = pd.DataFrame([{
+                                    "Date": pd.to_datetime(today_str),
+                                    "Open": open_price,
+                                    "High": high_price,
+                                    "Low": low_price,
+                                    "Close": curr_price,
+                                    "Volume": volume
+                                }])
+                                df_k = pd.concat([df_k, new_row], ignore_index=True)
+                            else:
+                                # 若最後一筆是今天，用盤中最新行情更新最後一筆
+                                df_k.loc[df_k.index[-1], "Close"] = curr_price
+                                df_k.loc[df_k.index[-1], "High"] = max(df_k.loc[df_k.index[-1], "High"], high_price)
+                                df_k.loc[df_k.index[-1], "Low"] = min(df_k.loc[df_k.index[-1], "Low"], low_price)
+
+                            # 正確計算 5 日均線 (5MA) 與 20 日均線 (20MA)
                             df_k["5MA"] = df_k["Close"].rolling(5).mean()
                             df_k["20MA"] = df_k["Close"].rolling(20).mean()
                             
@@ -201,7 +232,8 @@ if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
                             with col_sl:
                                 st.error("🛡️ **建議停損點**")
                                 st.write(f"* **短線固定停損 (5%)**：`{curr_price * 0.95:.2f}` 元")
-                                st.write(f"* **均線停損 (5MA)**：`{ma5:.2f}` 元")
+                                st.write(f"* **5日均線停損 (5MA)**：`{ma5:.2f}` 元")
+                                st.write(f"* **20日均線停損 (20MA)**：`{ma20:.2f}` 元")
                                 st.write(f"* **平衡點停損**：`{balance_point:.2f}` 元")
                             with col_tp:
                                 st.success("🎯 **建議停利點**")
