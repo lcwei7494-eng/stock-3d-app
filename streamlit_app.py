@@ -97,6 +97,26 @@ if st.session_state["watchlist"]:
             st.session_state["selected_stock"] = code_part
             st.rerun()
 
+# 股票輸入框與快速新增按鈕
+col_input, col_add_btn = st.columns([3, 1])
+with col_input:
+    stock_input = st.text_input("請輸入股票代碼或公司名稱", value=st.session_state["selected_stock"])
+
+# 自動解析當前輸入的股票資訊
+target_code, target_name = get_stock_code_and_name(stock_input)
+
+with col_add_btn:
+    st.write("&#160;")  # 垂直對齊調高
+    if target_code and target_name:
+        current_label = f"{target_code} {target_name}"
+        if current_label in st.session_state["watchlist"]:
+            st.button("✅ 已加入", disabled=True, key="add_watchlist_disabled")
+        else:
+            if st.button("➕ 加自選", key="add_watchlist_btn"):
+                st.session_state["watchlist"].append(current_label)
+                st.success(f"已加入：{current_label}")
+                st.rerun()
+
 # 自選股管理選單（可手動刪除）
 with st.expander("⚙️ 管理/刪除自選股清單"):
     remove_item = st.selectbox("選擇要刪除的自選股", ["（請選擇）"] + st.session_state["watchlist"])
@@ -106,32 +126,14 @@ with st.expander("⚙️ 管理/刪除自選股清單"):
             st.success(f"已從自選股移除：{remove_item}")
             st.rerun()
 
-# 股票輸入框
-stock_input = st.text_input("請輸入股票代碼或公司名稱", value=st.session_state["selected_stock"])
-
+# 分析執行區
 if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
     if not api_key or not secret_key:
         st.error("請在左側選單填寫 API Key 與 Secret Key，或設定 Streamlit Secrets！")
     else:
-        target_code, target_name = get_stock_code_and_name(stock_input)
-        
         if not target_code:
             st.error(f"找不到股票：『{stock_input}』，請確認公司名稱或直接輸入 4 位數代碼。")
         else:
-            # 搜尋完畢後提供一鍵加入自選股按鈕
-            stock_label = f"{target_code} {target_name}"
-            col_add1, col_add2 = st.columns([3, 1])
-            with col_add1:
-                st.info(f"當前分析目標：**{stock_label}**")
-            with col_add2:
-                if stock_label in st.session_state["watchlist"]:
-                    st.button("✅ 已在自選股中", disabled=True)
-                else:
-                    if st.button("➕ 加入自選股"):
-                        st.session_state["watchlist"].append(stock_label)
-                        st.success(f"已成功加入：{stock_label}")
-                        st.rerun()
-
             with st.spinner(f"已識別股票代碼【{target_code}】，正在讀取即時與日線數據..."):
                 api = None
                 try:
