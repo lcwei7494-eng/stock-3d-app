@@ -176,13 +176,56 @@ with st.form(key="search_form"):
     st.markdown("##### ⚙️ 手動交易計劃設定 (左側停損價綠色 / 右側目標價紅色)")
     col_stop, col_target = st.columns(2)
     with col_stop:
-        st.markdown("<h6 style='color: green;'>🛡️ 手動停損價 </h6>", unsafe_allow_html=True)
+        st.markdown("<h6 style='color: green;'>🛡️ 手動停損價 (左側 / 綠色)</h6>", unsafe_allow_html=True)
         custom_stop_price = st.number_input("停損價 (元)", value=float(st.session_state.get("custom_stop", 0.0)), step=0.5, label_visibility="collapsed")
     with col_target:
-        st.markdown("<h6 style='color: red;'>🎯 手動目標價 </h6>", unsafe_allow_html=True)
+        st.markdown("<h6 style='color: red;'>🎯 手動目標價 (右側 / 紅色)</h6>", unsafe_allow_html=True)
         custom_target_price = st.number_input("目標價 (元)", value=float(st.session_state.get("custom_target", 0.0)), step=0.5, label_visibility="collapsed")
 
     submit_button = st.form_submit_button("🚀 抓取數據並分析 (Enter)", type="primary")
+
+# =========================================================
+# 💰 手動交易記帳與試算功能區 (新增功能)
+# =========================================================
+with st.expander("💰 交易記帳與精確損益/手續費試算器", expanded=False):
+    st.markdown("##### 📝 手動輸入交易資訊")
+    col_t1, col_t2, col_t3 = st.columns(3)
+    with col_t1:
+        trade_date = st.date_input("📅 交易日期", datetime.now())
+    with col_t2:
+        trade_action = st.selectbox("🔄 交易動作", ["買進", "賣出"])
+    with col_t3:
+        trade_shares = st.number_input("📦 交易股數", value=1000, step=1000)
+
+    col_p1, col_p2 = st.columns(2)
+    with col_p1:
+        buy_p = st.number_input("💵 買進成交價 (元)", value=0.0, step=0.5)
+    with col_p2:
+        sell_p = st.number_input("💴 賣出成交價 (元)", value=0.0, step=0.5)
+
+    # 手續費與稅金算式 (手續費 0.1425% 打 2 折，最低 20 元；賣出證交稅 0.3%)
+    buy_fee = max(20, round(buy_p * trade_shares * 0.001425 * 0.2)) if buy_p > 0 else 0
+    sell_fee = max(20, round(sell_p * trade_shares * 0.001425 * 0.2)) if sell_p > 0 else 0
+    tax = round(sell_p * trade_shares * 0.003) if sell_p > 0 else 0
+
+    col_calc1, col_calc2 = st.columns(2)
+    with col_calc1:
+        st.markdown(f"**買入總成本**：`{round(buy_p * trade_shares + buy_fee)}` 元 (含手續費 `{buy_fee}` 元)")
+    with col_calc2:
+        st.markdown(f"**賣出淨收入**：`{round(sell_p * trade_shares - sell_fee - tax)}` 元 (含手續費 `{sell_fee}` 元 + 證交稅 `{tax}` 元)")
+
+    # 損益試算： (賣出金額 - 賣出手續費 - 證交稅) - (買入金額 + 買入手續費)
+    if buy_p > 0 and sell_p > 0:
+        total_cost = (buy_p * trade_shares) + buy_fee
+        total_revenue = (sell_p * trade_shares) - sell_fee - tax
+        net_profit = total_revenue - total_cost
+        profit_rate = (net_profit / total_cost) * 100 if total_cost > 0 else 0
+
+        st.markdown("---")
+        if net_profit >= 0:
+            st.success(f"🎉 **預估淨獲利**：`+{round(net_profit)}` 元 | 報酬率：`+{profit_rate:.2f}%`")
+        else:
+            st.error(f"📉 **預估淨虧損**：`{round(net_profit)}` 元 | 報酬率：`{profit_rate:.2f}%`")
 
 # 加自選按鈕
 if target_code and target_name:
@@ -330,7 +373,7 @@ if submit_button or auto_refresh:
                             if entry_list:
                                 for entry in entry_list: st.write(entry)
                             else:
-                                st.write("ℹ️️ 當前暫無明顯突破型態，建議等待回測支撐或帶量突破[cite: 10]。")
+                                st.write("ℹ️ 當前暫無明顯突破型態，建議等待回測支撐或帶量突破[cite: 10]。")
 
                             # 2. 停損停利設定
                             st.markdown("#### 2️⃣ 四大停損與停利參考設定 (多重停損綠色 / 多重停利紅色)")
@@ -413,7 +456,7 @@ if submit_button or auto_refresh:
 
                                 # 條件 3：5分K出現兩條長長的上影線且不再創高
                                 if upper_shadow1 > (k_body * 1.2) and upper_shadow2 > (abs(prev_k["Close"] - prev_k["Open"]) * 1.2) and curr_k["High"] <= prev_k["High"]:
-                                    condition_alerts.append((400, f"⚠️ **【條件 3 觸發】**：【{contract.name}】5分K 連續出現兩條長上影線且不再創高，高檔買盤衰竭！"))
+                                    condition_alerts.append((400, f"⚠️️ **【條件 3 觸發】**：【{contract.name}】5分K 連續出現兩條長上影線且不再創高，高檔買盤衰竭！"))
 
                                 # 條件 4：量能縮減而股價不再續漲/續跌或站不上目標價
                                 if curr_k["Volume"] < (df_5m["Volume"].mean() * 0.6) and abs(curr_k["Close"] - prev_k["Close"]) < (curr_price * 0.002):
@@ -434,7 +477,7 @@ if submit_button or auto_refresh:
                                         else:
                                             st.info(alert_msg)
                                 else:
-                                    st.info(f"ℹ️️ 【{contract.name}】盤中盯盤進行中，未觸發上述 5 大條件警示訊號。")
+                                    st.info(f"ℹ️ 【{contract.name}】盤中盯盤進行中，未觸發上述 5 大條件警示訊號。")
 
                             # 展示近 30 根 5分K 與布林通道圖表
                             st.subheader(f"📊 近 30 根 5分K 線與布林通道 -【{contract.name}】")
