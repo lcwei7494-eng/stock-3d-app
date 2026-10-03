@@ -6,9 +6,9 @@ import plotly.graph_objects as go
 import time
 from datetime import datetime, timedelta
 
-st.set_page_config(page_title="三維定位法與盤前掃描/5分K當沖雷達", layout="centered")
+st.set_page_config(page_title="三維定位法 & 盤前掃描/盤中盯盤雷達", layout="centered")
 
-st.title("📈 三維定位法 & 盤前檢視/5分K當沖監控系統")
+st.title("📈 三維定位法 & 盤前掃描 / 5分K盯盤系統")
 
 # 自動從 Streamlit Secrets 讀取 API Key
 api_key = st.secrets.get("SHIOAJI_API_KEY", "")
@@ -87,7 +87,33 @@ def calculate_atr(df, period=14):
     df['ATR'] = df['TR'].rolling(period).mean()
     return df
 
-# 教學與戰法指南區塊 (4張圖表精華)
+# AI 技術面量化診斷 (模擬 Gemini API 量化評估邏輯)
+def ai_stock_diagnosis(code, name, curr, ma5, ma20, prev_high, prev_low, balance_point):
+    support_price = round(min(ma5, prev_low), 2)
+    resistance_price = round(max(prev_high, balance_point * 1.02), 2)
+    
+    if curr > ma5 and ma5 > ma20:
+        trend = "多頭排列 (強勢看多)"
+        entry_price = round(max(ma5, support_price), 2)
+        reason = "股價位於 5MA 與 20MA 上方，回踩支撐不破可考慮多單進場。"
+    elif curr < ma5 and ma5 < ma20:
+        trend = "空頭排列 (偏空觀望)"
+        entry_price = round(min(ma5, resistance_price), 2)
+        reason = "均線呈空頭排列，暫不宜盲目抄底，可待反彈至壓力價尋找空點或觀望。"
+    else:
+        trend = "震盪整理 (多空對峙)"
+        entry_price = round(balance_point, 2)
+        reason = "價格於均線區間內震盪，建議於多空平衡點或支撐區低吸高拋。"
+        
+    return {
+        "support": support_price,
+        "resistance": resistance_price,
+        "trend": trend,
+        "entry_price": entry_price,
+        "reason": reason
+    }
+
+# 教學與戰法指南區塊
 with st.expander("📚 實戰戰法指南（進場點 / 停損停利 / 轉弱判讀 / 阿宇策略圖解）"):
     st.markdown("""
     ### 🎯 四大圖卡實戰判讀標準
@@ -116,7 +142,7 @@ if st.session_state["watchlist"]:
             st.rerun()
 
 # 刪除自選股
-with st.expander("⚙️ 管理/刪除自選股清單"):
+with st.expander("⚙️️ 管理/刪除自選股清單"):
     remove_item = st.selectbox("選擇要刪除的自選股", ["（請選擇）"] + st.session_state["watchlist"])
     if st.button("❌ 刪除選取的自選股"):
         if remove_item != "（請選擇）":
@@ -125,7 +151,7 @@ with st.expander("⚙️ 管理/刪除自選股清單"):
             st.rerun()
 
 # =========================================================
-# 表單輸入區（支援 Enter 鍵直接觸發查詢）
+# 表單輸入與手動交易計畫設定區
 # =========================================================
 with st.form(key="search_form"):
     col_input, col_style = st.columns([2, 1])
@@ -135,6 +161,15 @@ with st.form(key="search_form"):
         trade_style = st.selectbox("🎯 交易風格選單 (圖四對照)", ["短線/當沖 (1~3天)", "波段操作 (幾天~幾週)", "長線投資 (1個月以上)"])
     
     target_code, target_name = get_stock_code_and_name(stock_input)
+    
+    # 手動設定目標價與停損價（預設為 0，分析後自動帶入參考值或由使用者修改）
+    st.markdown("##### ⚙️ 手動交易計劃設定 (用於盤中觸發警示)")
+    col_target, col_stop = st.columns(2)
+    with col_target:
+        custom_target_price = st.number_input("🎯 手動目標價 (元)", value=float(st.session_state.get("custom_target", 0.0)), step=0.5)
+    with col_stop:
+        custom_stop_price = st.number_input("🛡️️ 手動停損價 (元)", value=float(st.session_state.get("custom_stop", 0.0)), step=0.5)
+
     submit_button = st.form_submit_button("🚀 抓取數據並分析 (Enter)", type="primary")
 
 # 加自選按鈕
@@ -242,6 +277,27 @@ if submit_button or auto_refresh:
                             prev_low = df_k['Low'].iloc[-2] if len(df_k) > 1 else low_price
 
                             # =========================================================
+                            # 🤖 AI 智能鏈接評估 (Gemini AI 支撐/壓力/多空/進場價)
+                            # =========================================================
+                            st.subheader("🤖 Gemini AI 智能分析 (支撐/壓力/多空與建議進場價)")
+                            ai_res = ai_stock_diagnosis(target_code, target_name, curr_price, ma5, ma20, prev_high, prev_low, balance_point)
+                            
+                            col_ai1, col_ai2 = st.columns(2)
+                            with col_ai1:
+                                st.info(f"🟢 **建議關鍵支撐價**：`{ai_res['support']}` 元")
+                                st.write(f"📊 **多空趨勢判定**：**{ai_res['trend']}**")
+                            with col_ai2:
+                                st.warning(f"🔴 **建議關鍵壓力價**：`{ai_res['resistance']}` 元")
+                                st.success(f"🎯 **建議進場價位**：`{ai_res['entry_price']}` 元")
+                            st.caption(f"💡 AI 進場邏輯評估：{ai_res['reason']}")
+
+                            # 更新 session state 供表單帶入預設值
+                            if custom_target_price == 0.0:
+                                st.session_state["custom_target"] = ai_res['resistance']
+                            if custom_stop_price == 0.0:
+                                st.session_state["custom_stop"] = ai_res['support']
+
+                            # =========================================================
                             # 🔍 盤前數據全表檢視 (四大圖卡檢驗標準)
                             # =========================================================
                             st.subheader("🔍 盤前數據全表檢視 (四大圖卡標準綜合診斷)")
@@ -288,7 +344,7 @@ if submit_button or auto_refresh:
                                 st.write(f"* **前高壓力區停利**：`{prev_high:.2f}` 元[cite: 11, 13]")
 
                             # 3. 6大轉弱避險訊號 (圖三)
-                            st.markdown("#### 3️⃣ 6大轉弱訊號防范 (圖三對照)")
+                            st.markdown("#### 3️⃣ 6大轉弱訊號防範 (圖三對照)")
                             if curr_price < ma5:
                                 st.error("❌ **跌破重要均線**：股價已跌破 5 日均線[cite: 12]。")
                             if bias_rate > 3.0:
@@ -297,9 +353,9 @@ if submit_button or auto_refresh:
                                 st.error("❌ **失去平衡點**：收盤價低於多空平衡點[cite: 12]。")
 
                             # =========================================================
-                            # ⚡ 5 分 K 線當沖轉折即時盯盤與聲響警示
+                            # ⚡ 5 分 K 線當沖轉折即時盯盤與五大條件聲響警示
                             # =========================================================
-                            st.subheader("⚡ 5分K 當沖轉折雷達與即時警示")
+                            st.subheader("⚡ 5分K 當沖轉折雷達與盤中 5 大觸發條件盯盤")
                             
                             if len(df_raw) > 0:
                                 df_raw["DateTime"] = pd.to_datetime(df_raw["ts"] / 1000000000, unit='s', errors='coerce')
@@ -316,57 +372,55 @@ if submit_button or auto_refresh:
                             df_5m["LowerBand"] = df_5m["20MA"] - (df_5m["Std"] * 2)
                             df_5m = calculate_kd(df_5m)
 
-                            if len(df_5m) >= 2:
+                            if len(df_5m) >= 3:
                                 curr_k = df_5m.iloc[-1]
                                 prev_k = df_5m.iloc[-2]
-                                max_vol = df_5m["Volume"].tail(10).max()
+                                prev_k2 = df_5m.iloc[-3]
+                                max_vol_day = df_5m["Volume"].max()
+                                max_price_day = df_5m["High"].max()
                                 
                                 k_body = abs(curr_k["Close"] - curr_k["Open"])
-                                upper_shadow = curr_k["High"] - max(curr_k["Close"], curr_k["Open"])
-                                lower_shadow = min(curr_k["Close"], curr_k["Open"]) - curr_k["Low"]
+                                upper_shadow1 = curr_k["High"] - max(curr_k["Close"], curr_k["Open"])
+                                upper_shadow2 = prev_k["High"] - max(prev_k["Close"], prev_k["Open"])
                                 
-                                bull_turn_signals = []
-                                bear_turn_signals = []
-                                
-                                # 1. 爆量長影線
-                                if curr_k["Volume"] >= max_vol and lower_shadow > (k_body * 1.5):
-                                    bull_turn_signals.append("🔥 **爆量長下影線**：低檔強勁支撐，超跌 V 轉 Signal！")
-                                if curr_k["Volume"] >= max_vol and upper_shadow > (k_body * 1.5):
-                                    bear_turn_signals.append("⚠️ **爆量長上影線**：高檔主力出貨，空頭 A 轉 Signal！")
-                                
-                                # 2. 布林通道觸軌
-                                if curr_k["High"] >= curr_k["UpperBand"] and curr_k["Close"] < curr_k["Open"]:
-                                    bear_turn_signals.append("⚠️️ **觸及布林上軌+收黑**：多頭受阻於頂部，短線轉折向下！")
-                                if curr_k["Low"] <= curr_k["LowerBand"] and curr_k["Close"] > curr_k["Open"]:
-                                    bull_turn_signals.append("🔥 **觸及布林下軌+站回**：超跌破軌收紅，V 轉買點！")
-                                
-                                # 3. 吞噬訊號與 KD 高低檔交叉
-                                if (prev_k["Close"] < prev_k["Open"]) and (curr_k["Close"] > curr_k["Open"]) and \
-                                   (curr_k["Close"] > prev_k["Open"]) and (curr_k["Open"] < prev_k["Close"]) and \
-                                   (curr_k["K"] < 30 and curr_k["K"] > curr_k["D"]):
-                                    bull_turn_signals.append(f"🔥 **陽線吞噬 + KD低檔金叉**：極佳多單進場點！停損設 `{curr_k['Low']:.2f}` 元。")
-                                
-                                if (prev_k["Close"] > prev_k["Open"]) and (curr_k["Close"] < curr_k["Open"]) and \
-                                   (curr_k["Close"] < prev_k["Open"]) and (curr_k["Open"] > prev_k["Close"]) and \
-                                   (curr_k["K"] > 70 and curr_k["K"] < curr_k["D"]):
-                                    bear_turn_signals.append(f"⚠️ **陰線吞噬 + KD高檔死叉**：極佳空單進場點！停損設 `{curr_k['High']:.2f}` 元。")
+                                condition_alerts = []
 
-                                # 4. 時間變盤點提醒
-                                now_time_str = datetime.now().strftime("%H:%M")
-                                if now_time_str in ["09:30", "10:00", "10:30", "12:00"]:
-                                    st.warning(f"🕒 **關鍵時間變盤點 ({now_time_str})**：主力發動收割或轉折時間，請注意量價！")
+                                # 條件 1：股價來到目標價、支撐價或壓力價
+                                if custom_target_price > 0 and curr_price >= custom_target_price:
+                                    condition_alerts.append((1000, f"🎯 **【條件 1 觸發】**：股價已達手動目標價 `{custom_target_price}` 元！"))
+                                if curr_price <= ai_res['support']:
+                                    condition_alerts.append((800, f"🛡️ **【條件 1 觸發】**：股價已觸及 AI 支撐價 `{ai_res['support']}` 元！"))
+                                if curr_price >= ai_res['resistance']:
+                                    condition_alerts.append((500, f"🔴 **【條件 1 觸發】**：股價已觸及 AI 壓力價 `{ai_res['resistance']}` 元！"))
 
-                                # 聲響與視窗警示
-                                if bull_turn_signals:
-                                    play_sound(freq=1000, duration=0.8)
-                                    for b_sig in bull_turn_signals: st.success(b_sig)
-                                
-                                if bear_turn_signals:
-                                    play_sound(freq=400, duration=0.8)
-                                    for r_sig in bear_turn_signals: st.error(r_sig)
-                                
-                                if not bull_turn_signals and not bear_turn_signals:
-                                    st.info("ℹ️ 5分K 趨勢正常，未觸發轉折訊號（持續即時盯盤中...）。")
+                                # 條件 2：出現盤中最大量＋當日最高價
+                                if curr_k["Volume"] >= max_vol_day and curr_k["High"] >= max_price_day:
+                                    condition_alerts.append((1200, "🔥 **【條件 2 觸發】**：出現當日最大量且同時創下盤中最高價！小心高檔爆量拉回！"))
+
+                                # 條件 3：5分K出現兩條長長的上影線且不再創高
+                                if upper_shadow1 > (k_body * 1.2) and upper_shadow2 > (abs(prev_k["Close"] - prev_k["Open"]) * 1.2) and curr_k["High"] <= prev_k["High"]:
+                                    condition_alerts.append((400, "⚠️ **【條件 3 觸發】**：5分K 連續出現兩條長上影線且不再創高，高檔買盤衰竭！"))
+
+                                # 條件 4：量能縮減而股價不再續漲/續跌或站不上目標價
+                                if curr_k["Volume"] < (df_5m["Volume"].mean() * 0.6) and abs(curr_k["Close"] - prev_k["Close"]) < (curr_price * 0.002):
+                                    condition_alerts.append((600, "ℹ️ **【條件 4 觸發】**：量能顯著縮減，股價呈現滯漲/滯跌或站不上目標價！"))
+
+                                # 條件 5：下殺到停損價
+                                if custom_stop_price > 0 and curr_price <= custom_stop_price:
+                                    condition_alerts.append((300, f"🚨 **【條件 5 觸發】**：股價下殺已觸及停損價 `{custom_stop_price}` 元！請嚴格執行停損防守！"))
+
+                                # 發聲與畫面輸出
+                                if condition_alerts:
+                                    for freq, alert_msg in condition_alerts:
+                                        play_sound(freq=freq, duration=0.8)
+                                        if "條件 5" in alert_msg or "條件 3" in alert_msg:
+                                            st.error(alert_msg)
+                                        elif "條件 1" in alert_msg or "條件 2" in alert_msg:
+                                            st.warning(alert_msg)
+                                        else:
+                                            st.info(alert_msg)
+                                else:
+                                    st.info("ℹ️ 盤中盯盤進行中，未觸發上述 5 大條件警示訊號。")
 
                             # 展示近 30 根 5分K 與布林通道圖表
                             st.subheader("📊 近 30 根 5分K 線與布林通道")
