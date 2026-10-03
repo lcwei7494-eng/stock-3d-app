@@ -1,3 +1,4 @@
 streamlit
 shioaji
 pandas
+twstock
