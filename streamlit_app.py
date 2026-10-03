@@ -128,12 +128,12 @@ def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high,
 with st.expander("📚 實戰戰法指南（進場點 / 停損停利 / 轉弱判讀 / 策略圖解）"):
     st.markdown("""
     ### 🎯 四大圖卡實戰判讀標準
-    1. **圖一：6種進場點**：回踩支撐、突破壓力/整理區帶量、站上5/10日均線、突破下降趨勢線、缺口進場[cite: 10]。
-    2. **圖二：停損停利法**：支撐停損、均線停損、固定比例停損，壓力停利與沿5日線移動停利[cite: 11]。
-    3. **圖三：6大轉弱訊號**：跌破重要均線/支撐、爆量長黑K、高檔長上影線、量價背離、頭部型態[cite: 12]。
+    1. **圖一：6種進場點**：回踩支撐、突破壓力/整理區帶量、站上5/10日均線、突破下降趨勢線、缺口進場。
+    2. **圖二：停損停利法**：支撐停損、均線停損、固定比例停損，壓力停利與沿5日線移動停利。
+    3. **圖三：6大轉弱訊號**：跌破重要均線/支撐、爆量長黑K、高檔長上影線、量價背離、頭部型態。
     4. **圖四：停損停利指南**：
-       * **四大設定法**：百分比法、技術位法、K線法、ATR波幅法（1~2倍ATR停損，2~4倍ATR停利）[cite: 13]。
-       * **風格定位**：短線當沖 (停損3~5%/停利5~8%)、波段 (停損5~10%/停利10~20%)、長線 (停損10~15%/停利20~50%)[cite: 13]。
+       * **四大設定法**：百分比法、技術位法、K線法、ATR波幅法（1~2倍ATR停損，2~4倍ATR停利）。
+       * **風格定位**：短線當沖 (停損3~5%/停利5~8%)、波段 (停損5~10%/停利10~20%)、長線 (停損10~15%/停利20~50%)。
     """)
 
 # 自選股快捷區
@@ -182,13 +182,13 @@ with st.form(key="search_form"):
     
     target_code, target_name = get_stock_code_and_name(stock_input)
     
-    st.markdown("##### ⚙️ 手動交易計劃設定 (左側停損價綠色 / 右側目標價紅色)")
+    st.markdown("##### ⚙️ 手動交易計劃設定 (左側預設支撐價 / 右側預設壓力價)")
     col_stop, col_target = st.columns(2)
     with col_stop:
-        st.markdown("<h6 style='color: green;'>🛡️ 手動停損價 (左側 / 綠色)</h6>", unsafe_allow_html=True)
+        st.markdown("<h6 style='color: green;'>🛡️ 手動停損/支撐價 (左側 / 綠色)</h6>", unsafe_allow_html=True)
         custom_stop_price = st.number_input("停損價 (元)", value=float(st.session_state.get("custom_stop", 0.0)), step=0.5, label_visibility="collapsed")
     with col_target:
-        st.markdown("<h6 style='color: red;'>🎯 手動目標價 (右側 / 紅色)</h6>", unsafe_allow_html=True)
+        st.markdown("<h6 style='color: red;'>🎯 手動目標/壓力價 (右側 / 紅色)</h6>", unsafe_allow_html=True)
         custom_target_price = st.number_input("目標價 (元)", value=float(st.session_state.get("custom_target", 0.0)), step=0.5, label_visibility="collapsed")
 
     submit_button = st.form_submit_button("🚀 抓取數據並分析 (Enter)", type="primary")
@@ -400,12 +400,13 @@ if submit_button or auto_refresh:
                             col_chip3.metric("融資增減", f"{chip_summary['margin_add']:+} 張")
                             col_chip4.metric("隔日沖分點影子", "⚠ 顯著存在" if chip_summary['day_trade_broker'] else "✅ 相對乾淨")
 
-                            if custom_target_price == 0.0:
-                                st.session_state["custom_target"] = ai_res['resistance']
-                                custom_target_price = ai_res['resistance']
+                            # 自動為左側（停損價）預設填入關鍵支撐價，右側（目標價）預設填入關鍵壓力價
                             if custom_stop_price == 0.0:
                                 st.session_state["custom_stop"] = ai_res['support']
                                 custom_stop_price = ai_res['support']
+                            if custom_target_price == 0.0:
+                                st.session_state["custom_target"] = ai_res['resistance']
+                                custom_target_price = ai_res['resistance']
 
                             # 盤前數據全表檢視
                             st.subheader(f"🔍 盤前數據全表檢視 -【{contract.code} {contract.name}】")
@@ -413,14 +414,14 @@ if submit_button or auto_refresh:
                             # 1. 6種進場型態檢驗
                             st.markdown("#### 1️⃣ 6種進場型態評估 (圖一對照)")
                             entry_list = []
-                            if curr_price > ma5 and ma5 > ma20: entry_list.append("✅ **均線進場**：股價站上 5日/20日均線，多頭排列[cite: 10]。")
-                            if curr_price > prev_high: entry_list.append("✅ **突破壓力進場**：股價突破前一日高點壓力[cite: 10]。")
-                            if 1.0 <= bias_rate <= 2.0: entry_list.append("✅ **回踩/健康拉升**：成本乖離率介於 +1%~+2%，結構健康[cite: 10]。")
+                            if curr_price > ma5 and ma5 > ma20: entry_list.append("✅ **均線進場**：股價站上 5日/20日均線，多頭排列。")
+                            if curr_price > prev_high: entry_list.append("✅ **突破壓力進場**：股價突破前一日高點壓力。")
+                            if 1.0 <= bias_rate <= 2.0: entry_list.append("✅ **回踩/健康拉升**：成本乖離率介於 +1%~+2%，結構健康。")
                             
                             if entry_list:
                                 for entry in entry_list: st.write(entry)
                             else:
-                                st.write("ℹ️ 當前暫無明顯突破型態，建議等待回測支撐或帶量突破[cite: 10]。")
+                                st.write("ℹ️ 當前暫無明顯突破型態，建議等待回測支撐或帶量突破。")
 
                             # 2. 停損停利設定
                             st.markdown("#### 2️⃣ 四大停損與停利參考設定 (多重停損綠色 / 多重停利紅色)")
@@ -431,24 +432,24 @@ if submit_button or auto_refresh:
                             else: sl_pct, tp_pct = 0.12, 0.30
 
                             with col_sl_box:
-                                st.success("🛡️️ **多重停損試算 (綠色)**")
-                                st.write(f"* **百分比法 ({sl_pct*100:.0f}%)**：`{curr_price * (1 - sl_pct):.2f}` 元[cite: 13]")
-                                st.write(f"* **ATR 波動法 (1.5xATR)**：`{curr_price - (1.5 * atr_val):.2f}` 元[cite: 13]")
-                                st.write(f"* **均線/技術位法 (跌破5MA)**：`{ma5:.2f}` 元[cite: 11, 13]")
-                                st.write(f"* **K線法 (前低支撐)**：`{prev_low:.2f}` 元[cite: 12, 13]")
+                                st.success("🛡️ **多重停損試算 (綠色)**")
+                                st.write(f"* **百分比法 ({sl_pct*100:.0f}%)**：`{curr_price * (1 - sl_pct):.2f}` 元")
+                                st.write(f"* **ATR 波動法 (1.5xATR)**：`{curr_price - (1.5 * atr_val):.2f}` 元")
+                                st.write(f"* **均線/技術位法 (跌破5MA)**：`{ma5:.2f}` 元")
+                                st.write(f"* **K線法 (前低支撐)**：`{prev_low:.2f}` 元")
 
                             with col_tp_box:
                                 st.error("🎯 **多重停利試算 (紅色)**")
-                                st.write(f"* **百分比法 ({tp_pct*100:.0f}%)**：`{curr_price * (1 + tp_pct):.2f}` 元[cite: 13]")
-                                st.write(f"* **ATR 波動法 (3xATR)**：`{curr_price + (3 * atr_val):.2f}` 元[cite: 13]")
-                                st.write(f"* **移動停利線 (沿5MA)**：`{ma5:.2f}` 元[cite: 11, 13]")
-                                st.write(f"* **前高壓力區停利**：`{prev_high:.2f}` 元[cite: 11, 13]")
+                                st.write(f"* **百分比法 ({tp_pct*100:.0f}%)**：`{curr_price * (1 + tp_pct):.2f}` 元")
+                                st.write(f"* **ATR 波動法 (3xATR)**：`{curr_price + (3 * atr_val):.2f}` 元")
+                                st.write(f"* **移動停利線 (沿5MA)**：`{ma5:.2f}` 元")
+                                st.write(f"* **前高壓力區停利**：`{prev_high:.2f}` 元")
 
                             # 3. 6大轉弱避險訊號
                             st.markdown("#### 3️⃣ 6大轉弱訊號防範 (圖三對照)")
-                            if curr_price < ma5: st.error("❌ **跌破重要均線**：股價已跌破 5 日均線[cite: 12]。")
-                            if bias_rate > 3.0: st.warning("⚠ **短線過熱/遠離均價**：乖離率 > +3%，提防拉回[cite: 10, 12]。")
-                            if curr_price < balance_point: st.error("❌ **失去平衡點**：收盤價低於多空平衡點[cite: 12]。")
+                            if curr_price < ma5: st.error("❌ **跌破重要均線**：股價已跌破 5 日均線。")
+                            if bias_rate > 3.0: st.warning("⚠ **短線過熱/遠離均價**：乖離率 > +3%，提防拉回。")
+                            if curr_price < balance_point: st.error("❌ **失去平衡點**：收盤價低於多空平衡點。")
 
                             # 最近一個交易日 5 分 K 線
                             if len(df_raw) > 0:
@@ -477,9 +478,7 @@ if submit_button or auto_refresh:
                             
                             df_5m = calculate_kd(df_5m)
 
-                            # =========================================================
-                            # 🎯 盤中 6 大條件極限盯盤與警示原因細節呈現
-                            # =========================================================
+                            # 盤中 6 大條件極限盯盤
                             if len(df_5m) >= 3:
                                 curr_k = df_5m.iloc[-1]
                                 prev_k = df_5m.iloc[-2]
@@ -495,7 +494,7 @@ if submit_button or auto_refresh:
 
                                 # 條件 1：股價來到目標價、支撐價或壓力價
                                 if custom_target_price > 0 and curr_price >= custom_target_price:
-                                    condition_alerts.append((1000, f"🎯 **【條件 1 觸發】**：【{contract.name}】現價 `{curr_price}` 元已達手動設定目標價 `{custom_target_price}` 元！"))
+                                    condition_alerts.append((1000, f"🎯 **【條件 1 觸發】**：【{contract.name}】現價 `{curr_price}` 元已達預設壓力/目標價 `{custom_target_price}` 元！"))
                                 if curr_price <= ai_res['support']:
                                     condition_alerts.append((800, f"🛡️ **【條件 1 觸發】**：【{contract.name}】現價 `{curr_price}` 元已觸及 AI 建議支撐價 `{ai_res['support']}` 元！"))
                                 if curr_price >= ai_res['resistance']:
@@ -515,7 +514,7 @@ if submit_button or auto_refresh:
 
                                 # 條件 5：下殺到停損價
                                 if custom_stop_price > 0 and custom_stop_price < curr_price * 1.1 and curr_price <= custom_stop_price:
-                                    condition_alerts.append((300, f"🚨 **【條件 5 觸發】**：【{contract.name}】現價 `{curr_price}` 元已下殺觸及手動停損價 `{custom_stop_price}` 元！請嚴格執行停損！"))
+                                    condition_alerts.append((300, f"🚨 **【條件 5 觸發】**：【{contract.name}】現價 `{curr_price}` 元已下殺觸及預設支撐/停損價 `{custom_stop_price}` 元！請嚴格執行停損！"))
 
                                 # 條件 6：拉高後價跌量縮不破支撐，再度價漲大單敲進
                                 has_pulled_up = (df_5m["High"].max() > df_5m["Open"].iloc[0] * 1.01)
@@ -527,7 +526,7 @@ if submit_button or auto_refresh:
                                 if has_pulled_up and is_volume_shrank and is_support_held and is_price_rising and is_volume_burst:
                                     condition_alerts.append((1500, f"🚀 **【條件 6 觸發】**：【{contract.name}】拉高後價跌量縮守住支撐，當前『再度價漲且大單敲進』！N字二次發動買點！"))
 
-                                # 發聲與顯眼視窗輸出 (明確列出觸發哪一條條件與詳細原因)
+                                # 發聲與畫面輸出
                                 if condition_alerts:
                                     for freq, alert_msg in condition_alerts:
                                         play_sound(freq=freq, duration=0.8)
