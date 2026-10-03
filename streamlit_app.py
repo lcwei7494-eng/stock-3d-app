@@ -422,12 +422,12 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (完全恢復指南圖卡、AI診斷、停損停利試算與多週期即時繪圖)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (加入布林通道與4條日均線)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 盤前檢視/多週期當沖監控系統")
 
-    # 📚 實戰戰法指南與四大圖卡精華展延區
+    # 📚 實戰戰法指南展延區
     with st.expander("📚 實戰戰法指南（進場點 / 停損停利 / 轉弱判讀 / 策略圖解）", expanded=False):
         st.markdown("""
         ### 🎯 四大圖卡實戰判讀標準
@@ -507,7 +507,7 @@ else:
                         momentum_coef = (outer_vol / inner_vol) if inner_vol > 0 else 0
                         balance_point = (high_price + low_price + curr_price) / 3
 
-                        start_date = (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d")
+                        start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
                         end_date = datetime.now().strftime("%Y-%m-%d")
                         kbars = api.kbars(contract=contract, start=start_date, end=end_date)
                         df_raw = pd.DataFrame({"ts": kbars.ts, "Open": kbars.Open, "High": kbars.High, "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume})
@@ -532,8 +532,6 @@ else:
         low_price = data["low_price"]
         balance_point = data["balance_point"]
         df_raw = data["df_raw"]
-        outer_vol = data["outer_vol"]
-        inner_vol = data["inner_vol"]
 
         st.success(f"【{data['contract_code']} {data['contract_name']}】當前最新價：{curr_price} 元")
         col1, col2, col3 = st.columns(3)
@@ -541,12 +539,15 @@ else:
         col2.metric("2️⃣ 動能係數", f"{data['momentum_coef']:.2f}")
         col3.metric("3️⃣ 多空平衡點", f"{balance_point:.2f}元")
 
-        # 計算日線指標與 AI 綜合評估
+        # 計算日線指標（加入 5MA, 10MA, 60MA, 120MA）
         if len(df_raw) > 0:
             df_raw["DateTime"] = pd.to_datetime(df_raw["ts"] / 1000000000, unit='s', errors='coerce')
             df_k_daily = df_raw.groupby(df_raw["DateTime"].dt.date).agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).reset_index()
             df_k_daily["5MA"] = df_k_daily["Close"].rolling(5).mean()
+            df_k_daily["10MA"] = df_k_daily["Close"].rolling(10).mean()
             df_k_daily["20MA"] = df_k_daily["Close"].rolling(20).mean()
+            df_k_daily["60MA"] = df_k_daily["Close"].rolling(60).mean()
+            df_k_daily["120MA"] = df_k_daily["Close"].rolling(120).mean()
             df_k_daily = calculate_atr(df_k_daily)
 
             ma5 = df_k_daily['5MA'].iloc[-1]
@@ -559,7 +560,7 @@ else:
 
         chip_summary = {"foreign": 120, "investment": 50, "margin_add": -150, "day_trade_broker": True}
 
-        # 🤖 資深證券分析師 AI 綜合評估與關鍵支撐/壓力建議
+        # 🤖 AI 綜合評估
         st.subheader("👨‍💼 資深證券分析師 AI 綜合評估 (30年實戰經驗)")
         ai_res = ai_senior_analyst_diagnosis_advanced(target_code, target_name, curr_price, ma5, ma20, prev_high, prev_low, balance_point, chip_summary)
         
@@ -573,7 +574,6 @@ else:
         
         st.markdown(f"> **💡 資深分析師綜合籌碼與走勢操作建議**：\n> {ai_res['strategy']}")
 
-        # 預設帶入關鍵價格
         if custom_stop_price == 0.0:
             st.session_state["custom_stop"] = ai_res['support']
             custom_stop_price = ai_res['support']
@@ -614,7 +614,7 @@ else:
 
         st.subheader(f"⚡ 多週期 K 線監控雷達 ({date_label_str}) -【{data['contract_code']} {data['contract_name']}】")
         
-        # 多週期切換單選按鈕 (修正 Datetime 格式)
+        # 多週期切換單選按鈕
         kbar_timeframe = st.radio(
             "請選擇 K 線圖顯示週期：",
             ["5分K (轉折雷達/預設)", "1分K (超短線當沖)", "60分K (小時波段)", "日K (多空趨勢)"],
@@ -630,7 +630,7 @@ else:
         elif "日K" in kbar_timeframe:
             if 'df_k_daily' in locals() and not df_k_daily.empty:
                 df_chart = df_k_daily.tail(60).copy()
-                df_chart["DateTime"] = pd.to_datetime(df_chart["DateTime"]) # 強制轉為 datetime 避開 .dt 錯誤
+                df_chart["DateTime"] = pd.to_datetime(df_chart["DateTime"])
             else:
                 df_chart = pd.DataFrame()
             time_fmt = '%Y-%m-%d'
@@ -639,23 +639,38 @@ else:
             time_fmt = '%H:%M'
 
         if len(df_chart) > 0:
-            df_chart["DateTime"] = pd.to_datetime(df_chart["DateTime"]) # 防禦型轉換
-            df_chart["20MA"] = df_chart["Close"].rolling(20).mean()
-            if "1分K" in kbar_timeframe or "5分K" in kbar_timeframe:
-                df_chart["Cum_Vol"] = df_chart["Volume"].cumsum()
-                df_chart["Cum_Val"] = (df_chart["Close"] * df_chart["Volume"]).cumsum()
-                df_chart["VWAP"] = (df_chart["Cum_Val"] / df_chart["Cum_Vol"]).fillna(df_chart["Close"])
-
+            df_chart["DateTime"] = pd.to_datetime(df_chart["DateTime"])
+            
             fig_k = go.Figure(data=[go.Candlestick(
                 x=df_chart['DateTime'].dt.strftime(time_fmt),
                 open=df_chart['Open'], high=df_chart['High'],
                 low=df_chart['Low'], close=df_chart['Close'], name=kbar_timeframe.split(" ")[0]
             )])
 
-            if "VWAP" in df_chart.columns:
-                fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['VWAP'], mode='lines', name='當日均線(VWAP)', line=dict(color='gold', width=2.5)))
+            # 🎯 根據選擇的週期繪製布林通道與對應均線
+            if "日K" in kbar_timeframe:
+                # 日線繪製 5MA, 10MA, 60MA, 120MA
+                if "5MA" in df_chart.columns: fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['5MA'], mode='lines', name='5MA', line=dict(color='lightskyblue', width=1)))
+                if "10MA" in df_chart.columns: fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['10MA'], mode='lines', name='10MA', line=dict(color='blue', width=1.5)))
+                if "60MA" in df_chart.columns: fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['60MA'], mode='lines', name='60MA(季線)', line=dict(color='purple', width=2)))
+                if "120MA" in df_chart.columns: fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['120MA'], mode='lines', name='120MA(半年線)', line=dict(color='orange', width=2)))
+            else:
+                # 分時 K 線（1分K / 5分K / 60分K）繪製布林通道線與當日均線
+                df_chart["20MA"] = df_chart["Close"].rolling(20).mean()
+                df_chart["Std"] = df_chart["Close"].rolling(20).std()
+                df_chart["UpperBand"] = df_chart["20MA"] + (df_chart["Std"] * 2)
+                df_chart["LowerBand"] = df_chart["20MA"] - (df_chart["Std"] * 2)
 
-            fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['20MA'], mode='lines', name='20MA', line=dict(color='blue', width=1.5)))
+                if "1分K" in kbar_timeframe or "5分K" in kbar_timeframe:
+                    df_chart["Cum_Vol"] = df_chart["Volume"].cumsum()
+                    df_chart["Cum_Val"] = (df_chart["Close"] * df_chart["Volume"]).cumsum()
+                    df_chart["VWAP"] = (df_chart["Cum_Val"] / df_chart["Cum_Vol"]).fillna(df_chart["Close"])
+                    fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['VWAP'], mode='lines', name='當日均線(VWAP)', line=dict(color='gold', width=2.5)))
+
+                fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['UpperBand'], mode='lines', name='布林上軌', line=dict(color='red', width=1, dash='dash')))
+                fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['20MA'], mode='lines', name='20MA(中軌)', line=dict(color='blue', width=1.5)))
+                fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['LowerBand'], mode='lines', name='布林下軌', line=dict(color='green', width=1, dash='dash')))
+
             fig_k.update_layout(xaxis_rangeslider_visible=False, height=420, margin=dict(l=10, r=10, t=30, b=10))
             st.plotly_chart(fig_k, use_container_width=True)
         else:
