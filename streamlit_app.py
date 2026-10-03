@@ -88,25 +88,6 @@ if st.session_state["watchlist"]:
             st.session_state["selected_stock"] = code_part
             st.rerun()
 
-# 輸入框與快速新增
-col_input, col_add_btn = st.columns([3, 1])
-with col_input:
-    stock_input = st.text_input("請輸入股票代碼或公司名稱", value=st.session_state["selected_stock"])
-
-target_code, target_name = get_stock_code_and_name(stock_input)
-
-with col_add_btn:
-    st.write("&#160;")
-    if target_code and target_name:
-        current_label = f"{target_code} {target_name}"
-        if current_label in st.session_state["watchlist"]:
-            st.button("✅ 已在自選", disabled=True, key="add_watchlist_disabled")
-        else:
-            if st.button("➕ 加自選", key="add_watchlist_btn"):
-                st.session_state["watchlist"].append(current_label)
-                st.success(f"已加入：{current_label}")
-                st.rerun()
-
 # 刪除自選股
 with st.expander("⚙️ 管理/刪除自選股清單"):
     remove_item = st.selectbox("選擇要刪除的自選股", ["（請選擇）"] + st.session_state["watchlist"])
@@ -116,8 +97,36 @@ with st.expander("⚙️ 管理/刪除自選股清單"):
             st.success(f"已移除：{remove_item}")
             st.rerun()
 
+# =========================================================
+# 表單輸入區（支援 Enter 鍵直接觸發查詢）
+# =========================================================
+with st.form(key="search_form"):
+    col_input, col_add_btn = st.columns([3, 1])
+    with col_input:
+        stock_input = st.text_input("請輸入股票代碼或公司名稱（按下 Enter 即可分析）", value=st.session_state["selected_stock"])
+    
+    target_code, target_name = get_stock_code_and_name(stock_input)
+    
+    # 表單提交按鈕（按下 Enter 鍵也會等同點擊此按鈕）
+    submit_button = st.form_submit_button("🚀 抓取數據並分析 (Enter)", type="primary")
+
+# 獨立的「加自選」快捷按鈕處理
+if target_code and target_name:
+    current_label = f"{target_code} {target_name}"
+    col_info, col_btn = st.columns([3, 1])
+    with col_info:
+        st.caption(f"當前目標：{current_label}")
+    with col_btn:
+        if current_label in st.session_state["watchlist"]:
+            st.button("✅ 已在自選", disabled=True, key="add_watchlist_disabled")
+        else:
+            if st.button("➕ 加自選", key="add_watchlist_btn"):
+                st.session_state["watchlist"].append(current_label)
+                st.success(f"已加入：{current_label}")
+                st.rerun()
+
 # 分析執行區
-if st.button("🚀 抓取數據並分析", type="primary") or auto_refresh:
+if submit_button or auto_refresh:
     if not api_key or not secret_key:
         st.error("請在左側選單填寫 API Key 與 Secret Key！")
     else:
