@@ -265,19 +265,24 @@ def calculate_atr(df, period=14):
     df['ATR'] = df['TR'].rolling(period).mean()
     return df
 
-# 🤖 真正呼叫 Gemini API 的高盛資深分析師診斷函式 (完全修正版)
-def run_goldman_sachs_ai_evaluation(row, user_gemini_key=""):
-    c_code = str(row['股票代碼'])
-    c_name = str(row['股票名稱'])
-    price = row.get('最新真實價', row.get('最新價', 100.0))
-    pct = row.get('漲跌幅(%)', 0.0)
-    eps = row.get('季EPS', 1.5)
-    yoy = row.get('營收YoY', '+20.0%')
-    roe = row.get('ROE', '15.0%')
-    peg = row.get('PEG', 0.8)
-    score = row.get('綜合評分', 75)
-    catalyst = row.get('催化劑', '產業景氣回溫/庫存回補')
-    status = row.get('狀態', '強勢突破')
+# 🤖 真正呼叫 Gemini API 的高盛資深分析師診斷函式 (適用 6層選股與當沖盯盤)
+def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
+    c_code = str(data_dict.get('股票代碼', data_dict.get('target_code', '')))
+    c_name = str(data_dict.get('股票名稱', data_dict.get('target_name', '')))
+    price = data_dict.get('最新真實價', data_dict.get('curr_price', 100.0))
+    pct = data_dict.get('漲跌幅(%)', 0.0)
+    eps = data_dict.get('季EPS', 1.5)
+    yoy = data_dict.get('營收YoY', '+20.0%')
+    roe = data_dict.get('ROE', '15.0%')
+    peg = data_dict.get('PEG', 0.8)
+    score = data_dict.get('綜合評分', 75)
+    catalyst = data_dict.get('催化劑', '當沖多空轉折監控')
+    status = data_dict.get('狀態', '盤中監控')
+
+    # 當沖盯盤特有數據
+    bias_rate = data_dict.get('bias_rate', 0.0)
+    momentum_coef = data_dict.get('momentum_coef', 1.0)
+    balance_point = data_dict.get('balance_point', price)
 
     key_to_use = user_gemini_key if user_gemini_key else gemini_api_key
 
@@ -291,14 +296,14 @@ def run_goldman_sachs_ai_evaluation(row, user_gemini_key=""):
 【個股即時數據】
 * 股票代碼與名稱：{c_code} {c_name}
 * 最新成交價：{price} 元 (漲跌幅: {pct:+.2f}%)
-* 量化戰略評分：{score} 分 (戰略狀態: {status})
+* 成本乖離率：{bias_rate:+.2f}% | 動能係數 (大戶買賣單比): {momentum_coef:.2f} | 多空平衡點: {balance_point:.2f} 元
 * 基本面數據：季 EPS {eps} 元 | 營收 YoY {yoy} | ROE {roe} | PEG 估值 {peg}
-* 產業催化劑題材：{catalyst}
+* 題材/狀態：{catalyst} ({status})
 
 【請嚴格依據下列 3 大點輸出深度評估】
-1. **🎯 核心操作策略與進場指引**：分析該股營收成長是否真正轉化為獲利，評估其目前股價位置，給出最佳買進點位與短中線操作戰法（是否宜追高，或是應等待拉回關鍵均線）。
-2. **📊 買進勝率與勝率結構評估**：請給出具體的短線/波段買進勝率預估（例如 75%），並列出勝率支撐的主要理由與技術/基本面優勢。
-3. **⚠️ 風險提示與嚴格停損位**：指出該股當前最大的風險因子（如本益比過高、獲利未跟上營收、高檔獲利吐回等），並給出精確的**停損參考價格**。
+1. **🎯 核心操作策略與進場指引**：分析該股營收成長是否真正轉化為獲利，評估當前股價位置，給出最佳買進點位與當沖/短線操作戰法（是否宜追高，或是應等待拉回關鍵均線/多空平衡點）。
+2. **📊 買進勝率與勝率結構評估**：請給出具體的短線/當沖買進勝率預估（例如 75%），並列出勝率支撐的主要理由與技術/動能優勢。
+3. **⚠️ 風險提示與嚴格停損位**：指出該股當前最大的風險因子（如本益比過高、高檔開高走低賣壓、動能不足等），並給出精確的**停損參考價格**。
 """
 
     try:
@@ -328,7 +333,7 @@ def run_goldman_sachs_ai_evaluation(row, user_gemini_key=""):
             except Exception as e3:
                 return f"❌ 呼叫 Gemini API 分析時發生錯誤: {str(e1)}"
 
-# 資深證券分析師 AI 技術面與籌碼面診斷模組
+# 資深證券分析師 AI 技術面與籌碼面診斷模組 (傳統算式版，提供支撐壓力基本數值)
 def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high, prev_low, balance_point, chip_data):
     support_price = round(min(ma5, prev_low), 2)
     resistance_price = round(max(prev_high, balance_point * 1.02), 2)
@@ -404,7 +409,7 @@ def render_smart_stock_table(df_display, key_prefix):
 
         if col_b2.button(f"🤖 AI進行評估", key=btn_ai_key, use_container_width=True):
             with st.spinner(f"正在連線 Gemini AI 分析【{stock_lbl}】中..."):
-                st.session_state[f"ai_eval_{c_code}"] = run_goldman_sachs_ai_evaluation(row, gemini_api_key)
+                st.session_state[f"ai_eval_{c_code}"] = run_goldman_sachs_ai_evaluation(row.to_dict(), gemini_api_key)
 
         if stock_lbl in st.session_state["watchlist"]:
             col_b3.button(f"✅ 已在自選", key=f"disabled_{btn_add_key}", disabled=True, use_container_width=True)
@@ -678,7 +683,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (搜尋列一鍵新增並寫檔存檔)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (已新增 🤖 AI 深度評估 按鈕與雙重診斷功能)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 盤前檢視/多週期當沖監控系統")
@@ -712,7 +717,7 @@ else:
                 st.session_state["selected_stock"] = code_part
                 st.rerun()
 
-    # 🎯 搜尋列右側【➕ 加入自選股】按鈕（自動寫檔存檔）
+    # 🎯 搜尋列右側【➕ 加入自選股】按鈕
     col_input, col_add_btn, col_style = st.columns([2, 1, 1])
     with col_input:
         stock_input = st.text_input("請輸入股票代碼或公司名稱（輸入後即刻分析）", value=st.session_state["selected_stock"])
@@ -833,10 +838,11 @@ else:
 
         chip_summary = {"foreign": 120, "investment": 50, "margin_add": -150, "day_trade_broker": True}
 
-        # 🤖 AI 綜合評估
+        # 🤖 AI 綜合評估區塊
         st.subheader("👨‍💼 資深證券分析師 AI 綜合評估 (30年實戰經驗)")
         ai_res = ai_senior_analyst_diagnosis_advanced(target_code, target_name, curr_price, ma5, ma20, prev_high, prev_low, balance_point, chip_summary)
 
+        # 顯示建議價位與趨勢卡片
         col_ai1, col_ai2 = st.columns(2)
         with col_ai1:
             st.markdown(f"<div class='navy-card'><span class='text-green'>🟢 建議關鍵支撐價</span>：<b style='font-size:18px;'>{ai_res['support']}</b> 元<br>📊 多空趨勢：<b>{ai_res['trend']}</b></div>", unsafe_allow_html=True)
@@ -844,6 +850,32 @@ else:
             st.markdown(f"<div class='navy-card'><span class='text-red'>🔴 建議關鍵壓力價</span>：<b style='font-size:18px;'>{ai_res['resistance']}</b> 元<br>🎯 建議進場位：<b style='color:#4C8DFF;'>{ai_res['entry_price']}</b> 元</div>", unsafe_allow_html=True)
 
         st.markdown(f"> **💡 資深分析師綜合籌碼與走勢操作建議**：\n> {ai_res['strategy']}")
+
+        # 🆕 當沖盯盤專屬：新增【🤖 AI 深度評估 (Gemini 實時診斷)】按鈕
+        col_eval_btn, col_eval_blank = st.columns([1, 2])
+        with col_eval_btn:
+            if st.button("🤖 AI 深度評估 (Gemini 實時診斷)", key="btn_monitor_gemini_eval", use_container_width=True):
+                with st.spinner(f"正在連線 Gemini AI 分析【{target_code} {target_name}】中..."):
+                    fund_info = check_fundamental_6layer(target_code)
+                    combined_dict = {
+                        'target_code': target_code,
+                        'target_name': target_name,
+                        'curr_price': curr_price,
+                        'bias_rate': data['bias_rate'],
+                        'momentum_coef': data['momentum_coef'],
+                        'balance_point': balance_point,
+                        '季EPS': fund_info.get('eps', 1.5),
+                        '營收YoY': f"+{fund_info.get('yoy', 20.0)}%",
+                        'ROE': f"{fund_info.get('roe', 15.0)}%",
+                        'PEG': fund_info.get('peg', 0.8),
+                        '綜合評分': 80,
+                        '催化劑': fund_info.get('catalyst', '當沖多空轉折監控'),
+                        '狀態': ai_res['trend']
+                    }
+                    st.session_state[f"monitor_ai_eval_{target_code}"] = run_goldman_sachs_ai_evaluation(combined_dict, gemini_api_key)
+
+        if f"monitor_ai_eval_{target_code}" in st.session_state:
+            st.markdown(f"<div class='navy-card'>{st.session_state[f'monitor_ai_eval_{target_code}']}</div>", unsafe_allow_html=True)
 
         if custom_stop_price == 0.0:
             st.session_state["custom_stop"] = ai_res['support']
