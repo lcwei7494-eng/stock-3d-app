@@ -471,7 +471,7 @@ def calculate_atr(df, period=14):
     df['ATR'] = df['TR'].rolling(period).mean()
     return df
 
-# 🤖 升級版：高盛機構級全方位 AI 診斷引擎 (修復 SyntaxError 版)
+# 🤖 升級版：高盛機構級全方位 AI 診斷引擎 (修復 SyntaxError 語法問題)
 def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     c_code = str(data_dict.get('股票代碼', data_dict.get('target_code', '')))
     c_name = str(data_dict.get('股票名稱', data_dict.get('target_name', '')))
@@ -512,7 +512,7 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
    * 給出具體的短線/波段勝率預估（例如 72%）。
    * 詳細拆解勝率支撐理由（如法人籌碼鎖碼、技術面多頭排列、產業催化劑）與下檔限制。
 
-4. **⚠️ 風險提示與精確停損位**：
+4. **⚠️️ 風險提示與精確停損位**：
    * 列出當前最大的風險因子（如估值過高、大盤回檔風險、法人調節賣壓等）。
    * 給出精確的**停損參考價格與紀律觸發條件**。
 """
@@ -529,4 +529,3 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
         f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key_to_use}",
         f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={key_to_use}",
         f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={key_to_use}",
-    
