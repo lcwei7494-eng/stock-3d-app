@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="三維定位法 & 6層量化選股與當沖盯盤全功能系統", layout="wide")
 
 # =========================================================
-# 🎨 UI 主題（專業券商級戰情室 Terminal 主題 — 高亮高清修復版）
+# 🎨 UI 主題（專業券商級戰情室 Terminal 主題 — 高亮高清版）
 # =========================================================
 _CSS = """
 <style>
@@ -137,7 +137,7 @@ def calculate_breakeven_price(buy_price, qty_sheets=1, discount=0.2, tax_rate=0.
     shares = qty_sheets * 1000
     buy_amt = buy_price * shares
     buy_fee = math.floor(buy_amt * 0.001425 * discount)
-    if buy_fee < 20: buy_fee = 20 # 最低手續費 20 元
+    if buy_fee < 20: buy_fee = 20
     total_buy_cost = buy_amt + buy_fee
 
     factor = 1.0 - (0.001425 * discount) - tax_rate
@@ -157,7 +157,7 @@ def calculate_breakeven_price(buy_price, qty_sheets=1, discount=0.2, tax_rate=0.
     return breakeven_price, total_buy_cost, buy_fee
 
 
-# 💾 自選股 JSON 檔案永久保留讀寫邏輯
+# 💾 1. 自選股 JSON 永久儲存與讀取
 WATCHLIST_FILE = "watchlist.json"
 
 def load_saved_watchlist():
@@ -179,9 +179,42 @@ def save_watchlist_to_file(watchlist):
     except Exception as e:
         st.error(f"寫入自選股設定檔失敗: {str(e)}")
 
-# 初始化自選股清單
+
+# 💾 2. 個人持股成本 (買進價 & 張數 & 停損目標價) 永久 JSON 儲存與讀取
+HOLDINGS_FILE = "holdings.json"
+
+def load_saved_holdings():
+    if os.path.exists(HOLDINGS_FILE):
+        try:
+            with open(HOLDINGS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            pass
+    return {}
+
+def save_stock_holding(code, buy_cost, buy_sheets, custom_stop, custom_target):
+    holdings = load_saved_holdings()
+    holdings[str(code)] = {
+        "buy_cost": float(buy_cost),
+        "buy_sheets": int(buy_sheets),
+        "custom_stop": float(custom_stop),
+        "custom_target": float(custom_target)
+    }
+    try:
+        with open(HOLDINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(holdings, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        st.error(f"儲存持股成本失敗: {str(e)}")
+
+
+# 初始化資料結構
 if "watchlist" not in st.session_state:
     st.session_state["watchlist"] = load_saved_watchlist()
+
+if "holdings" not in st.session_state:
+    st.session_state["holdings"] = load_saved_holdings()
 
 # Secrets 讀取 API Keys
 api_key = st.secrets.get("SHIOAJI_API_KEY", "")
@@ -663,7 +696,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (含高清晰對比報價與損益運算)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (含持股成本 JSON 永久記憶儲存)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
@@ -722,25 +755,29 @@ else:
     with col_c3:
         chk_momentum = st.checkbox("監控大戶動能爆量 (買賣單比 > 1.3)", value=True)
 
+    # 💾 自動讀取該股於 holdings.json 中永久保存的歷史成本紀錄
+    holdings_db = load_saved_holdings()
+    saved_info = holdings_db.get(str(target_code), {})
+
     if "last_stock" not in st.session_state or st.session_state["last_stock"] != target_code:
         st.session_state["last_stock"] = target_code
-        st.session_state["custom_target"] = 0.0
-        st.session_state["custom_stop"] = 0.0
-        st.session_state["buy_cost"] = 0.0
-        st.session_state["buy_sheets"] = 1
         if "analysis_data" in st.session_state: del st.session_state["analysis_data"]
 
-    # 💰 交易計劃與個人持股成本計算器
+    # 💰 交易計劃與個人持股成本計算器 (改為自動即時存檔至 holdings.json)
     st.markdown("##### ⚙️ 交易計劃與個人持股成本設定 (含 2折手續費 + 0.3% 證交稅損益兩平試算)")
     col_p1, col_p2, col_stop, col_target = st.columns([1, 1, 1, 1])
+    
     with col_p1:
-        buy_cost_input = st.number_input("💵 買進成本價 (元)", value=float(st.session_state.get("buy_cost", 0.0)), step=0.5)
+        buy_cost_input = st.number_input("💵 買進成本價 (元)", value=float(saved_info.get("buy_cost", 0.0)), step=0.5, key=f"cost_input_{target_code}")
     with col_p2:
-        buy_sheets_input = st.number_input("📦 買進張數", value=int(st.session_state.get("buy_sheets", 1)), min_value=1, step=1)
+        buy_sheets_input = st.number_input("📦 買進張數", value=int(saved_info.get("buy_sheets", 1)), min_value=1, step=1, key=f"sheets_input_{target_code}")
     with col_stop:
-        custom_stop_price = st.number_input("🛡️ 停損價 (元)", value=float(st.session_state.get("custom_stop", 0.0)), step=0.5)
+        custom_stop_price = st.number_input("🛡️ 停損價 (元)", value=float(saved_info.get("custom_stop", 0.0)), step=0.5, key=f"stop_input_{target_code}")
     with col_target:
-        custom_target_price = st.number_input("🎯 目標價 (元)", value=float(st.session_state.get("custom_target", 0.0)), step=0.5)
+        custom_target_price = st.number_input("🎯 目標價 (元)", value=float(saved_info.get("custom_target", 0.0)), step=0.5, key=f"target_input_{target_code}")
+
+    # 只要使用者更改數值，即時存入 holdings.json
+    save_stock_holding(target_code, buy_cost_input, buy_sheets_input, custom_stop_price, custom_target_price)
 
     # 計算損益兩平價
     breakeven_p, total_cost, b_fee = calculate_breakeven_price(buy_cost_input, buy_sheets_input, discount=0.2, tax_rate=0.003)
@@ -1092,7 +1129,7 @@ else:
                 <div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">{ai_res['resistance']}</span></div>
                 <div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">{ai_res['entry_price']}</span></div>
                 <div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">{curr_price:.2f}</span></div>
-                <div class="level-box"><span class="lbl">🛡️️ 多空平衡點</span><span class="val" style="color:var(--gold);">{balance_point:.2f}</span></div>
+                <div class="level-box"><span class="lbl">🛡️ 多空平衡點</span><span class="val" style="color:var(--gold);">{balance_point:.2f}</span></div>
                 <div class="level-box"><span class="lbl">🛡️ 技術強撐價</span><span class="val text-green">{ai_res['support']}</span></div>
                 <div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">{limit_down:.2f}</span></div>
             </div>
