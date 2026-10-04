@@ -112,27 +112,32 @@ def stock_row_html(code, name, price, pct, tag=""):
     )
 
 
-# 🇹🇼 證交所標準升降單位 (Tick Size) 與完全對齊價位校正
+# 🇹🇼 證交所標準升降單位 (Tick Size) 萬能對齊演算法
 def get_tw_tick_size(price):
     if price < 10: return 0.01
     elif price < 50: return 0.05
     elif price < 100: return 0.1
     elif price < 500: return 0.5
-    elif price < 1000: return 1.0
+    elif price < 1000: return 1.0  # 500~1000 元檔位為 1 元整
     else: return 5.0
 
 def align_tw_price_tick(price, mode="round"):
     if price <= 0: return "0"
     tick = get_tw_tick_size(price)
-    if mode == "down": # 無條件捨去至 Tick
-        aligned = int(price / tick) * tick
-    elif mode == "up": # 無條件進位至 Tick
-        aligned = int(price / tick + 0.9999) * tick
-    else: # 四捨五入至 Tick
-        aligned = round(price / tick) * tick
     
+    if mode == "down":   # 漲停向上限制：向下對齊 Tick
+        aligned = int(price / tick) * tick
+    elif mode == "up":   # 跌停向下限制：無條件向上進位至 Tick
+        aligned = int(price / tick + 0.9999) * tick
+    else:               # 一般價位：四捨五入對齊 Tick
+        aligned = round(round(price / tick) * tick, 2)
+        
     aligned = round(aligned, 2)
-    return f"{int(aligned)}" if aligned >= 500 else (f"{aligned:.2f}".rstrip('0').rstrip('.'))
+    # 🎯 核心控制：500 元以上強制輸出純整數，低於 500 元自動除餘小數
+    if aligned >= 500:
+        return f"{int(aligned)}"
+    else:
+        return f"{aligned:.2f}".rstrip('0').rstrip('.')
 
 def calculate_tw_limit_prices(ref_price):
     if ref_price <= 0: return "0", "0"
@@ -503,7 +508,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
         render_smart_stock_table(pd.DataFrame([{"股票代碼": "2466", "股票名稱": "冠西電", "最新價": 141.0, "漲跌幅(%)": +9.73, "成交量(張)": 8500, "篩選特徵": "🚀 5分K帶量發動"}]), "flt")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (完全精準檔位對齊版)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (完全對齊台股 Tick Size)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
@@ -561,7 +566,7 @@ else:
                         outer_vol = float(getattr(snap, 'ask_volume', 0.0))
                         inner_vol = float(getattr(snap, 'bid_volume', 0.0))
 
-                        # 🎯 校正：依據昨收價 (Reference Price) 導出精準 Tick 漲跌停
+                        # 🎯 校正：依據昨收價 (Reference Price) 計算標準 Tick 漲跌停
                         ref_p = getattr(snap, 'reference_price', 0.0)
                         if not ref_p or ref_p == 0:
                             ref_p = open_price if open_price > 0 else curr_price
@@ -612,6 +617,8 @@ else:
         # 頂部大字報價橫幅
         pct = ((curr_price - data['open_price']) / data['open_price']) * 100 if data['open_price'] else 0
         t_cls = tone(pct)
+        curr_px_fmt = align_tw_price_tick(curr_price)
+        
         st.markdown(f"""
         <div class="terminal-quote">
             <div>
@@ -619,7 +626,7 @@ else:
                 <div class="sub">最高: {data['high_price']} | 最低: {data['low_price']} | 成交量: {data['volume']:,}張 | 乖離: {data['bias_rate']:+.2f}%</div>
             </div>
             <div class="price-box">
-                <div class="big-px {t_cls}">{curr_price:.2f}</div>
+                <div class="big-px {t_cls}">{curr_px_fmt}</div>
                 <div style="font-size:1.1rem;" class="{t_cls}">{pct:+.2f}%</div>
             </div>
         </div>
@@ -714,11 +721,10 @@ else:
                     {"日期": "09/26", "融資買賣超(張)": "+90", "融資餘額(張)": "12,710", "融券買賣超(張)": "-15", "融券餘額(張)": "1,485", "券資比(%)": "11.68%"},
                 ]), use_container_width=True)
 
-        # 🎯 右側欄：黃框壓力/支撐/關鍵價看板 (精準台股 Tick Size 對齊版)
+        # 🎯 右側欄：黃框壓力/支撐/關鍵價看板 (完全符合 Tick Size 對齊)
         with right_panel:
             limit_u = data.get('limit_up', "0")
             limit_d = data.get('limit_down', "0")
-            curr_px_fmt = align_tw_price_tick(curr_price)
 
             st.markdown(f"""
             <div class="level-container">
@@ -727,7 +733,7 @@ else:
                     <div style="text-align:right;"><span class="muted">強撐</span><br><b class="text-green" style="font-size:1.2rem;">{ai_res['support']}</b></div>
                 </div>
                 
-                <!-- 🎯 台股標準 Tick 漲跌停價格 -->
+                <!-- 🎯 100% 符合台股檔位的漲跌停區塊 -->
                 <div class="limit-section">
                     <div class="limit-title">🔑 當日極限關鍵價</div>
                     <div class="limit-grid">
