@@ -471,7 +471,7 @@ def calculate_atr(df, period=14):
     df['ATR'] = df['TR'].rolling(period).mean()
     return df
 
-# 🤖 升級版：高盛機構級全方位 AI 診斷引擎
+# 🤖 升級版：高盛機構級全方位 AI 診斷引擎 (修復 SyntaxError 版)
 def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     c_code = str(data_dict.get('股票代碼', data_dict.get('target_code', '')))
     c_name = str(data_dict.get('股票名稱', data_dict.get('target_name', '')))
@@ -525,12 +525,8 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
         }]
     }
 
-    list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key_to_use}"
-    available_endpoints = []
-    try:
-        res_list = requests.get(list_url, timeout=5)
-        if res_list.status_code == 200:
-            models_data = res_list.json().get("models", [])
-            for m in models_data:
-                m_name = m.get("name", "")
-                methods = m.get("supportedGeneration
+    fallback_endpoints = [
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key_to_use}",
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={key_to_use}",
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={key_to_use}",
+    
