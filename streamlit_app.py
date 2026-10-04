@@ -92,8 +92,18 @@ input, [data-baseweb="select"] > div { background:var(--panel2) !important; colo
 st.markdown(_CSS, unsafe_allow_html=True)
 
 
+def safe_float(val, default=0.0):
+    """安全轉換浮點數，防範 None 或字串類型造成格式化崩潰"""
+    try:
+        if val is None:
+            return default
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
+
 def tone(pct):
-    pct = float(pct)
+    pct = safe_float(pct)
     return "up" if pct > 0 else ("down" if pct < 0 else "flat")
 
 
@@ -104,7 +114,7 @@ def stock_row_html(code, name, price, pct, tag=""):
     return (
         f'<div class="row {bar}"><div>'
         f'<span class="name">{name}</span><span class="code">{code}</span><br>{tag_html}</div>'
-        f'<div class="px {t}">{price}<small style="display:block; font-size:.8rem;">{float(pct):+.2f}%</small></div></div>'
+        f'<div class="px {t}">{safe_float(price):.2f}<small style="display:block; font-size:.8rem;">{safe_float(pct):+.2f}%</small></div></div>'
     )
 
 
@@ -188,12 +198,12 @@ def get_stock_code_and_name(user_input):
             return code, info.name
     return None, None
 
-# 🤖 Gemini API 深度診斷函式 (保留)
+# 🤖 Gemini API 深度診斷函式 (保留防護寫法)
 def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     c_code = str(data_dict.get('股票代碼', data_dict.get('target_code', '')))
     c_name = str(data_dict.get('股票名稱', data_dict.get('target_name', '')))
-    price = data_dict.get('最新真實價', data_dict.get('curr_price', 100.0))
-    pct = data_dict.get('漲跌幅(%)', 0.0)
+    price = safe_float(data_dict.get('最新真實價', data_dict.get('curr_price', 100.0)))
+    pct = safe_float(data_dict.get('漲跌幅(%)', 0.0))
     eps = data_dict.get('季EPS', 1.5)
     yoy = data_dict.get('營收YoY', '+20.0%')
     roe = data_dict.get('ROE', '15.0%')
@@ -202,9 +212,9 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     catalyst = data_dict.get('催化劑', '當沖多空轉折監控')
     status = data_dict.get('狀態', '盤中監控')
 
-    bias_rate = data_dict.get('bias_rate', 0.0)
-    momentum_coef = data_dict.get('momentum_coef', 1.0)
-    balance_point = data_dict.get('balance_point', price)
+    bias_rate = safe_float(data_dict.get('bias_rate', 0.0))
+    momentum_coef = safe_float(data_dict.get('momentum_coef', 1.0))
+    balance_point = safe_float(data_dict.get('balance_point', price))
 
     key_to_use = user_gemini_key if user_gemini_key else gemini_api_key
 
@@ -259,13 +269,18 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     return "❌ 呼叫 Gemini API 分析時發生錯誤: 所有模型別名皆回應 404 或無效，請確認金鑰權限與 API 計費狀態。"
 
 def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high, prev_low, balance_point, chip_data):
+    curr = safe_float(curr)
+    ma5 = safe_float(ma5, curr)
+    ma20 = safe_float(ma20, curr)
+    prev_high = safe_float(prev_high, curr)
+    prev_low = safe_float(prev_low, curr)
+    balance_point = safe_float(balance_point, curr)
+
     support_price = round(min(ma5, prev_low), 2)
     resistance_price = round(max(prev_high, balance_point * 1.02), 2)
-    foreign_buy = chip_data.get("foreign", 0)
-    investment_buy = chip_data.get("investment", 0)
 
     is_tech_bull = (curr > ma5 and ma5 > ma20)
-    is_chip_bull = (foreign_buy + investment_buy > 0)
+    is_chip_bull = (chip_data.get("foreign", 0) + chip_data.get("investment", 0) > 0)
 
     if is_tech_bull and is_chip_bull:
         trend = "強勢多頭 (技術面多頭 + 法人合買)"
@@ -360,7 +375,7 @@ if app_mode == "🚀 6層量化戰略選股":
                     pool = ["4991", "4908", "2466", "4764", "4971", "3006", "2330", "2317", "2454", "6603"]
                     contracts = [api.Contracts.Stocks.get(code) for code in pool if api.Contracts.Stocks.get(code)]
                     snaps = api.snapshots(contracts)
-                    snap_map = {s.code: float(getattr(s, 'close', 0.0)) for s in snaps}
+                    snap_map = {s.code: safe_float(getattr(s, 'close', 0.0)) for s in snaps}
                     start_date = (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d")
                     end_date = datetime.now().strftime("%Y-%m-%d")
                     group_a, group_b, group_c = [], [], []
@@ -436,8 +451,9 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
             hot_data = []
             for snap in snaps:
                 c_code = snap.code
-                close_p = float(getattr(snap, 'close', 0.0)); open_p = float(getattr(snap, 'open', close_p))
-                tot_vol = int(getattr(snap, 'total_volume', 0))
+                close_p = safe_float(getattr(snap, 'close', 0.0))
+                open_p = safe_float(getattr(snap, 'open', close_p))
+                tot_vol = int(safe_float(getattr(snap, 'total_volume', 0)))
                 hot_data.append({"股票代碼": c_code, "股票名稱": twstock.codes[c_code].name if c_code in twstock.codes else c_code, "最新價": close_p, "漲跌幅(%)": round(((close_p-open_p)/open_p)*100, 2) if open_p>0 else 0, "成交量(張)": tot_vol, "成交值(萬元)": round(close_p*tot_vol/1000), "狀態": "熱門掃描"})
             api_hot.logout(); df_hot = pd.DataFrame(hot_data)
             t1, t2, t3, t4 = st.tabs(["💰 成交值", "📦 成交量", "🚀 漲幅排行", "📉 跌幅排行"])
@@ -453,7 +469,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
         render_smart_stock_table(pd.DataFrame([{"股票代碼": "6603", "股票名稱": "富強鑫", "最新價": 29.25, "漲跌幅(%)": -1.85, "成交量(張)": 10827, "篩選特徵": "🚀 當沖熱門突破"}]), "flt")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (對齊大戶投 APP 漲跌停價格與保留 Gemini AI 診斷)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (已做安全浮點數轉型防護)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 大戶投 APP 實時盯盤系統")
@@ -502,16 +518,16 @@ else:
                     snapshots = api.snapshots([contract])
                     if snapshots:
                         snap = snapshots[0]
-                        curr_price = float(getattr(snap, 'close', 0.0))
-                        high_price = float(getattr(snap, 'high', 0.0))
-                        low_price = float(getattr(snap, 'low', 0.0))
-                        open_price = float(getattr(snap, 'open', curr_price))
-                        volume = int(getattr(snap, 'total_volume', 0))
-                        avg_price = float(getattr(snap, 'average_price', curr_price)) or curr_price
+                        curr_price = safe_float(getattr(snap, 'close', 0.0))
+                        high_price = safe_float(getattr(snap, 'high', curr_price))
+                        low_price = safe_float(getattr(snap, 'low', curr_price))
+                        open_price = safe_float(getattr(snap, 'open', curr_price))
+                        volume = int(safe_float(getattr(snap, 'total_volume', 0)))
+                        avg_price = safe_float(getattr(snap, 'average_price', curr_price), curr_price) or curr_price
                         
-                        # 🎯 從 Shioaji 直接拉取大戶投APP同源的「漲停價」與「跌停價」
-                        limit_up = float(getattr(snap, 'limit_up', round(curr_price * 1.1, 2)))
-                        limit_down = float(getattr(snap, 'limit_down', round(curr_price * 0.9, 2)))
+                        # 🎯 安全解析 Shioaji 的漲停價與跌停價，避免非數字類型崩潰
+                        limit_up = safe_float(getattr(snap, 'limit_up', None), round(curr_price * 1.1, 2))
+                        limit_down = safe_float(getattr(snap, 'limit_down', None), round(curr_price * 0.9, 2))
 
                         start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
                         end_date = datetime.now().strftime("%Y-%m-%d")
@@ -533,13 +549,21 @@ else:
 
     if "analysis_data" in st.session_state and st.session_state["analysis_data"]["target_code"] == target_code:
         data = st.session_state["analysis_data"]
-        curr_price = data["curr_price"]
+        curr_price = safe_float(data["curr_price"])
+        open_price = safe_float(data['open_price'], curr_price)
+        high_price = safe_float(data['high_price'], curr_price)
+        low_price = safe_float(data['low_price'], curr_price)
+        limit_up = safe_float(data['limit_up'], curr_price * 1.1)
+        limit_down = safe_float(data['limit_down'], curr_price * 0.9)
+        avg_price = safe_float(data['avg_price'], curr_price)
+        balance_point = safe_float(data['balance_point'], curr_price)
+        bias_rate = safe_float(data['bias_rate'], 0.0)
         df_raw = data["df_raw"]
 
-        pct = ((curr_price - data['open_price']) / data['open_price']) * 100 if data['open_price'] else 0
+        pct = ((curr_price - open_price) / open_price) * 100 if open_price else 0
         t_cls = tone(pct)
 
-        # 🎯 對齊大戶投 APP 頂部報價橫幅 (含 最高/最低/漲停/跌停/均價/總量)[cite: 8]
+        # 🎯 完全對齊大戶投 APP 頂部報價橫幅 (已安全轉型，防範 ValueError)
         st.markdown(f"""
         <div class="terminal-quote">
             <div class="top-info">
@@ -552,11 +576,11 @@ else:
                 </div>
             </div>
             <div class="grid-info">
-                <div class="grid-cell"><span>最高</span><b class="text-red">{data['high_price']:.2f}</b></div>
-                <div class="grid-cell"><span>最低</span><b class="text-green">{data['low_price']:.2f}</b></div>
-                <div class="grid-cell"><span>漲停</span><b class="text-red">{data['limit_up']:.2f}</b></div>
-                <div class="grid-cell"><span>跌停</span><b class="text-green">{data['limit_down']:.2f}</b></div>
-                <div class="grid-cell"><span>均價</span><b style="color:var(--gold);">{data['avg_price']:.2f}</b></div>
+                <div class="grid-cell"><span>最高</span><b class="text-red">{high_price:.2f}</b></div>
+                <div class="grid-cell"><span>最低</span><b class="text-green">{low_price:.2f}</b></div>
+                <div class="grid-cell"><span>漲停</span><b class="text-red">{limit_up:.2f}</b></div>
+                <div class="grid-cell"><span>跌停</span><b class="text-green">{limit_down:.2f}</b></div>
+                <div class="grid-cell"><span>均價</span><b style="color:var(--gold);">{avg_price:.2f}</b></div>
                 <div class="grid-cell"><span>總量</span><b>{data['volume']:,} 張</b></div>
             </div>
         </div>
@@ -583,7 +607,7 @@ else:
                 fig.update_layout(height=420, margin=dict(l=10, r=10, t=10, b=10), template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis_rangeslider_visible=False)
                 st.plotly_chart(fig, use_container_width=True)
 
-            # 五檔委買委賣對齊（對齊大戶投五檔報價視覺）[cite: 8]
+            # 五檔委買委賣對齊（對齊大戶投五檔報價視覺）
             st.markdown("##### 📊 當日五檔委買委賣籌碼分布")
             col_b1, col_b2 = st.columns(2)
             with col_b1:
@@ -598,15 +622,15 @@ else:
             st.markdown(f"""
             <div class="level-container">
                 <div class="level-head">
-                    <div><span class="muted">漲停價</span><br><b class="text-red" style="font-size:1.3rem;">{data['limit_up']:.2f}</b></div>
-                    <div style="text-align:right;"><span class="muted">跌停價</span><br><b class="text-green" style="font-size:1.3rem;">{data['limit_down']:.2f}</b></div>
+                    <div><span class="muted">漲停價</span><br><b class="text-red" style="font-size:1.3rem;">{limit_up:.2f}</b></div>
+                    <div style="text-align:right;"><span class="muted">跌停價</span><br><b class="text-green" style="font-size:1.3rem;">{limit_down:.2f}</b></div>
                 </div>
-                <div class="level-box"><span class="lbl">🚀 漲停價格</span><span class="val text-red">{data['limit_up']:.2f}</span></div>
-                <div class="level-box"><span class="lbl">📈 當日最高</span><span class="val text-red">{data['high_price']:.2f}</span></div>
+                <div class="level-box"><span class="lbl">🚀 漲停價格</span><span class="val text-red">{limit_up:.2f}</span></div>
+                <div class="level-box"><span class="lbl">📈 當日最高</span><span class="val text-red">{high_price:.2f}</span></div>
                 <div class="level-box normal"><span class="lbl">📍 當前成交價</span><span class="val">{curr_price:.2f}</span></div>
-                <div class="level-box"><span class="lbl">📉 當日最低</span><span class="val text-green">{data['low_price']:.2f}</span></div>
-                <div class="level-box"><span class="lbl">💦 跌停價格</span><span class="val text-green">{data['limit_down']:.2f}</span></div>
-                <div class="level-box"><span class="lbl">🛡️ 多空平衡點</span><span class="val" style="color:var(--gold);">{data['balance_point']:.2f}</span></div>
+                <div class="level-box"><span class="lbl">📉 當日最低</span><span class="val text-green">{low_price:.2f}</span></div>
+                <div class="level-box"><span class="lbl">💦 跌停價格</span><span class="val text-green">{limit_down:.2f}</span></div>
+                <div class="level-box"><span class="lbl">🛡️ 多空平衡點</span><span class="val" style="color:var(--gold);">{balance_point:.2f}</span></div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -616,7 +640,7 @@ else:
                     fund_info = check_fundamental_6layer(target_code)
                     combined_dict = {
                         'target_code': target_code, 'target_name': target_name, 'curr_price': curr_price,
-                        'bias_rate': data['bias_rate'], 'momentum_coef': 1.0, 'balance_point': data['balance_point'],
+                        'bias_rate': bias_rate, 'momentum_coef': 1.0, 'balance_point': balance_point,
                         '季EPS': fund_info.get('eps', 1.5), '營收YoY': f"+{fund_info.get('yoy', 20.0)}%",
                         'ROE': f"{fund_info.get('roe', 15.0)}%", 'PEG': fund_info.get('peg', 0.8),
                         '綜合評分': 80, '催化劑': fund_info.get('catalyst', '當沖多空轉折監控'), '狀態': '即時盯盤'
