@@ -213,9 +213,7 @@ def fetch_finmind_chip_data(stock_code, token=""):
             raw_data = res.json().get("data", [])
             if raw_data:
                 df = pd.DataFrame(raw_data)
-                # 計算買賣超 (張數 = (買進 - 賣出) / 1000)
                 df["net_vol"] = (df["buy"] - df["sell"]) / 1000
-                # 法人名稱正規化
                 name_map = {
                     "Foreign_Investor": "外資",
                     "Investment_Trust": "投信",
@@ -223,8 +221,6 @@ def fetch_finmind_chip_data(stock_code, token=""):
                     "Dealer_Hedging": "自營商避險"
                 }
                 df["name_clean"] = df["name"].map(lambda x: name_map.get(x, x))
-                
-                # 轉置表格 (Pivot)
                 pivot_df = df.pivot_table(index="date", columns="name_clean", values="net_vol", aggfunc="sum").fillna(0)
                 
                 if "自營商避險" in pivot_df.columns:
@@ -237,7 +233,6 @@ def fetch_finmind_chip_data(stock_code, token=""):
                 pivot_df["合計"] = pivot_df["外資"] + pivot_df["投信"] + pivot_df["自營商"]
                 pivot_df = pivot_df.sort_index(ascending=False).head(5).reset_index()
                 
-                # 格式化日期與張數
                 pivot_df["日期"] = pd.to_datetime(pivot_df["date"]).dt.strftime("%m/%d")
                 for col in ["外資", "投信", "自營商", "合計"]:
                     pivot_df[col] = pivot_df[col].apply(lambda x: f"{x:+.0f}" if x != 0 else "0")
@@ -285,7 +280,7 @@ def calculate_atr(df, period=14):
     df['ATR'] = df['TR'].rolling(period).mean()
     return df
 
-# 🤖 Gemini API 深度診斷函式
+# 🤖 終極穩定版：使用 HTTP REST API 直連 Gemini，徹底解決 SDK 404 與模型別名錯誤
 def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     c_code = str(data_dict.get('股票代碼', data_dict.get('target_code', '')))
     c_name = str(data_dict.get('股票名稱', data_dict.get('target_name', '')))
@@ -325,35 +320,30 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
 3. **⚠️ 風險提示與嚴格停損位**：指出該股當前最大的風險因子（如本益比過高、高檔開高走低賣壓、動能不足等），並給出精確的**停損參考價格**。
 """
 
-    models_to_try = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-flash-latest']
-    try:
-        from google import genai
-        client = genai.Client(api_key=key_to_use)
-        for m in models_to_try:
-            try:
-                response = client.models.generate_content(model=m, contents=prompt)
-                if response and response.text:
-                    return response.text
-            except Exception:
-                continue
-    except Exception:
-        pass
+    endpoints = [
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key_to_use}",
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={key_to_use}",
+        f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={key_to_use}"
+    ]
 
-    try:
-        import google.generativeai as old_genai
-        old_genai.configure(api_key=key_to_use)
-        for m in models_to_try:
-            try:
-                model = old_genai.GenerativeModel(m)
-                res = model.generate_content(prompt)
-                if res and res.text:
-                    return res.text
-            except Exception:
-                continue
-    except Exception:
-        pass
+    payload = {
+        "contents": [{
+            "parts": [{"text": prompt}]
+        }]
+    }
 
-    return "❌ 呼叫 Gemini API 分析時發生錯誤: 所有模型別名皆回應 404 或無效，請確認金鑰權限與 API 計費狀態。"
+    for url in endpoints:
+        try:
+            res = requests.post(url, json=payload, timeout=12)
+            if res.status_code == 200:
+                res_data = res.json()
+                return res_data['candidates'][0]['content']['parts'][0]['text']
+            elif res.status_code in [400, 403]:
+                return f"❌ API Key 無效或未授權 (HTTP {res.status_code})。請確認在 Google AI Studio 申請的金鑰是否正確。"
+        except Exception:
+            continue
+
+    return "❌ 呼叫 Gemini API 分析時發生錯誤: 所有 Endpoint 皆回應 404 或連線逾時。請至 Google AI Studio 重新點擊『Create API key in new project』建立全新 Key 貼入。"
 
 # 技術面演算：計算強壓與強撐位
 def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high, prev_low, balance_point, chip_data):
@@ -550,7 +540,7 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
             with t4: render_smart_stock_table(df_hot.sort_values(by="漲跌幅(%)", ascending=True), "hot_down")
         except Exception as e: st.error(f"錯誤: {str(e)}")
 
-# ⚡ 當沖強勢股篩選 (含完整 5 大條件參數)
+# ⚡ 當沖強勢股篩選
 elif app_mode == "⚡ 當沖強勢股篩選":
     st.title("🔥 短線多頭精選 — 當沖強勢股篩選雷達")
     st.caption("掃描上市櫃成交額前段個股，嚴格依據 5 大核心指標過濾無量假突破與死股。")
@@ -606,7 +596,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (已實時串接 FinMind 近 5 日籌碼數據)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (全功能直連板)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
@@ -697,7 +687,6 @@ else:
                         outer_vol = safe_float(getattr(snap, 'ask_volume', 0.0))
                         inner_vol = safe_float(getattr(snap, 'bid_volume', 0.0))
 
-                        # 🎯 抓取 Shioaji 漲跌停價格 (price_up / price_down)
                         limit_up = safe_float(getattr(snap, 'price_up', None), round(curr_price * 1.1, 2))
                         limit_down = safe_float(getattr(snap, 'price_down', None), round(curr_price * 0.9, 2))
 
@@ -852,7 +841,6 @@ else:
                     if "60MA" in df_chart.columns: fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['60MA'], mode='lines', name='60MA(季線)', line=dict(color='purple', width=2)), row=1, col=1)
                     if "120MA" in df_chart.columns: fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['120MA'], mode='lines', name='120MA(半年線)', line=dict(color='orange', width=2)), row=1, col=1)
                 else:
-                    # 分時 K 線：計算布林通道與當日均線 VWAP
                     df_chart["20MA"] = df_chart["Close"].rolling(20).mean()
                     df_chart["Std"] = df_chart["Close"].rolling(20).std()
                     df_chart["UpperBand"] = df_chart["20MA"] + (df_chart["Std"] * 2)
@@ -880,13 +868,11 @@ else:
             c_left, c_right = st.columns(2)
             with c_left:
                 st.caption("三大法人買賣超 (張) [FinMind 即時數據]")
-                # 實時呼叫 FinMind API
                 df_finmind = fetch_finmind_chip_data(target_code, finmind_token)
                 
                 if not df_finmind.empty:
                     st.dataframe(df_finmind, use_container_width=True, hide_index=True)
                 else:
-                    # FinMind API 未填 Token 或連線逾時備援
                     df_chips_backup = pd.DataFrame([
                         {"日期": "10/02", "外資": "+1,200", "投信": "+350", "自營商": "-120", "合計": "+1,430"},
                         {"日期": "10/01", "外資": "+850", "投信": "+120", "自營商": "+50", "合計": "+1,020"},
@@ -919,7 +905,7 @@ else:
                 <div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">{ai_res['resistance']}</span></div>
                 <div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">{ai_res['entry_price']}</span></div>
                 <div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">{curr_price:.2f}</span></div>
-                <div class="level-box"><span class="lbl">🛡️️ 多空平衡點</span><span class="val" style="color:var(--gold);">{balance_point:.2f}</span></div>
+                <div class="level-box"><span class="lbl">🛡️ 多空平衡點</span><span class="val" style="color:var(--gold);">{balance_point:.2f}</span></div>
                 <div class="level-box"><span class="lbl">🛡️ 技術強撐價</span><span class="val text-green">{ai_res['support']}</span></div>
                 <div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">{limit_down:.2f}</span></div>
             </div>
