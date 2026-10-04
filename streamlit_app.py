@@ -157,6 +157,27 @@ def calculate_breakeven_price(buy_price, qty_sheets=1, discount=0.2, tax_rate=0.
     return breakeven_price, total_buy_cost, buy_fee
 
 
+# 🧮 計算給定現價下的未實現損益與報酬率
+def calculate_pnl_and_roi(curr_price, buy_price, qty_sheets=1, discount=0.2, tax_rate=0.003):
+    if curr_price <= 0 or buy_price <= 0 or qty_sheets <= 0:
+        return 0.0, 0.0
+    shares = qty_sheets * 1000
+    buy_amt = buy_price * shares
+    buy_fee = math.floor(buy_amt * 0.001425 * discount)
+    if buy_fee < 20: buy_fee = 20
+    total_buy_cost = buy_amt + buy_fee
+
+    sell_amt = curr_price * shares
+    sell_fee = math.floor(sell_amt * 0.001425 * discount)
+    if sell_fee < 20: sell_fee = 20
+    sell_tax = math.floor(sell_amt * tax_rate)
+    net_sell = sell_amt - sell_fee - sell_tax
+
+    pnl = net_sell - total_buy_cost
+    roi = (pnl / total_buy_cost) * 100.0 if total_buy_cost > 0 else 0.0
+    return pnl, roi
+
+
 # 💾 1. 自選股 JSON 永久儲存與讀取
 WATCHLIST_FILE = "watchlist.json"
 
@@ -253,7 +274,7 @@ else:
 # =========================================================
 # 🔒 使用 @st.cache_resource 控制單一 Shioaji API Session，解決 Code 451
 # =========================================================
-@st.cache_resource(ttl=3600)
+@st.cache_resource(ttl=3600, show_spinner=False)
 def get_shioaji_api(k_key, s_key):
     if not k_key or not s_key:
         return None
@@ -710,7 +731,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (快取 API 版)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (含預估損益 & 報酬率紅綠標示)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
@@ -777,20 +798,49 @@ else:
         st.session_state["last_stock"] = target_code
         if "analysis_data" in st.session_state: del st.session_state["analysis_data"]
 
-    # 💰 交易計劃與個人持股成本計算器
+    # 💰 交易計劃與個人持股成本計算器 (六欄排列：新增預估損益與預估報酬率卡片)
     st.markdown("##### ⚙️ 交易計劃與個人持股成本設定 (含 2折手續費 + 0.3% 證交稅損益兩平試算)")
-    col_p1, col_p2, col_stop, col_target = st.columns([1, 1, 1, 1])
+    col_p1, col_p2, col_p3, col_p4, col_stop, col_target = st.columns([1, 0.8, 1.1, 1.1, 1, 1])
     
     with col_p1:
         buy_cost_input = st.number_input("💵 買進成本價 (元)", value=float(saved_info.get("buy_cost", 0.0)), step=0.5, key=f"cost_input_{target_code}")
     with col_p2:
         buy_sheets_input = st.number_input("📦 買進張數", value=int(saved_info.get("buy_sheets", 1)), min_value=1, step=1, key=f"sheets_input_{target_code}")
+    
+    # 預先抓取或試算目前最新成交價
+    latest_price = 0.0
+    if "analysis_data" in st.session_state and st.session_state["analysis_data"]["target_code"] == target_code:
+        latest_price = safe_float(st.session_state["analysis_data"].get("curr_price", 0.0))
+
+    calc_pnl, calc_roi = calculate_pnl_and_roi(latest_price, buy_cost_input, buy_sheets_input, discount=0.2, tax_rate=0.003)
+
+    # 即時計算損益與報酬率並標示顏色（正紅負綠）
+    with col_p3:
+        pnl_color = "var(--up)" if calc_pnl >= 0 else "var(--down)"
+        pnl_str = f"{calc_pnl:+,.0f} 元" if buy_cost_input > 0 else "--"
+        st.markdown(f"""
+        <div style="background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:6px 12px; text-align:center;">
+            <div style="font-size:0.8rem; color:#D1D8E0; font-weight:600;">💰 預估未實現損益</div>
+            <div style="font-size:1.25rem; font-weight:900; color:{pnl_color};">{pnl_str}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col_p4:
+        roi_color = "var(--up)" if calc_roi >= 0 else "var(--down)"
+        roi_str = f"{calc_roi:+.2f} %" if buy_cost_input > 0 else "--"
+        st.markdown(f"""
+        <div style="background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:6px 12px; text-align:center;">
+            <div style="font-size:0.8rem; color:#D1D8E0; font-weight:600;">📊 預估報酬率</div>
+            <div style="font-size:1.25rem; font-weight:900; color:{roi_color};">{roi_str}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
     with col_stop:
         custom_stop_price = st.number_input("🛡️ 停損價 (元)", value=float(saved_info.get("custom_stop", 0.0)), step=0.5, key=f"stop_input_{target_code}")
     with col_target:
         custom_target_price = st.number_input("🎯 目標價 (元)", value=float(saved_info.get("custom_target", 0.0)), step=0.5, key=f"target_input_{target_code}")
 
-    # 即時存檔
+    # 即時自動存檔至 holdings.json
     save_stock_holding(target_code, buy_cost_input, buy_sheets_input, custom_stop_price, custom_target_price)
 
     # 計算損益兩平價
@@ -1143,7 +1193,7 @@ else:
                 <div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">{ai_res['resistance']}</span></div>
                 <div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">{ai_res['entry_price']}</span></div>
                 <div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">{curr_price:.2f}</span></div>
-                <div class="level-box"><span class="lbl">🛡 多空平衡點</span><span class="val" style="color:var(--gold);">{balance_point:.2f}</span></div>
+                <div class="level-box"><span class="lbl">🛡️ 多空平衡點</span><span class="val" style="color:var(--gold);">{balance_point:.2f}</span></div>
                 <div class="level-box"><span class="lbl">🛡️ 技術強撐價</span><span class="val text-green">{ai_res['support']}</span></div>
                 <div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">{limit_down:.2f}</span></div>
             </div>
