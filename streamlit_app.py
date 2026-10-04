@@ -107,7 +107,7 @@ st.markdown(_CSS, unsafe_allow_html=True)
 
 
 def safe_float(val, default=0.0):
-    """防範型態問題的安全轉型」"""
+    """防範型態問題的安全轉型"""
     try:
         if val is None:
             return default
@@ -550,12 +550,12 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (全功能完整保留版)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (含多週期 K 線完整指標線)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
 
-    # 📚 實戰戰法指南展延區 (保留)
+    # 📚 實戰戰法指南展延區
     with st.expander("📚 實戰戰法指南（進場點 / 停損停利 / 轉弱判讀 / 策略圖解）", expanded=False):
         st.markdown("""
         ### 🎯 四大圖卡實戰判讀標準
@@ -567,7 +567,7 @@ else:
            * **風格定位**：短線當沖 (停損3~5%/停利5~8%)、波段 (停損5~10%/停利10~20%)、長線 (停損10~15%/停利20~50%)。
         """)
 
-    # 自動刷新與警示音選單 (保留)
+    # 自動刷新與警示音選單
     auto_refresh = st.sidebar.checkbox("開啟自動盯盤刷新", value=False)
     enable_sound = st.sidebar.checkbox("開啟轉折警示音效", value=True)
     refresh_interval = st.sidebar.slider("刷新間隔 (秒)", min_value=3, max_value=60, value=5, step=1)
@@ -610,7 +610,7 @@ else:
         st.session_state["custom_stop"] = 0.0
         if "analysis_data" in st.session_state: del st.session_state["analysis_data"]
 
-    # 🎯 手動交易計劃設定 (左側停損價/右側目標價) (保留)
+    # 🎯 手動交易計劃設定
     st.markdown("##### ⚙️ 手動交易計劃設定 (左側預設支撐價 / 右側預設壓力價)")
     col_stop, col_target = st.columns(2)
     with col_stop:
@@ -641,7 +641,7 @@ else:
                         outer_vol = safe_float(getattr(snap, 'ask_volume', 0.0))
                         inner_vol = safe_float(getattr(snap, 'bid_volume', 0.0))
 
-                        # 🎯 正確抓取 Shioaji 的漲跌停價格 (price_up / price_down)
+                        # 🎯 抓取 Shioaji 漲跌停價格 (price_up / price_down)
                         limit_up = safe_float(getattr(snap, 'price_up', None), round(curr_price * 1.1, 2))
                         limit_down = safe_float(getattr(snap, 'price_down', None), round(curr_price * 0.9, 2))
 
@@ -686,6 +686,7 @@ else:
             df_k_daily["10MA"] = df_k_daily["Close"].rolling(10).mean()
             df_k_daily["20MA"] = df_k_daily["Close"].rolling(20).mean()
             df_k_daily["60MA"] = df_k_daily["Close"].rolling(60).mean()
+            df_k_daily["120MA"] = df_k_daily["Close"].rolling(120).mean()
             df_k_daily = calculate_atr(df_k_daily)
 
             ma5 = df_k_daily['5MA'].iloc[-1]; ma20 = df_k_daily['20MA'].iloc[-1]
@@ -724,7 +725,7 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-        # 🎯 四大停損與停利參考試算卡片 (保留)
+        # 🎯 四大停損與停利參考試算卡片
         st.markdown("#### 2️⃣ 四大停損與停利參考設定 (多重停損綠色 / 多重停利紅色)")
         col_sl_box, col_tp_box = st.columns(2)
 
@@ -752,22 +753,70 @@ else:
         left_main, right_panel = st.columns([3, 1])
 
         with left_main:
-            # 1. 主 K 線與成交量圖
+            # 1. 主 K 線與成交量圖（完整指標線整合）
             kbar_tf = st.radio("顯示週期：", ["5分K", "1分K", "60分K", "日K"], horizontal=True)
-            if "日K" in kbar_tf and 'df_k_daily' in locals():
-                df_c = df_k_daily.tail(60).copy(); df_c["DateTime"] = pd.to_datetime(df_c["DateTime"])
+
+            if "日K" in kbar_tf and 'df_k_daily' in locals() and not df_k_daily.empty:
+                df_chart = df_k_daily.tail(60).copy()
+                df_chart["DateTime"] = pd.to_datetime(df_chart["DateTime"])
                 time_fmt = '%Y-%m-%d'
             else:
                 latest_d = df_raw["DateTime"].dt.date.max() if len(df_raw)>0 else datetime.now().date()
-                df_sub = df_raw[df_raw["DateTime"].dt.date == latest_d]
-                df_c = df_sub.set_index("DateTime").resample("5min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index() if len(df_sub)>0 else pd.DataFrame()
-                time_fmt = '%H:%M'
+                df_today_raw = df_raw[df_raw["DateTime"].dt.date == latest_d]
+                if "1分K" in kbar_tf:
+                    df_chart = df_today_raw.set_index("DateTime").resample("1min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index() if len(df_today_raw)>0 else pd.DataFrame()
+                    time_fmt = '%H:%M'
+                elif "60分K" in kbar_tf:
+                    df_chart = df_raw.set_index("DateTime").resample("60min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index().tail(60) if len(df_raw)>0 else pd.DataFrame()
+                    time_fmt = '%m-%d %H:%M'
+                else: # 預設 5分K
+                    df_chart = df_today_raw.set_index("DateTime").resample("5min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index() if len(df_today_raw)>0 else pd.DataFrame()
+                    time_fmt = '%H:%M'
 
-            if len(df_c) > 0:
+            if len(df_chart) > 0:
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.03)
-                fig.add_trace(go.Candlestick(x=df_c['DateTime'].dt.strftime(time_fmt), open=df_c['Open'], high=df_c['High'], low=df_c['Low'], close=df_c['Close'], name='K線', increasing_line_color="#F6465D", decreasing_line_color="#1FC98B"), row=1, col=1)
-                fig.add_trace(go.Bar(x=df_c['DateTime'].dt.strftime(time_fmt), y=df_c['Volume'], name='成交量', marker_color="#4C8DFF"), row=2, col=1)
-                fig.update_layout(height=420, margin=dict(l=10, r=10, t=10, b=10), template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis_rangeslider_visible=False)
+
+                # 蠟燭 K 線圖（台股：紅漲綠跌）
+                fig.add_trace(go.Candlestick(
+                    x=df_chart['DateTime'].dt.strftime(time_fmt),
+                    open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'],
+                    name='K線', increasing_line_color="#F6465D", decreasing_line_color="#1FC98B"
+                ), row=1, col=1)
+
+                # 成交量柱狀圖
+                fig.add_trace(go.Bar(
+                    x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['Volume'],
+                    name='成交量', marker_color="#4C8DFF"
+                ), row=2, col=1)
+
+                # 🎯 恢復多週期技術指標線繪製邏輯
+                if "日K" in kbar_tf:
+                    if "5MA" in df_chart.columns: fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['5MA'], mode='lines', name='5MA', line=dict(color='lightskyblue', width=1)), row=1, col=1)
+                    if "10MA" in df_chart.columns: fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['10MA'], mode='lines', name='10MA', line=dict(color='blue', width=1.5)), row=1, col=1)
+                    if "60MA" in df_chart.columns: fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['60MA'], mode='lines', name='60MA(季線)', line=dict(color='purple', width=2)), row=1, col=1)
+                    if "120MA" in df_chart.columns: fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['120MA'], mode='lines', name='120MA(半年線)', line=dict(color='orange', width=2)), row=1, col=1)
+                else:
+                    # 分時 K 線：計算布林通道與當日均線 VWAP
+                    df_chart["20MA"] = df_chart["Close"].rolling(20).mean()
+                    df_chart["Std"] = df_chart["Close"].rolling(20).std()
+                    df_chart["UpperBand"] = df_chart["20MA"] + (df_chart["Std"] * 2)
+                    df_chart["LowerBand"] = df_chart["20MA"] - (df_chart["Std"] * 2)
+
+                    if "1分K" in kbar_tf or "5分K" in kbar_tf:
+                        df_chart["Cum_Vol"] = df_chart["Volume"].cumsum()
+                        df_chart["Cum_Val"] = (df_chart["Close"] * df_chart["Volume"]).cumsum()
+                        df_chart["VWAP"] = (df_chart["Cum_Val"] / df_chart["Cum_Vol"]).fillna(df_chart["Close"])
+                        fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['VWAP'], mode='lines', name='當日均線(VWAP)', line=dict(color='gold', width=2.5)), row=1, col=1)
+
+                    fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['UpperBand'], mode='lines', name='布林上軌', line=dict(color='red', width=1, dash='dash')), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['20MA'], mode='lines', name='20MA(中軌)', line=dict(color='blue', width=1.5)), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['LowerBand'], mode='lines', name='布林下軌', line=dict(color='green', width=1, dash='dash')), row=1, col=1)
+
+                fig.update_layout(
+                    height=450, margin=dict(l=10, r=10, t=10, b=10), template="plotly_dark",
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis_rangeslider_visible=False,
+                    legend=dict(orientation="h", y=1.08, font=dict(color="#FFFFFF", size=12))
+                )
                 st.plotly_chart(fig, use_container_width=True)
 
             # 2. K線下方：三大法人與籌碼集中度雙表格
@@ -788,7 +837,7 @@ else:
                     {"日期": "09/30", "主力買賣超": "-310", "籌碼集中度": "-2.1%", "買超前5總和": "48.5%"},
                 ]), use_container_width=True)
 
-        # 🎯 右側欄：黃框關鍵價位看板（分開顯示技術強壓/強撐與漲跌停價）
+        # 🎯 右側欄：黃框關鍵價位看板
         with right_panel:
             st.markdown(f"""
             <div class="level-container">
@@ -823,7 +872,7 @@ else:
         if f"monitor_ai_eval_{target_code}" in st.session_state:
             st.markdown(f"<div class='navy-card'>{st.session_state[f'monitor_ai_eval_{target_code}']}</div>", unsafe_allow_html=True)
 
-        # 警示音觸發 (保留)
+        # 警示音觸發
         if custom_target_price > 0 and curr_price >= custom_target_price:
             play_sound(freq=1000, duration=0.8, enable_sound=enable_sound)
             st.success(f"🎯 **【目標價觸發】**：【{data['target_name']}】現價 `{curr_price}` 元已達預設目標價 `{custom_target_price}` 元！")
