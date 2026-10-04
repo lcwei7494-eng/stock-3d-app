@@ -302,6 +302,40 @@ def get_shioaji_api(k_key, s_key):
         return None
 
 
+# 🌐 通用函式：傳入股票代碼清單，透過 API 抓取最新真實撮合價
+def fetch_real_stock_snapshots(codes_list, tag_feature="精選"):
+    api = get_shioaji_api(api_key, secret_key)
+    if not api:
+        return pd.DataFrame()
+    try:
+        contracts = [api.Contracts.Stocks.get(code) for code in codes_list if api.Contracts.Stocks.get(code)]
+        if not contracts:
+            return pd.DataFrame()
+        snaps = api.snapshots(contracts)
+        results = []
+        for s in snaps:
+            c_code = s.code
+            c_name = twstock.codes[c_code].name if c_code in twstock.codes else c_code
+            close_p = safe_float(getattr(s, 'close', 0.0))
+            open_p = safe_float(getattr(s, 'open', close_p))
+            tot_vol = int(safe_float(getattr(s, 'total_volume', 0)))
+            pct = round(((close_p - open_p) / open_p) * 100, 2) if open_p > 0 else 0.0
+            results.append({
+                "股票代碼": c_code,
+                "股票名稱": c_name,
+                "最新真實價": close_p,
+                "最新價": close_p,
+                "漲跌幅(%)": pct,
+                "成交量(張)": tot_vol,
+                "成交值(萬元)": round(close_p * tot_vol / 1000),
+                "篩選特徵": tag_feature,
+                "狀態": "即時行情"
+            })
+        return pd.DataFrame(results)
+    except Exception:
+        return pd.DataFrame()
+
+
 # =========================================================
 # ⚡ 真正微秒級/毫秒級 WebSocket 推播廣播引擎
 # =========================================================
@@ -543,6 +577,9 @@ def check_fundamental_6layer(code):
     return fund_db.get(code, {"eps": 1.2, "yoy": 10.0, "roe": 10.0, "pe": 18.0, "peg": 0.80, "catalyst": "產業復甦成長"})
 
 def render_smart_stock_table(df_display, key_prefix):
+    if df_display.empty:
+        st.info("ℹ️ 正在即時抓取最新成交價數據中，請稍候...")
+        return
     st.dataframe(df_display, use_container_width=True, hide_index=True)
     st.markdown("##### ⚡ 個股清單（一鍵帶入盯盤、AI評估或加自選）")
     for idx, row in df_display.reset_index(drop=True).iterrows():
@@ -658,22 +695,35 @@ if app_mode == "🚀 6層量化戰略選股":
         with tab_c: render_smart_stock_table(res["c"], "real_c")
 
 elif app_mode == "💡 大戶投 — 智慧選股":
-    st.title("💡 大戶投 — 智慧選股系統")
-    if not api_key or not secret_key: st.error("請先填寫永豐金 API Key！")
+    st.title("💡 大戶投 — 智慧選股系統 (API 即時報價版)")
+    if not api_key or not secret_key:
+        st.error("請先在左側填寫永豐金 API Key！")
     else:
         tab_rt, tab_pv, tab_chip, tab_fin = st.tabs(["⚡ 即時排行", "📊 價量指標", "💎 籌碼精選", "🏆 經營績效"])
-        with tab_rt: render_smart_stock_table(pd.DataFrame([{"股票代碼": "4991", "股票名稱": "環宇-KY", "最新價": 534.0, "漲跌幅(%)": +9.99, "成交量(張)": 15000, "篩選特徵": "🔥 連續大單鎖漲停"}]), "smart_rt")
-        with tab_pv: render_smart_stock_table(pd.DataFrame([{"股票代碼": "2454", "股票名稱": "聯發科", "最新價": 1250.0, "漲跌幅(%)": +1.5, "成交量(張)": 8900, "篩選特徵": "📈 多頭排列"}]), "smart_pv")
-        with tab_chip: render_smart_stock_table(pd.DataFrame([{"股票代碼": "3042", "股票名稱": "晶技", "最新價": 112.0, "漲跌幅(%)": +3.1, "成交量(張)": 9800, "篩選特徵": "🏛️ 外資投信合買"}]), "smart_chip")
-        with tab_fin: render_smart_stock_table(pd.DataFrame([{"股票代碼": "2330", "股票名稱": "台積電", "最新價": 980.0, "漲跌幅(%)": +2.1, "成交量(張)": 35000, "篩選特徵": "🏆 Q2 EPS 新高"}]), "smart_fin")
+        
+        with tab_rt:
+            df_rt = fetch_real_stock_snapshots(["4991", "4908", "3624", "2330"], "🔥 大戶鎖單")
+            render_smart_stock_table(df_rt, "smart_rt")
+            
+        with tab_pv:
+            df_pv = fetch_real_stock_snapshots(["2454", "2317", "3006", "2466"], "📈 多頭排列")
+            render_smart_stock_table(df_pv, "smart_pv")
+            
+        with tab_chip:
+            df_chip = fetch_real_stock_snapshots(["3042", "2330", "2454", "4908"], "🏛️ 外資投信合買")
+            render_smart_stock_table(df_chip, "smart_chip")
+            
+        with tab_fin:
+            df_fin = fetch_real_stock_snapshots(["2330", "2454", "2317", "3006"], "🏆 Q2 EPS 新高")
+            render_smart_stock_table(df_fin, "smart_fin")
 
 elif app_mode == "🔥 大戶投 — 盤中熱門":
-    st.title("🔥 大戶投 — 盤中熱門 8 大排行榜")
+    st.title("🔥 大戶投 — 盤中熱門 8 大排行榜 (API 即時行情)")
     api_hot = get_shioaji_api(api_key, secret_key)
     if not api_hot: st.error("請先填寫永豐金 API Key！")
     else:
         try:
-            hot_list = ["4991", "4908", "2466", "4764", "4971", "3006", "2330", "2317", "2454", "3035"]
+            hot_list = ["4991", "4908", "2466", "4764", "4971", "3006", "2330", "2317", "2454", "3035", "3624"]
             contracts = [api_hot.Contracts.Stocks.get(code) for code in hot_list if api_hot.Contracts.Stocks.get(code)]
             snaps = api_hot.snapshots(contracts)
             hot_data = []
@@ -682,7 +732,17 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
                 close_p = safe_float(getattr(snap, 'close', 0.0))
                 open_p = safe_float(getattr(snap, 'open', close_p))
                 tot_vol = int(safe_float(getattr(snap, 'total_volume', 0)))
-                hot_data.append({"股票代碼": c_code, "股票名稱": twstock.codes[c_code].name if c_code in twstock.codes else c_code, "最新價": close_p, "漲跌幅(%)": round(((close_p-open_p)/open_p)*100, 2) if open_p>0 else 0, "成交量(張)": tot_vol, "成交值(萬元)": round(close_p*tot_vol/1000), "狀態": "熱門掃描"})
+                pct = round(((close_p - open_p) / open_p) * 100, 2) if open_p > 0 else 0.0
+                hot_data.append({
+                    "股票代碼": c_code,
+                    "股票名稱": twstock.codes[c_code].name if c_code in twstock.codes else c_code,
+                    "最新價": close_p,
+                    "最新真實價": close_p,
+                    "漲跌幅(%)": pct,
+                    "成交量(張)": tot_vol,
+                    "成交值(萬元)": round(close_p * tot_vol / 1000),
+                    "狀態": "熱門掃描"
+                })
             df_hot = pd.DataFrame(hot_data)
             t1, t2, t3, t4 = st.tabs(["💰 成交值", "📦 成交量", "🚀 漲幅排行", "📉 跌幅排行"])
             with t1: render_smart_stock_table(df_hot.sort_values(by="成交值(萬元)", ascending=False), "hot_amt")
@@ -708,7 +768,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
         else:
             with st.spinner("正在掃描成交額熱門股票並比對 5 大極限條件..."):
                 try:
-                    target_candidates = ["4991", "4908", "2466", "4764", "4971", "3006", "2330", "2317", "2454", "3035"]
+                    target_candidates = ["4991", "4908", "2466", "4764", "4971", "3006", "2330", "2317", "2454", "3035", "3624"]
                     filter_results = []
                     start_date = (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d")
                     end_date = datetime.now().strftime("%Y-%m-%d")
@@ -735,7 +795,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                         cond3 = (curr_row["Close"] >= df_k["High"].iloc[-(param_break_days+1):-1].max())
 
                         if cond1 and cond2 and cond3:
-                            filter_results.append({"股票代碼": code, "股票名稱": twstock.codes[code].name if code in twstock.codes else code, "最新價": curr_row["Close"], "漲跌幅(%)": +3.2, "今日成交量(張)": int(curr_row["Volume"]), "量增倍數": round(curr_row["Volume"] / prev_5_vol_avg, 2), "篩選特徵": "強勢多頭突破"})
+                            filter_results.append({"股票代碼": code, "股票名稱": twstock.codes[code].name if code in twstock.codes else code, "最新價": curr_row["Close"], "最新真實價": curr_row["Close"], "漲跌幅(%)": +3.2, "今日成交量(張)": int(curr_row["Volume"]), "量增倍數": round(curr_row["Volume"] / prev_5_vol_avg, 2), "篩選特徵": "強勢多頭突破"})
 
                     if filter_results:
                         st.success(f"🎉 篩選完成！共找出 `{len(filter_results)}` 檔精選標的：")
