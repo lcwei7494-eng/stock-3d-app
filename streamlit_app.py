@@ -7,6 +7,7 @@ import time
 import json
 import os
 from datetime import datetime, timedelta
+from google import genai
 
 st.set_page_config(page_title="三維定位法 & 6層量化選股與當沖盯盤全功能系統", layout="wide")
 
@@ -183,6 +184,7 @@ if "watchlist" not in st.session_state:
 # 自動從 Streamlit Secrets 讀取 API Key
 api_key = st.secrets.get("SHIOAJI_API_KEY", "")
 secret_key = st.secrets.get("SHIOAJI_SECRET_KEY", "")
+gemini_api_key = st.secrets.get("GEMINI_API_KEY", "")
 
 # 側邊欄：功能頁面選單
 st.sidebar.title("📌 全功能頁面選單")
@@ -191,7 +193,7 @@ app_mode = st.sidebar.radio(
     [
         "🚀 6層量化戰略選股",
         "💡 大戶投 — 智慧選股",
-        "🔥 大戶投 — 盤中熱門",
+        "🔥 大戶投 — 盘中熱門",
         "⚡ 當沖強勢股篩選",
         "📈 三維定位與當沖盯盤系統"
     ]
@@ -204,6 +206,9 @@ if not api_key or not secret_key:
     secret_key = st.sidebar.text_input("Secret Key", type="password")
 else:
     st.sidebar.success("✅ 永豐金 API Key 已自動載入！")
+
+if not gemini_api_key:
+    gemini_api_key = st.sidebar.text_input("🔑 Gemini API Key (AI 評估用)", type="password")
 
 # 聲音發放 HTML 函式
 def play_sound(freq=880, duration=0.5, enable_sound=True):
@@ -261,11 +266,12 @@ def calculate_atr(df, period=14):
     df['ATR'] = df['TR'].rolling(period).mean()
     return df
 
-# 🏛️ 高盛資深分析師 AI 深度評估 Prompt 邏輯
-def run_goldman_sachs_ai_evaluation(row):
+# 🤖 真正呼叫 Gemini API 的高盛資深分析師診斷函式
+def run_goldman_sachs_ai_evaluation(row, user_gemini_key=""):
     c_code = str(row['股票代碼'])
     c_name = str(row['股票名稱'])
     price = row.get('最新真實價', row.get('最新價', 100.0))
+    pct = row.get('漲跌幅(%)', 0.0)
     eps = row.get('季EPS', 1.5)
     yoy = row.get('營收YoY', '+20.0%')
     roe = row.get('ROE', '15.0%')
@@ -274,35 +280,37 @@ def run_goldman_sachs_ai_evaluation(row):
     catalyst = row.get('催化劑', '產業景氣回溫/庫存回補')
     status = row.get('狀態', '強勢突破')
 
-    win_rate = min(88, max(52, int(score * 0.85 + 10)))
-    risk_level = "低~中等 (排雷系統合格)" if score >= 80 else "中等 (短線偏離均線，防高檔震盪)"
-    stop_loss = round(float(price) * 0.94, 2)
-    target_price = round(float(price) * 1.18, 2)
+    key_to_use = user_gemini_key if user_gemini_key else gemini_api_key
 
-    eval_md = f"""
-    ### 🏛️ 高盛（Goldman Sachs）資深證券分析師 — 深度量化診斷報告
-    **標的**：【{c_code} {c_name}】 | **當前價格**：`{price}` 元 | **戰略評分**：`{score}` 分 (`{status}`)
+    if not key_to_use:
+        return "⚠️ 請先在左側選單輸入 **Gemini API Key**，或於 Secrets 設定 `GEMINI_API_KEY` 以啟動 AI 實時診斷！"
 
-    ---
-    #### 1️⃣ 🎯 核心操作策略與買點指引
-    * **操作戰術**：依據 6 層量化模型，該股具備產業催化劑（`{catalyst}`）與強勁獲利動能（營收 YoY `{yoy}`）。
-    * **建倉建議**：建議採用**『分批逢拉回佈局』**策略。第一買點定於現價至 20MA 回測不破處；若盤中急拉爆量，勿過度追高。
-    * **目標價位與停損點**：波段目標價看至 **`{target_price}` 元**，嚴格停損價設為 **`{stop_loss}` 元**（跌破 6% 即刻離場）。
+    prompt = f"""
+你是高盛（Goldman Sachs）資深台股證券分析師，具備 30 年機構法人操盤經驗。
+請針對以下台股個股數據進行專業且實質的深度評估，切勿使用公版套話：
 
-    #### 2️⃣ 📊 買進勝率與勝率結構分析
-    * **預估勝率**：**`{win_rate}%`**
-    * **勝率支撐因子**：
-      1. 基本面獲利加速度（PEG 估值僅 `{peg}`，低於 1.0 安全邊界）。
-      2. 6層排雷機制全數通過（無現金增資稀釋、無董監高檔大賣超）。
-      3. 籌碼面大戶持股結構安定。
+【個股即時數據】
+* 股票代碼與名稱：{c_code} {c_name}
+* 最新成交價：{price} 元 (漲跌幅: {pct:+.2f}%)
+* 量化戰略評分：{score} 分 (戰略狀態: {status})
+* 基本面數據：季 EPS {eps} 元 | 營收 YoY {yoy} | ROE {roe} | PEG 估值 {peg}
+* 產業催化劑題材：{catalyst}
 
-    #### 3️⃣ ⚠️ 核心風險提示 (Risk Warning)
-    * **風險等級**：`{risk_level}`
-    * **主要風險因子**：
-      1. 若大盤大氣候出現急殺震盪，該股可能隨同族群出現短線獲利吐回賣壓。
-      2. 需密切觀察月營收是否持續維持 YoY 正成長，若成長動能停滯則需下修勝率。
-    """
-    return eval_md
+【請嚴格依據下列 3 大點輸出深度評估】
+1. **🎯 核心操作策略與進場指引**：分析該股營收成長是否真正轉化為獲利，評估其目前股價位置，給出最佳買進點位與短中線操作戰術（是否宜追高，或是應等待拉回拉回關鍵均線）。
+2. **📊 買進勝率與勝率結構評估**：請給出具體的短線/波段買進勝率預估（例如 75%），並列出勝率支撐的主要理由與技術/基本面優勢。
+3. **⚠️ 風險提示與嚴格停損位**：指出該股當前最大的風險因子（如本益比過高、獲利未跟上營收、高檔獲利吐回等），並給出精確的**停損參考價格**。
+"""
+
+    try:
+        client = genai.Client(api_key=key_to_use)
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+        )
+        return response.text
+    except Exception as e:
+        return f"❌ 呼叫 Gemini API 分析時發生錯誤: {str(e)}"
 
 # 資深證券分析師 AI 技術面與籌碼面診斷模組
 def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high, prev_low, balance_point, chip_data):
@@ -353,7 +361,7 @@ def check_fundamental_6layer(code):
     }
     return fund_db.get(code, {"eps": 1.2, "yoy": 10.0, "roe": 10.0, "pe": 18.0, "peg": 0.80, "catalyst": "產業復甦成長"})
 
-# 🎨 美化版表格連動（新增「🤖 AI進行評估」按鈕）
+# 美化版表格連動（新增實時 Gemini API 分析功能）
 def render_smart_stock_table(df_display, key_prefix):
     st.dataframe(df_display, use_container_width=True)
     st.markdown("##### ⚡ 個股清單（一鍵帶入盯盤、AI評估或加自選）")
@@ -378,8 +386,9 @@ def render_smart_stock_table(df_display, key_prefix):
             if "analysis_data" in st.session_state: del st.session_state["analysis_data"]
             st.success(f"已帶入【{stock_lbl}】，請切換至『📈 三維定位與當沖盯盤系統』頁面！")
 
-        if col_b2.button(f"🤖 AI深度評估", key=btn_ai_key, use_container_width=True):
-            st.session_state[f"ai_eval_{c_code}"] = run_goldman_sachs_ai_evaluation(row)
+        if col_b2.button(f"🤖 AI進行評估", key=btn_ai_key, use_container_width=True):
+            with st.spinner(f"正在連線 Gemini AI 分析【{stock_lbl}】中..."):
+                st.session_state[f"ai_eval_{c_code}"] = run_goldman_sachs_ai_evaluation(row, gemini_api_key)
 
         if stock_lbl in st.session_state["watchlist"]:
             col_b3.button(f"✅ 已在自選", key=f"disabled_{btn_add_key}", disabled=True, use_container_width=True)
