@@ -4,51 +4,58 @@ import pandas as pd
 import twstock
 import plotly.graph_objects as go
 import time
+import json
+import os
 from datetime import datetime, timedelta
 
 st.set_page_config(page_title="三維定位法 & 6層量化選股與當沖盯盤全功能系統", layout="wide")
 
-# 🎨 注入「旺來質感黑金風格」CSS 樣式表
+# 🎨 注入「高對比高清晰度黑金風格」CSS 樣式表
 custom_dark_gold_css = """
 <style>
-/* 1. 主背景與基礎文字色彩 */
+/* 1. 主背景與基礎文字色彩（提升對比度） */
 .stApp {
     background-color: #121212 !important;
-    color: #E0E0E0 !important;
+    color: #F0F0F0 !important;
 }
 
-/* 2. 標題與強調文字（香檳金） */
+/* 全局一般段落與標籤文字（調亮） */
+p, label, span, div {
+    color: #E2E2E6 !important;
+}
+
+/* 2. 標題與強調文字（亮金黃色） */
 h1, h2, h3, h4, .gold-title {
-    color: #F1C40F !important;
+    color: #FFD700 !important;
     font-weight: 700 !important;
     letter-spacing: 0.5px;
 }
 
 /* 3. 側邊欄樣式美化 */
 [data-testid="stSidebar"] {
-    background-color: #1A1A1A !important;
-    border-right: 1px solid #2C2C2C !important;
+    background-color: #1A1A1D !important;
+    border-right: 1px solid #333338 !important;
 }
 
-/* 4. 尊爵黑金懸浮卡片容器 */
+/* 4. 高對比黑金懸浮卡片容器 */
 .gold-card {
-    background: linear-gradient(145deg, #1C1C1E, #161618);
-    border: 1px solid #2A2A2D;
+    background: linear-gradient(145deg, #222226, #1A1A1D);
+    border: 1px solid #3A3A40;
     border-radius: 12px;
     padding: 14px 18px;
     margin-bottom: 12px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
     transition: transform 0.2s, border-color 0.2s;
 }
 
 .gold-card:hover {
-    border-color: #D4AF37;
+    border-color: #FFD700;
     transform: translateY(-2px);
 }
 
 /* 5. 金色圓圈數字 Badge */
 .gold-badge {
-    background: linear-gradient(135deg, #F39C12, #D4AF37);
+    background: linear-gradient(135deg, #FFB703, #FFD700);
     color: #000000;
     font-weight: 800;
     border-radius: 50%;
@@ -59,61 +66,90 @@ h1, h2, h3, h4, .gold-title {
     justify-content: center;
     margin-right: 10px;
     font-size: 13px;
-    box-shadow: 0 0 8px rgba(243, 156, 18, 0.4);
+    box-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
 }
 
-/* 6. 按鈕美化（深灰金邊） */
+/* 6. 按鈕美化（高對比亮字） */
 .stButton>button {
-    background-color: #222224 !important;
-    color: #F1C40F !important;
-    border: 1px solid #3A3A3D !important;
+    background-color: #28282C !important;
+    color: #FFD700 !important;
+    border: 1px solid #4A4A50 !important;
     border-radius: 8px !important;
-    font-weight: 600 !important;
+    font-weight: 700 !important;
     transition: all 0.2s ease-in-out;
 }
 
 .stButton>button:hover {
-    background-color: #D4AF37 !important;
+    background-color: #FFD700 !important;
     color: #000000 !important;
-    border-color: #F1C40F !important;
-    box-shadow: 0 0 10px rgba(212, 175, 55, 0.5);
+    border-color: #FFF !important;
+    box-shadow: 0 0 12px rgba(255, 215, 0, 0.6);
 }
 
-/* 7. Metric 數據卡美化 */
+/* 7. Metric 數據卡美化（文字調亮） */
 [data-testid="stMetric"] {
-    background-color: #1A1A1D;
-    border: 1px solid #2C2C30;
+    background-color: #1E1E22;
+    border: 1px solid #3A3A40;
     border-radius: 10px;
     padding: 10px 14px;
 }
 
 [data-testid="stMetricLabel"] {
-    color: #A0A0A0 !important;
+    color: #C0C0C8 !important;
     font-size: 13px !important;
+    font-weight: 600 !important;
 }
 
 [data-testid="stMetricValue"] {
-    color: #F1C40F !important;
-    font-weight: 700 !important;
+    color: #FFD700 !important;
+    font-weight: 800 !important;
 }
 
 /* 8. Expander 摺疊區美化 */
 .stExpander {
-    background-color: #1A1A1D !important;
-    border: 1px solid #2A2A2D !important;
+    background-color: #1E1E22 !important;
+    border: 1px solid #3A3A40 !important;
     border-radius: 10px !important;
+}
+
+/* 9. 輸入框文字與背景清晰對比 */
+input {
+    color: #FFFFFF !important;
+    background-color: #242428 !important;
 }
 </style>
 """
 st.markdown(custom_dark_gold_css, unsafe_allow_html=True)
 
+# 💾 自選股 JSON 檔案永久保留讀寫邏輯
+WATCHLIST_FILE = "watchlist.json"
+
+def load_saved_watchlist():
+    default_list = ["4991 環宇-KY", "4908 前鼎", "2466 冠西電", "3006 晶豪科", "2330 台積電"]
+    if os.path.exists(WATCHLIST_FILE):
+        try:
+            with open(WATCHLIST_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list) and len(data) > 0:
+                    return data
+        except Exception:
+            pass
+    return default_list
+
+def save_watchlist_to_file(watchlist):
+    try:
+        with open(WATCHLIST_FILE, "w", encoding="utf-8") as f:
+            json.dump(watchlist, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        st.error(f"寫入自選股設定檔失敗: {str(e)}")
+
+# 初始化自選股清單（自動讀取持久化檔案）
+if "watchlist" not in st.session_state:
+    st.session_state["watchlist"] = load_saved_watchlist()
+
 # 自動從 Streamlit Secrets 讀取 API Key
 api_key = st.secrets.get("SHIOAJI_API_KEY", "")
 secret_key = st.secrets.get("SHIOAJI_SECRET_KEY", "")
-
-# 初始化自選股清單
-if "watchlist" not in st.session_state:
-    st.session_state["watchlist"] = ["4991 環宇-KY", "4908 前鼎", "2466 冠西電", "3006 晶豪科", "2330 台積電"]
 
 # 側邊欄：功能頁面選單
 st.sidebar.title("📌 全功能頁面選單")
@@ -241,10 +277,10 @@ def check_fundamental_6layer(code):
     }
     return fund_db.get(code, {"eps": 1.2, "yoy": 10.0, "roe": 10.0, "pe": 18.0, "peg": 0.80, "catalyst": "產業復甦成長"})
 
-# 重構美化版表格連動（旺來黑金卡片風格）
+# 重構美化版表格連動（高對比亮字黑金卡片風格 + 自選同步寫檔）
 def render_smart_stock_table(df_display, key_prefix):
     st.dataframe(df_display, use_container_width=True)
-    st.markdown("##### ⚡ 尊爵黑金動態卡片清單（一鍵帶入盯盤或加自選）")
+    st.markdown("##### ⚡ 尊爵高對比黑金動態卡片（一鍵帶入盯盤或加自選）")
     for idx, row in df_display.reset_index(drop=True).iterrows():
         c_code = str(row['股票代碼'])
         c_name = str(row['股票名稱'])
@@ -252,17 +288,17 @@ def render_smart_stock_table(df_display, key_prefix):
         curr_p = row.get('最新真實價', row.get('最新價', 'N/A'))
         feature_lbl = row.get('連續買單(張)', row.get('狀態', row.get('篩選特徵', '精選')))
         
-        # 繪製黑金懸浮卡片
+        # 繪製高對比黑金卡片
         st.markdown(f"""
         <div class="gold-card">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
                     <span class="gold-badge">{idx+1}</span>
-                    <span style="font-size: 17px; font-weight: 700; color: #FFFFFF; margin-right: 12px;">{stock_lbl}</span>
-                    <span style="font-size: 13px; color: #A0A0A0;">指標: <code style="color:#F1C40F;">{feature_lbl}</code></span>
+                    <span style="font-size: 18px; font-weight: 800; color: #FFFFFF; margin-right: 12px;">{stock_lbl}</span>
+                    <span style="font-size: 14px; color: #D0D0D0;">指標: <code style="color:#FFE066; background-color:#2A2A30; padding:2px 6px; border-radius:4px;">{feature_lbl}</code></span>
                 </div>
                 <div style="text-align: right;">
-                    <span style="font-size: 18px; font-weight: 800; color: #FF4D4D;">{curr_p} 元</span>
+                    <span style="font-size: 19px; font-weight: 800; color: #FF5555;">{curr_p} 元</span>
                 </div>
             </div>
         </div>
@@ -283,7 +319,8 @@ def render_smart_stock_table(df_display, key_prefix):
         else:
             if col_b2.button(f"➕ 加自選", key=btn_add_key, use_container_width=True):
                 st.session_state["watchlist"].append(stock_lbl)
-                st.success(f"已加入：{stock_lbl}")
+                save_watchlist_to_file(st.session_state["watchlist"]) # 💾 同步持久化存檔
+                st.success(f"已永久加入自選：{stock_lbl}")
                 st.rerun()
 
 # =========================================================
@@ -411,7 +448,7 @@ elif app_mode == "💡 大戶投 — 智慧選股":
             ]), "smart_fin")
 
 # =========================================================
-# 頁面 3：🔥 大戶投 — 盤中熱門
+# 頁面 3：🔥 大戶投 — 盤中熱門 (對齊 APP 8 大排行榜)
 # =========================================================
 elif app_mode == "🔥 大戶投 — 盤中熱門":
     st.title("🔥 大戶投 — 盤中熱門 8 大排行榜")
@@ -544,7 +581,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (新增搜尋框右側【➕ 加入自選股】按鈕)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (搜尋列一鍵新增並寫檔存檔)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 盤前檢視/多週期當沖監控系統")
@@ -578,7 +615,7 @@ else:
                 st.session_state["selected_stock"] = code_part
                 st.rerun()
 
-    # 🎯 搜尋列右側新增【➕ 加入自選股】按鈕
+    # 🎯 搜尋列右側【➕ 加入自選股】按鈕（自動寫檔存檔）
     col_input, col_add_btn, col_style = st.columns([2, 1, 1])
     with col_input:
         stock_input = st.text_input("請輸入股票代碼或公司名稱（輸入後即刻分析）", value=st.session_state["selected_stock"])
@@ -594,7 +631,8 @@ else:
         else:
             if st.button("➕ 加入自選股", key="add_search_stock_btn", use_container_width=True):
                 st.session_state["watchlist"].append(current_stock_lbl)
-                st.success(f"已新增：{current_stock_lbl}")
+                save_watchlist_to_file(st.session_state["watchlist"]) # 💾 同步存檔
+                st.success(f"已永久加入自選：{current_stock_lbl}")
                 st.rerun()
 
     with col_style:
