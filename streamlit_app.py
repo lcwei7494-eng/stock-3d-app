@@ -241,7 +241,7 @@ def check_fundamental_6layer(code):
     }
     return fund_db.get(code, {"eps": 1.2, "yoy": 10.0, "roe": 10.0, "pe": 18.0, "peg": 0.80, "catalyst": "產業復甦成長"})
 
-# 🎨 重構美化版表格連動（旺來黑金卡片風格）
+# 重構美化版表格連動（旺來黑金卡片風格）
 def render_smart_stock_table(df_display, key_prefix):
     st.dataframe(df_display, use_container_width=True)
     st.markdown("##### ⚡ 尊爵黑金動態卡片清單（一鍵帶入盯盤或加自選）")
@@ -411,7 +411,7 @@ elif app_mode == "💡 大戶投 — 智慧選股":
             ]), "smart_fin")
 
 # =========================================================
-# 頁面 3：🔥 大戶投 — 盤中熱門 (對齊 APP 8 大排行榜)
+# 頁面 3：🔥 大戶投 — 盤中熱門
 # =========================================================
 elif app_mode == "🔥 大戶投 — 盤中熱門":
     st.title("🔥 大戶投 — 盤中熱門 8 大排行榜")
@@ -544,7 +544,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統
+# 頁面 5：📈 三維定位與當沖盯盤系統 (新增搜尋框右側【➕ 加入自選股】按鈕)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 盤前檢視/多週期當沖監控系統")
@@ -578,13 +578,27 @@ else:
                 st.session_state["selected_stock"] = code_part
                 st.rerun()
 
-    col_input, col_style = st.columns([2, 1])
+    # 🎯 搜尋列右側新增【➕ 加入自選股】按鈕
+    col_input, col_add_btn, col_style = st.columns([2, 1, 1])
     with col_input:
-        stock_input = st.text_input("請輸入股票代碼或公司名稱（選擇或輸入後自動分析）", value=st.session_state["selected_stock"])
-    with col_style:
-        trade_style = st.selectbox("🎯 交易風格選單", ["短線/當沖 (1~3天)", "波段操作 (幾天~幾週)", "長線投資 (1個月以上)"])
+        stock_input = st.text_input("請輸入股票代碼或公司名稱（輸入後即刻分析）", value=st.session_state["selected_stock"])
     
     target_code, target_name = get_stock_code_and_name(stock_input)
+    current_stock_lbl = f"{target_code} {target_name}" if target_code else stock_input
+
+    with col_add_btn:
+        st.write("") # 上方微調對齊
+        st.write("")
+        if current_stock_lbl in st.session_state["watchlist"]:
+            st.button("✅ 已在自選", key="add_search_stock_disabled", disabled=True, use_container_width=True)
+        else:
+            if st.button("➕ 加入自選股", key="add_search_stock_btn", use_container_width=True):
+                st.session_state["watchlist"].append(current_stock_lbl)
+                st.success(f"已新增：{current_stock_lbl}")
+                st.rerun()
+
+    with col_style:
+        trade_style = st.selectbox("🎯 交易風格選單", ["短線/當沖 (1~3天)", "波段操作 (幾天~幾週)", "長線投資 (1個月以上)"])
 
     if "last_stock" not in st.session_state or st.session_state["last_stock"] != target_code:
         st.session_state["last_stock"] = target_code
@@ -807,4 +821,3 @@ else:
     if auto_refresh:
         time.sleep(refresh_interval)
         st.rerun()
-    
