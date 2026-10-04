@@ -471,7 +471,7 @@ def calculate_atr(df, period=14):
     df['ATR'] = df['TR'].rolling(period).mean()
     return df
 
-# 🤖 升級版：高盛機構級全方位 AI 診斷引擎 (波段價值 + 當沖實戰雙視角)
+# 🤖 升級版：高盛機構級全方位 AI 診斷引擎 (修復 SyntaxError)
 def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     c_code = str(data_dict.get('股票代碼', data_dict.get('target_code', '')))
     c_name = str(data_dict.get('股票名稱', data_dict.get('target_name', '')))
