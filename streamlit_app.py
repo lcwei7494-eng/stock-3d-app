@@ -10,128 +10,129 @@ from datetime import datetime, timedelta
 
 st.set_page_config(page_title="三維定位法 & 6層量化選股與當沖盯盤全功能系統", layout="wide")
 
-# 🎨 注入「台股習慣：紅漲綠跌 / 紅正綠負 / 紅停利綠停損」CSS 樣式表
-custom_stock_color_css = """
+# =========================================================
+# 🎨 UI 主題（台股習慣：紅=漲/停利/壓力，綠=跌/停損/支撐）
+# =========================================================
+_CSS = """
 <style>
-/* 1. 全局背景：深藍灰科技質感 (Dark Navy) */
-.stApp {
-    background-color: #0F141C !important;
-    color: #E2E8F0 !important;
+:root {
+  --bg:#0B1018; --panel:#121A26; --panel2:#182233; --line:#243248;
+  --text:#E6EBF3; --muted:#8A97AD; --up:#F6465D; --down:#1FC98B; --accent:#4C8DFF;
+}
+.stApp { background:var(--bg); color:var(--text); }
+html, body, [class*="css"] { font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; }
+h1 { font-size:1.6rem !important; font-weight:700 !important; letter-spacing:.3px; }
+h2, h3, h4 { font-weight:650 !important; }
+.block-container { padding-top:1.4rem; max-width:1200px; }
+#MainMenu, footer { visibility:hidden; }
+
+/* 側邊欄：選單像導覽列 */
+[data-testid="stSidebar"] { background:var(--panel); border-right:1px solid var(--line); }
+[data-testid="stSidebar"] [role="radiogroup"] label { padding:9px 12px; border-radius:10px; margin-bottom:2px; width:100%; }
+[data-testid="stSidebar"] [role="radiogroup"] label:hover { background:var(--panel2); }
+[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {
+  background:rgba(76,141,255,.16); box-shadow:inset 3px 0 0 var(--accent);
 }
 
-/* 2. 全局文字與標題 */
-p, label, span, div {
-    color: #D1D5DB !important;
-}
+/* 分頁：膠囊式 */
+.stTabs [data-baseweb="tab-list"] { gap:6px; flex-wrap:wrap; }
+.stTabs [data-baseweb="tab"] { background:var(--panel); border:1px solid var(--line); border-radius:999px; padding:6px 16px; height:auto; }
+.stTabs [aria-selected="true"] { background:var(--accent); border-color:var(--accent); color:#fff; }
+.stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] { display:none; }
 
-h1, h2, h3, h4, .navy-title {
-    color: #FFFFFF !important;
-    font-weight: 700 !important;
-    letter-spacing: 0.5px;
-}
+/* 按鈕 */
+.stButton>button { min-height:42px; border-radius:10px; border:1px solid var(--line); background:var(--panel2); color:var(--text); font-weight:600; }
+.stButton>button:hover { border-color:var(--accent); color:#fff; }
+.stButton>button[kind="primary"] { background:var(--accent); border-color:var(--accent); color:#fff; }
+.stButton>button:disabled { opacity:.45; }
 
-/* 3. 側邊欄樣式美化 (深藍灰色調) */
-[data-testid="stSidebar"] {
-    background-color: #141A24 !important;
-    border-right: 1px solid #232D3F !important;
-}
+/* 輸入元件 / metric / expander */
+input, [data-baseweb="select"] > div { background:var(--panel2) !important; border-radius:10px !important; }
+[data-testid="stMetric"] { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px 14px; }
+[data-testid="stMetricLabel"] { color:var(--muted); }
+.stExpander { background:var(--panel); border:1px solid var(--line) !important; border-radius:12px; }
 
-/* 4. 深藍灰極簡懸浮卡片容器 */
-.navy-card {
-    background-color: #161C24;
-    border: 1px solid #283242;
-    border-radius: 12px;
-    padding: 14px 18px;
-    margin-bottom: 12px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    transition: transform 0.2s, border-color 0.2s;
-}
+/* 台股色彩 */
+.up, .text-red { color:var(--up); font-weight:700; }
+.down, .text-green { color:var(--down); font-weight:700; }
+.flat { color:var(--muted); }
+.muted { color:var(--muted); font-size:.85rem; }
 
-.navy-card:hover {
-    border-color: #3B82F6;
-    transform: translateY(-2px);
-}
+/* 通用卡片（AI 評估區使用） */
+.navy-card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 18px; margin-bottom:12px; }
 
-/* 5. 藍色圓角膠囊 Badge */
-.blue-badge {
-    background-color: #3B82F6;
-    color: #FFFFFF !important;
-    font-weight: 700;
-    border-radius: 20px;
-    padding: 3px 10px;
-    font-size: 12px;
-    margin-right: 8px;
-    display: inline-block;
-}
+/* 個股列：左側色條表示漲跌 */
+.row { display:flex; justify-content:space-between; align-items:center; gap:12px; background:var(--panel);
+  border:1px solid var(--line); border-left:4px solid var(--muted); border-radius:12px; padding:12px 16px; margin:8px 0 4px; }
+.row.up-bar { border-left-color:var(--up); } .row.down-bar { border-left-color:var(--down); }
+.row .name { font-size:1.05rem; font-weight:700; }
+.row .code { color:var(--muted); font-size:.85rem; margin-left:8px; }
+.row .px { font-size:1.25rem; font-weight:800; text-align:right; line-height:1.2; }
+.row .px small { display:block; font-size:.85rem; font-weight:600; }
+.tag { display:inline-block; margin-top:4px; padding:2px 10px; border-radius:999px; background:var(--panel2); color:var(--muted); font-size:.78rem; }
 
-.navy-pill {
-    background-color: #1E293B;
-    border: 1px solid #334155;
-    color: #94A3B8 !important;
-    border-radius: 20px;
-    padding: 2px 10px;
-    font-size: 12px;
-    margin-right: 6px;
-}
+/* 報價橫幅 */
+.quote { background:linear-gradient(135deg,#142033,#0F1826); border:1px solid var(--line); border-radius:16px; padding:18px 22px; margin:6px 0 14px; }
+.quote .big { font-size:2.4rem; font-weight:800; line-height:1.1; }
+.quote .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:10px; margin-top:12px; }
+.quote .cell { background:rgba(255,255,255,.03); border-radius:10px; padding:8px 12px; }
+.quote .cell b { display:block; font-size:1.05rem; }
 
-/* 6. 按鈕美化 */
-.stButton>button {
-    background-color: #1E293B !important;
-    color: #60A5FA !important;
-    border: 1px solid #334155 !important;
-    border-radius: 20px !important;
-    font-weight: 600 !important;
-    transition: all 0.2s ease-in-out;
-}
+/* 價位卡（停損/停利） */
+.lv { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 16px; height:100%; }
+.lv h5 { margin:0 0 8px; font-size:.95rem; }
+.lv .it { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px dashed var(--line); }
+.lv .it:last-child { border-bottom:0; }
 
-.stButton>button:hover {
-    background-color: #2563EB !important;
-    color: #FFFFFF !important;
-    border-color: #60A5FA !important;
-    box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
-}
-
-/* 7. Metric 數據卡美化 */
-[data-testid="stMetric"] {
-    background-color: #161C24;
-    border: 1px solid #242D3C;
-    border-radius: 12px;
-    padding: 12px 16px;
-}
-
-[data-testid="stMetricLabel"] {
-    color: #94A3B8 !important;
-    font-size: 13px !important;
-    font-weight: 600 !important;
-}
-
-/* 8. Expander 摺疊區美化 */
-.stExpander {
-    background-color: #161C24 !important;
-    border: 1px solid #242D3C !important;
-    border-radius: 12px !important;
-}
-
-/* 9. 台股色彩強化：正數/漲幅/停利=紅，負數/跌幅/停損=綠 */
-.text-red {
-    color: #EF4444 !important;
-    font-weight: 700;
-}
-
-.text-green {
-    color: #10B981 !important;
-    font-weight: 700;
-}
-
-/* 10. 輸入框深藍灰樣式 */
-input {
-    color: #FFFFFF !important;
-    background-color: #1E293B !important;
-    border-radius: 8px !important;
+/* 手機 */
+@media (max-width:640px) {
+  .block-container { padding:.8rem .6rem; }
+  h1 { font-size:1.25rem !important; }
+  .quote .big { font-size:1.9rem; }
+  .row { padding:10px 12px; }
 }
 </style>
 """
-st.markdown(custom_stock_color_css, unsafe_allow_html=True)
+st.markdown(_CSS, unsafe_allow_html=True)
+
+
+def tone(pct):
+    pct = float(pct)
+    return "up" if pct > 0 else ("down" if pct < 0 else "flat")
+
+
+def stock_row_html(code, name, price, pct, tag=""):
+    t = tone(pct)
+    bar = {"up": "up-bar", "down": "down-bar"}.get(t, "")
+    tag_html = f'<span class="tag">{tag}</span>' if tag else ""
+    return (
+        f'<div class="row {bar}"><div>'
+        f'<span class="name">{name}</span><span class="code">{code}</span><br>{tag_html}</div>'
+        f'<div class="px {t}">{price}<small>{float(pct):+.2f}%</small></div></div>'
+    )
+
+
+def quote_banner_html(code, name, price, open_p, high, low, volume, bias, momentum, balance):
+    pct = (price - open_p) / open_p * 100 if open_p else 0
+    t = tone(pct)
+    cells = [("開盤", f"{open_p:.2f}"), ("最高", f"{high:.2f}"), ("最低", f"{low:.2f}"),
+             ("成交量(張)", f"{volume:,}"), ("成本乖離", f"{bias:+.2f}%"),
+             ("動能係數", f"{momentum:.2f}"), ("多空平衡點", f"{balance:.2f}")]
+    grid = "".join(f'<div class="cell"><span class="muted">{k}</span><b>{v}</b></div>' for k, v in cells)
+    return (
+        f'<div class="quote"><span class="muted">{code}</span> <b>{name}</b>'
+        f'<div class="big {t}">{price:.2f} <span style="font-size:1.1rem">{pct:+.2f}%</span></div>'
+        f'<div class="grid">{grid}</div></div>'
+    )
+
+
+def level_card_html(title, items, color_class):
+    rows = "".join(
+        f'<div class="it"><span class="muted">{k}</span><b class="{color_class}">{v:.2f}</b></div>'
+        for k, v in items
+    )
+    return f'<div class="lv"><h5 class="{color_class}">{title}</h5>{rows}</div>'
+
 
 # 💾 自選股 JSON 檔案永久保留讀寫邏輯
 WATCHLIST_FILE = "watchlist.json"
@@ -247,10 +248,10 @@ def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high,
     foreign_buy = chip_data.get("foreign", 0)
     investment_buy = chip_data.get("investment", 0)
     day_trade_broker = chip_data.get("day_trade_broker", False)
-    
+
     is_tech_bull = (curr > ma5 and ma5 > ma20)
     is_chip_bull = (foreign_buy + investment_buy > 0)
-    
+
     if is_tech_bull and is_chip_bull:
         trend = "強勢多頭 (技術面多頭 + 法人合買)"
         entry_price = round(max(ma5, support_price), 2)
@@ -292,7 +293,7 @@ def check_fundamental_6layer(code):
 # 🎨 美化版表格連動（正數/漲/停利=紅，負數/跌/停損=綠）
 def render_smart_stock_table(df_display, key_prefix):
     st.dataframe(df_display, use_container_width=True)
-    st.markdown("##### ⚡ 尊爵科技卡片清單（一鍵帶入盯盤或加自選）")
+    st.markdown("##### ⚡ 個股清單（一鍵帶入盯盤或加自選）")
     for idx, row in df_display.reset_index(drop=True).iterrows():
         c_code = str(row['股票代碼'])
         c_name = str(row['股票名稱'])
@@ -301,24 +302,8 @@ def render_smart_stock_table(df_display, key_prefix):
         feature_lbl = row.get('連續買單(張)', row.get('狀態', row.get('篩選特徵', '精選')))
         change_pct = row.get('漲跌幅(%)', 0.0)
 
-        # 🎯 色彩邏輯：正數/上漲=紅色，負數/下跌=綠色
-        color_class = "text-red" if float(change_pct) >= 0 else "text-green"
+        st.markdown(stock_row_html(c_code, c_name, curr_p, change_pct, f"指標: {feature_lbl}"), unsafe_allow_html=True)
 
-        st.markdown(f"""
-        <div class="navy-card">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <span class="blue-badge">{idx+1}</span>
-                    <span style="font-size: 17px; font-weight: 700; color: #FFFFFF; margin-right: 12px;">{stock_lbl}</span>
-                    <span class="navy-pill">指標: {feature_lbl}</span>
-                </div>
-                <div style="text-align: right;">
-                    <span style="font-size: 19px; font-weight: 800;" class="{color_class}">{curr_p} 元 ({change_pct:+.2f}%)</span>
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
         col_b1, col_b2 = st.columns([1, 1])
         btn_nav_key = f"btn_nav_{key_prefix}_{c_code}_{idx}"
         btn_add_key = f"btn_add_{key_prefix}_{c_code}_{idx}"
@@ -387,7 +372,7 @@ if app_mode == "🚀 6層量化戰略選股":
 
                         ma20 = df_k["20MA"].iloc[-1]
                         ma60 = df_k["60MA"].iloc[-1]
-                        
+
                         score = 50
                         if real_price > ma20 and ma20 > ma60: score += 20
                         if real_price >= df_k["High"].iloc[:-1].max(): score += 15
@@ -497,7 +482,7 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
                     change_pct = ((close_p - open_p) / open_p) * 100 if open_p > 0 else 0
                     amount_val = round(close_p * tot_vol / 1000)
                     amplitude = round(((high_p - low_p) / low_p) * 100, 2) if low_p > 0 else 0
-                    
+
                     consecutive_buy_vol = int(outer_v) if outer_v > 0 else int(tot_vol * 0.18)
                     consecutive_sell_vol = int(inner_v) if inner_v > 0 else int(tot_vol * 0.12)
                     turnover_rate = round((tot_vol / 25000) * 100, 2)
@@ -556,7 +541,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                 try:
                     api_filter = sj.Shioaji(simulation=True)
                     api_filter.login(api_key=api_key, secret_key=secret_key)
-                    
+
                     target_candidates = ["4991", "4908", "2466", "4764", "4971", "3006", "2330", "2317", "2454", "3035", "3037", "3624", "3042", "2382", "3231", "2303", "2603", "2615", "1513", "1519"]
                     filter_results = []
                     start_date = (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d")
@@ -578,7 +563,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
 
                         curr_row = df_k.iloc[-1]
                         prev_5_vol_avg = df_k["Volume"].iloc[-6:-1].mean()
-                        
+
                         cond1 = (curr_row["Volume"] >= prev_5_vol_avg * param_vol_mult)
                         cond2 = (curr_row["5MA"] > curr_row["10MA"] > curr_row["20MA"])
                         cond3 = (curr_row["Close"] >= df_k["High"].iloc[-(param_break_days+1):-1].max())
@@ -627,7 +612,7 @@ else:
         for idx, item in enumerate(st.session_state["watchlist"]):
             col_idx = idx % 5
             code_part = item.split(" ")[0]
-            if cols[col_idx].button(item, key=f"btn_watch_{code_part}_{idx}"):
+            if cols[col_idx].button(item, key=f"btn_watch_{code_part}_{idx}", use_container_width=True):
                 st.session_state["selected_stock"] = code_part
                 st.rerun()
 
@@ -635,7 +620,7 @@ else:
     col_input, col_add_btn, col_style = st.columns([2, 1, 1])
     with col_input:
         stock_input = st.text_input("請輸入股票代碼或公司名稱（輸入後即刻分析）", value=st.session_state["selected_stock"])
-    
+
     target_code, target_name = get_stock_code_and_name(stock_input)
     current_stock_lbl = f"{target_code} {target_name}" if target_code else stock_input
 
@@ -679,7 +664,7 @@ else:
                 api = sj.Shioaji(simulation=True)
                 api.login(api_key=api_key, secret_key=secret_key)
                 contract = api.Contracts.Stocks.get(target_code)
-                
+
                 if contract:
                     snapshots = api.snapshots([contract])
                     if snapshots:
@@ -724,11 +709,12 @@ else:
         balance_point = data["balance_point"]
         df_raw = data["df_raw"]
 
-        st.success(f"【{data['contract_code']} {data['contract_name']}】當前最新價：{curr_price} 元")
-        col1, col2, col3 = st.columns(3)
-        col1.metric("1️⃣ 成本乖離率", f"{data['bias_rate']:+.2f}%")
-        col2.metric("2️⃣ 動能係數", f"{data['momentum_coef']:.2f}")
-        col3.metric("3️⃣ 多空平衡點", f"{balance_point:.2f}元")
+        # 🆕 報價橫幅：現價、開高低、量、乖離、動能、平衡點集中呈現
+        st.markdown(quote_banner_html(
+            data['contract_code'], data['contract_name'], curr_price,
+            data['open_price'], high_price, low_price, data['volume'],
+            data['bias_rate'], data['momentum_coef'], balance_point
+        ), unsafe_allow_html=True)
 
         # 計算日線指標（加入 5MA, 10MA, 60MA, 120MA）
         if len(df_raw) > 0:
@@ -754,13 +740,13 @@ else:
         # 🤖 AI 綜合評估
         st.subheader("👨‍💼 資深證券分析師 AI 綜合評估 (30年實戰經驗)")
         ai_res = ai_senior_analyst_diagnosis_advanced(target_code, target_name, curr_price, ma5, ma20, prev_high, prev_low, balance_point, chip_summary)
-        
+
         col_ai1, col_ai2 = st.columns(2)
         with col_ai1:
             st.markdown(f"<div class='navy-card'><span class='text-green'>🟢 建議關鍵支撐價</span>：<b style='font-size:18px;'>{ai_res['support']}</b> 元<br>📊 多空趨勢：<b>{ai_res['trend']}</b></div>", unsafe_allow_html=True)
         with col_ai2:
-            st.markdown(f"<div class='navy-card'><span class='text-red'>🔴 建議關鍵壓力價</span>：<b style='font-size:18px;'>{ai_res['resistance']}</b> 元<br>🎯 建議進場位：<b style='color:#3B82F6;'>{ai_res['entry_price']}</b> 元</div>", unsafe_allow_html=True)
-        
+            st.markdown(f"<div class='navy-card'><span class='text-red'>🔴 建議關鍵壓力價</span>：<b style='font-size:18px;'>{ai_res['resistance']}</b> 元<br>🎯 建議進場位：<b style='color:#4C8DFF;'>{ai_res['entry_price']}</b> 元</div>", unsafe_allow_html=True)
+
         st.markdown(f"> **💡 資深分析師綜合籌碼與走勢操作建議**：\n> {ai_res['strategy']}")
 
         if custom_stop_price == 0.0:
@@ -773,24 +759,26 @@ else:
         # 🎯 色彩校正：多重停損=綠色，多重停利=紅色
         st.markdown("#### 2️⃣ 四大停損與停利參考設定 (多重停損綠色 / 多重停利紅色)")
         col_sl_box, col_tp_box = st.columns(2)
-        
+
         if "短線" in trade_style: sl_pct, tp_pct = 0.04, 0.06
         elif "波段" in trade_style: sl_pct, tp_pct = 0.07, 0.15
         else: sl_pct, tp_pct = 0.12, 0.30
 
         with col_sl_box:
-            st.markdown("<div class='navy-card'><h5 class='text-green'>🛡️ 多重停損參考試算 (綠色)</h5>"
-                        f"* 百分比法 ({sl_pct*100:.0f}%)：<b class='text-green'>{curr_price * (1 - sl_pct):.2f}</b> 元<br>"
-                        f"* ATR 波動法 (1.5xATR)：<b class='text-green'>{curr_price - (1.5 * atr_val):.2f}</b> 元<br>"
-                        f"* 均線跌破法 (5MA)：<b class='text-green'>{ma5:.2f}</b> 元<br>"
-                        f"* K線前低支撐：<b class='text-green'>{prev_low:.2f}</b> 元</div>", unsafe_allow_html=True)
+            st.markdown(level_card_html("🛡️ 多重停損參考試算", [
+                (f"百分比法 ({sl_pct*100:.0f}%)", curr_price * (1 - sl_pct)),
+                ("ATR 波動法 (1.5xATR)", curr_price - (1.5 * atr_val)),
+                ("均線跌破法 (5MA)", ma5),
+                ("K線前低支撐", prev_low),
+            ], "down"), unsafe_allow_html=True)
 
         with col_tp_box:
-            st.markdown("<div class='navy-card'><h5 class='text-red'>🎯 多重停利參考試算 (紅色)</h5>"
-                        f"* 百分比法 ({tp_pct*100:.0f}%)：<b class='text-red'>{curr_price * (1 + tp_pct):.2f}</b> 元<br>"
-                        f"* ATR 波動法 (3xATR)：<b class='text-red'>{curr_price + (3 * atr_val):.2f}</b> 元<br>"
-                        f"* 移動停利線 (沿5MA)：<b class='text-red'>{ma5:.2f}</b> 元<br>"
-                        f"* 前高壓力區停利：<b class='text-red'>{prev_high:.2f}</b> 元</div>", unsafe_allow_html=True)
+            st.markdown(level_card_html("🎯 多重停利參考試算", [
+                (f"百分比法 ({tp_pct*100:.0f}%)", curr_price * (1 + tp_pct)),
+                ("ATR 波動法 (3xATR)", curr_price + (3 * atr_val)),
+                ("移動停利線 (沿5MA)", ma5),
+                ("前高壓力區停利", prev_high),
+            ], "up"), unsafe_allow_html=True)
 
         # 處理分時與多週期歷史資料
         if len(df_raw) > 0:
@@ -802,7 +790,7 @@ else:
             date_label_str = "最新交易日"
 
         st.subheader(f"⚡ 多週期 K 線監控雷達 ({date_label_str}) -【{data['contract_code']} {data['contract_name']}】")
-        
+
         # 多週期切換單選按鈕
         kbar_timeframe = st.radio(
             "請選擇 K 線圖顯示週期：",
@@ -829,11 +817,13 @@ else:
 
         if len(df_chart) > 0:
             df_chart["DateTime"] = pd.to_datetime(df_chart["DateTime"])
-            
+
             fig_k = go.Figure(data=[go.Candlestick(
                 x=df_chart['DateTime'].dt.strftime(time_fmt),
                 open=df_chart['Open'], high=df_chart['High'],
-                low=df_chart['Low'], close=df_chart['Close'], name=kbar_timeframe.split(" ")[0]
+                low=df_chart['Low'], close=df_chart['Close'], name=kbar_timeframe.split(" ")[0],
+                increasing_line_color="#F6465D", increasing_fillcolor="#F6465D",   # 台股：紅漲
+                decreasing_line_color="#1FC98B", decreasing_fillcolor="#1FC98B"    # 台股：綠跌
             )])
 
             # 根據選擇的週期繪製布林通道與對應均線
@@ -858,7 +848,9 @@ else:
                 fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['20MA'], mode='lines', name='20MA(中軌)', line=dict(color='blue', width=1.5)))
                 fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['LowerBand'], mode='lines', name='布林下軌', line=dict(color='green', width=1, dash='dash')))
 
-            fig_k.update_layout(xaxis_rangeslider_visible=False, height=420, margin=dict(l=10, r=10, t=30, b=10), template="plotly_dark")
+            fig_k.update_layout(xaxis_rangeslider_visible=False, height=420, margin=dict(l=10, r=10, t=30, b=10), template="plotly_dark",
+                                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                legend=dict(orientation="h", y=1.08))
             st.plotly_chart(fig_k, use_container_width=True)
         else:
             st.info("ℹ️ 暫無該週期的 K 線數據。")
