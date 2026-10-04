@@ -7,6 +7,7 @@ from plotly.subplots import make_subplots
 import time
 import json
 import os
+import requests
 from datetime import datetime, timedelta
 
 st.set_page_config(page_title="三維定位法 & 6層量化選股與當沖盯盤全功能系統", layout="wide")
@@ -189,7 +190,7 @@ def calculate_atr(df, period=14):
     df['ATR'] = df['TR'].rolling(period).mean()
     return df
 
-# 🤖 多重自動相容退回（Fallback）機制的 Gemini API 診斷函式
+# 🤖 直連 HTTP REST API 的 Gemini 診斷函式 (徹底解決 SDK 404 問題)
 def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     c_code = str(data_dict.get('股票代碼', data_dict.get('target_code', '')))
     c_name = str(data_dict.get('股票名稱', data_dict.get('target_name', '')))
@@ -229,38 +230,30 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
 3. **⚠️ 風險提示與嚴格停損位**：指出該股當前最大的風險因子（如本益比過高、高檔開高走低賣壓、動能不足等），並給出精確的**停損參考價格**。
 """
 
-    models_to_try = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-flash-latest']
+    endpoints = [
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key_to_use}",
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={key_to_use}",
+        f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={key_to_use}"
+    ]
 
-    # 1. 優先嘗試 google-genai 新版 SDK
-    try:
-        from google import genai
-        client = genai.Client(api_key=key_to_use)
-        for m in models_to_try:
-            try:
-                response = client.models.generate_content(model=m, contents=prompt)
-                if response and response.text:
-                    return response.text
-            except Exception:
-                continue
-    except Exception:
-        pass
+    payload = {
+        "contents": [{
+            "parts": [{"text": prompt}]
+        }]
+    }
 
-    # 2. 備援嘗試 google.generativeai 傳統 SDK
-    try:
-        import google.generativeai as old_genai
-        old_genai.configure(api_key=key_to_use)
-        for m in models_to_try:
-            try:
-                model = old_genai.GenerativeModel(m)
-                res = model.generate_content(prompt)
-                if res and res.text:
-                    return res.text
-            except Exception:
-                continue
-    except Exception as e_old:
-        pass
+    for url in endpoints:
+        try:
+            res = requests.post(url, json=payload, timeout=12)
+            if res.status_code == 200:
+                res_data = res.json()
+                return res_data['candidates'][0]['content']['parts'][0]['text']
+            elif res.status_code in [400, 403]:
+                return f"❌ API Key 無效或權限不足 (HTTP {res.status_code})。請確認在 Google AI Studio 申請的 Key 是否正確。"
+        except Exception:
+            continue
 
-    return "❌ 呼叫 Gemini API 分析時發生錯誤: 所有模型別名皆回應 404 或無效，請確認金鑰權限與 API 計費狀態。"
+    return "❌ 呼叫 Gemini API 分析時發生錯誤: 所有 Endpoint 皆回應 404 或連線逾時。請確認您的網路環境與 API 金鑰狀態。"
 
 def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high, prev_low, balance_point, chip_data):
     support_price = round(min(ma5, prev_low), 2)
