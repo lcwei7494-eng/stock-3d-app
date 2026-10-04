@@ -107,7 +107,6 @@ st.markdown(_CSS, unsafe_allow_html=True)
 
 
 def safe_float(val, default=0.0):
-    """防範型態問題的安全轉型"""
     try:
         if val is None:
             return default
@@ -250,7 +249,7 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     key_to_use = user_gemini_key if user_gemini_key else gemini_api_key
 
     if not key_to_use:
-        return "⚠️ 請先在左側選單輸入 **Gemini API Key**，或於 Secrets 設定 `GEMINI_API_KEY` 以啟動 AI 實時診斷！"
+        return "⚠️️ 請先在左側選單輸入 **Gemini API Key**，或於 Secrets 設定 `GEMINI_API_KEY` 以啟動 AI 實時診斷！"
 
     prompt = f"""
 你是高盛（Goldman Sachs）資深台股證券分析師，具備 30 年機構法人操盤經驗。
@@ -345,7 +344,7 @@ def check_fundamental_6layer(code):
     return fund_db.get(code, {"eps": 1.2, "yoy": 10.0, "roe": 10.0, "pe": 18.0, "peg": 0.80, "catalyst": "產業復甦成長"})
 
 def render_smart_stock_table(df_display, key_prefix):
-    st.dataframe(df_display, use_container_width=True)
+    st.dataframe(df_display, use_container_width=True, hide_index=True)
     st.markdown("##### ⚡ 個股清單（一鍵帶入盯盤、AI評估或加自選）")
     for idx, row in df_display.reset_index(drop=True).iterrows():
         c_code = str(row['股票代碼'])
@@ -494,7 +493,7 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
             with t4: render_smart_stock_table(df_hot.sort_values(by="漲跌幅(%)", ascending=True), "hot_down")
         except Exception as e: st.error(f"錯誤: {str(e)}")
 
-# ⚡ 當沖強勢股篩選 (含完整 5 大條件參數)
+# ⚡ 當沖強勢股篩選
 elif app_mode == "⚡ 當沖強勢股篩選":
     st.title("🔥 短線多頭精選 — 當沖強勢股篩選雷達")
     st.caption("掃描上市櫃成交額前段個股，嚴格依據 5 大核心指標過濾無量假突破與死股。")
@@ -550,7 +549,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (含多週期 K 線完整指標線)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (隱藏三大法人與籌碼集中度表格的 Index)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
@@ -789,7 +788,7 @@ else:
                     name='成交量', marker_color="#4C8DFF"
                 ), row=2, col=1)
 
-                # 🎯 恢復多週期技術指標線繪製邏輯
+                # 🎯 多週期技術指標線
                 if "日K" in kbar_tf:
                     if "5MA" in df_chart.columns: fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['5MA'], mode='lines', name='5MA', line=dict(color='lightskyblue', width=1)), row=1, col=1)
                     if "10MA" in df_chart.columns: fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['10MA'], mode='lines', name='10MA', line=dict(color='blue', width=1.5)), row=1, col=1)
@@ -819,23 +818,26 @@ else:
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
-            # 2. K線下方：三大法人與籌碼集中度雙表格
+            # 2. 🎯 K線下方：三大法人與籌碼集中度雙表格 (已加上 hide_index=True 隱藏最左側 Index 數字)
             st.markdown("##### 📊 籌碼面進階數據 (三大法人近5日買賣超 & 籌碼集中度)")
             c_left, c_right = st.columns(2)
             with c_left:
                 st.caption("三大法人買賣超 (張)")
-                st.dataframe(pd.DataFrame([
+                df_chips_inst = pd.DataFrame([
                     {"日期": "10/02", "外資": "+1,200", "投信": "+350", "自營商": "-120", "合計": "+1,430"},
                     {"日期": "10/01", "外資": "+850", "投信": "+120", "自營商": "+50", "合計": "+1,020"},
                     {"日期": "09/30", "外資": "-420", "投信": "0", "自營商": "-80", "合計": "-500"},
-                ]), use_container_width=True)
+                ])
+                st.dataframe(df_chips_inst, use_container_width=True, hide_index=True)
+
             with c_right:
                 st.caption("籌碼集中度 / 主力控盤近5日")
-                st.dataframe(pd.DataFrame([
+                df_chips_conc = pd.DataFrame([
                     {"日期": "10/02", "主力買賣超": "+2,450", "籌碼集中度": "12.5%", "買超前5總和": "65.2%"},
                     {"日期": "10/01", "主力買賣超": "+1,890", "籌碼集中度": "9.8%", "買超前5總和": "61.0%"},
                     {"日期": "09/30", "主力買賣超": "-310", "籌碼集中度": "-2.1%", "買超前5總和": "48.5%"},
-                ]), use_container_width=True)
+                ])
+                st.dataframe(df_chips_conc, use_container_width=True, hide_index=True)
 
         # 🎯 右側欄：黃框關鍵價位看板
         with right_panel:
