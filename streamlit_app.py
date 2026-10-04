@@ -251,6 +251,22 @@ else:
 
 
 # =========================================================
+# 🔒 使用 @st.cache_resource 控制單一 Shioaji API Session，解決 Code 451
+# =========================================================
+@st.cache_resource(ttl=3600)
+def get_shioaji_api(k_key, s_key):
+    if not k_key or not s_key:
+        return None
+    try:
+        api = sj.Shioaji(simulation=True)
+        api.login(api_key=k_key, secret_key=s_key)
+        return api
+    except Exception as e:
+        st.error(f"永豐金 API 登入失敗: {str(e)}")
+        return None
+
+
+# =========================================================
 # ⚡ 真正微秒級/毫秒級 WebSocket 推播廣播引擎
 # =========================================================
 CONNECTED_CLIENTS = set()
@@ -543,12 +559,12 @@ if app_mode == "🚀 6層量化戰略選股":
             st.success(f"✅ 上次即時連線掃描時間：`{st.session_state.get('real_quant_time', '已更新')}`")
 
     if start_real_scan:
-        if not api_key or not secret_key:
-            st.error("請先在左側選單填寫永豐金 API Key 與 Secret Key！")
+        api = get_shioaji_api(api_key, secret_key)
+        if not api:
+            st.error("請先在左側選單填寫正確的永豐金 API Key 與 Secret Key！")
         else:
             with st.spinner("正在連線永豐金伺服器，抓取最新真實股票成交價與 K 線數據..."):
                 try:
-                    api = sj.Shioaji(simulation=True); api.login(api_key=api_key, secret_key=secret_key)
                     pool = ["4991", "4908", "2466", "4764", "4971", "3006", "2330", "2317", "2454"]
                     contracts = [api.Contracts.Stocks.get(code) for code in pool if api.Contracts.Stocks.get(code)]
                     snaps = api.snapshots(contracts)
@@ -588,7 +604,6 @@ if app_mode == "🚀 6層量化戰略選股":
                         elif item["狀態"] == "🔵 低基期轉折": group_b.append(item)
                         else: group_c.append(item)
 
-                    api.logout()
                     st.session_state["real_quant_results"] = {
                         "a": pd.DataFrame(group_a).sort_values(by="綜合評分", ascending=False) if group_a else pd.DataFrame(),
                         "b": pd.DataFrame(group_b).sort_values(by="綜合評分", ascending=False) if group_b else pd.DataFrame(),
@@ -618,10 +633,10 @@ elif app_mode == "💡 大戶投 — 智慧選股":
 
 elif app_mode == "🔥 大戶投 — 盤中熱門":
     st.title("🔥 大戶投 — 盤中熱門 8 大排行榜")
-    if not api_key or not secret_key: st.error("請先填寫永豐金 API Key！")
+    api_hot = get_shioaji_api(api_key, secret_key)
+    if not api_hot: st.error("請先填寫永豐金 API Key！")
     else:
         try:
-            api_hot = sj.Shioaji(simulation=True); api_hot.login(api_key=api_key, secret_key=secret_key)
             hot_list = ["4991", "4908", "2466", "4764", "4971", "3006", "2330", "2317", "2454", "3035"]
             contracts = [api_hot.Contracts.Stocks.get(code) for code in hot_list if api_hot.Contracts.Stocks.get(code)]
             snaps = api_hot.snapshots(contracts)
@@ -632,7 +647,7 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
                 open_p = safe_float(getattr(snap, 'open', close_p))
                 tot_vol = int(safe_float(getattr(snap, 'total_volume', 0)))
                 hot_data.append({"股票代碼": c_code, "股票名稱": twstock.codes[c_code].name if c_code in twstock.codes else c_code, "最新價": close_p, "漲跌幅(%)": round(((close_p-open_p)/open_p)*100, 2) if open_p>0 else 0, "成交量(張)": tot_vol, "成交值(萬元)": round(close_p*tot_vol/1000), "狀態": "熱門掃描"})
-            api_hot.logout(); df_hot = pd.DataFrame(hot_data)
+            df_hot = pd.DataFrame(hot_data)
             t1, t2, t3, t4 = st.tabs(["💰 成交值", "📦 成交量", "🚀 漲幅排行", "📉 跌幅排行"])
             with t1: render_smart_stock_table(df_hot.sort_values(by="成交值(萬元)", ascending=False), "hot_amt")
             with t2: render_smart_stock_table(df_hot.sort_values(by="成交量(張)", ascending=False), "hot_vol")
@@ -651,12 +666,12 @@ elif app_mode == "⚡ 當沖強勢股篩選":
         param_min_amount = st.number_input("④ 近20日均成交額門檻 (萬元)", value=5000, step=1000)
 
     if st.button("🚀 開始掃描熱門股並進行 5 大條件篩選", type="primary"):
-        if not api_key or not secret_key:
+        api_filter = get_shioaji_api(api_key, secret_key)
+        if not api_filter:
             st.error("請先在左側選單填寫永豐金 API Key 與 Secret Key！")
         else:
             with st.spinner("正在掃描成交額熱門股票並比對 5 大極限條件..."):
                 try:
-                    api_filter = sj.Shioaji(simulation=True); api_filter.login(api_key=api_key, secret_key=secret_key)
                     target_candidates = ["4991", "4908", "2466", "4764", "4971", "3006", "2330", "2317", "2454", "3035"]
                     filter_results = []
                     start_date = (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d")
@@ -686,7 +701,6 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                         if cond1 and cond2 and cond3:
                             filter_results.append({"股票代碼": code, "股票名稱": twstock.codes[code].name if code in twstock.codes else code, "最新價": curr_row["Close"], "漲跌幅(%)": +3.2, "今日成交量(張)": int(curr_row["Volume"]), "量增倍數": round(curr_row["Volume"] / prev_5_vol_avg, 2), "篩選特徵": "強勢多頭突破"})
 
-                    api_filter.logout()
                     if filter_results:
                         st.success(f"🎉 篩選完成！共找出 `{len(filter_results)}` 檔精選標的：")
                         render_smart_stock_table(pd.DataFrame(filter_results), "daytrade_flt")
@@ -696,7 +710,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (含持股成本 JSON 永久記憶儲存)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (快取 API 版)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
@@ -763,7 +777,7 @@ else:
         st.session_state["last_stock"] = target_code
         if "analysis_data" in st.session_state: del st.session_state["analysis_data"]
 
-    # 💰 交易計劃與個人持股成本計算器 (改為自動即時存檔至 holdings.json)
+    # 💰 交易計劃與個人持股成本計算器
     st.markdown("##### ⚙️ 交易計劃與個人持股成本設定 (含 2折手續費 + 0.3% 證交稅損益兩平試算)")
     col_p1, col_p2, col_stop, col_target = st.columns([1, 1, 1, 1])
     
@@ -776,7 +790,7 @@ else:
     with col_target:
         custom_target_price = st.number_input("🎯 目標價 (元)", value=float(saved_info.get("custom_target", 0.0)), step=0.5, key=f"target_input_{target_code}")
 
-    # 只要使用者更改數值，即時存入 holdings.json
+    # 即時存檔
     save_stock_holding(target_code, buy_cost_input, buy_sheets_input, custom_stop_price, custom_target_price)
 
     # 計算損益兩平價
@@ -793,73 +807,73 @@ else:
     need_fetch = ("analysis_data" not in st.session_state) or (st.session_state["analysis_data"]["target_code"] != target_code)
 
     if need_fetch and api_key and secret_key:
-        with st.spinner(f"正在讀取【{target_code} {target_name}】戰情室即時數據與訂閱 WebSocket..."):
-            api = None
-            try:
-                api = sj.Shioaji(simulation=True); api.login(api_key=api_key, secret_key=secret_key)
-                contract = api.Contracts.Stocks.get(target_code)
-                if contract:
-                    snapshots = api.snapshots([contract])
-                    if snapshots:
-                        snap = snapshots[0]
-                        curr_price = safe_float(getattr(snap, 'close', 0.0))
-                        high_price = safe_float(getattr(snap, 'high', curr_price))
-                        low_price = safe_float(getattr(snap, 'low', curr_price))
-                        open_price = safe_float(getattr(snap, 'open', curr_price))
-                        volume = int(safe_float(getattr(snap, 'total_volume', 0)))
-                        avg_price = safe_float(getattr(snap, 'average_price', curr_price), curr_price) or curr_price
-                        outer_vol = safe_float(getattr(snap, 'ask_volume', 0.0))
-                        inner_vol = safe_float(getattr(snap, 'bid_volume', 0.0))
+        api = get_shioaji_api(api_key, secret_key)
+        if api:
+            with st.spinner(f"正在讀取【{target_code} {target_name}】戰情室即時數據與訂閱 WebSocket..."):
+                try:
+                    contract = api.Contracts.Stocks.get(target_code)
+                    if contract:
+                        snapshots = api.snapshots([contract])
+                        if snapshots:
+                            snap = snapshots[0]
+                            curr_price = safe_float(getattr(snap, 'close', 0.0))
+                            high_price = safe_float(getattr(snap, 'high', curr_price))
+                            low_price = safe_float(getattr(snap, 'low', curr_price))
+                            open_price = safe_float(getattr(snap, 'open', curr_price))
+                            volume = int(safe_float(getattr(snap, 'total_volume', 0)))
+                            avg_price = safe_float(getattr(snap, 'average_price', curr_price), curr_price) or curr_price
+                            outer_vol = safe_float(getattr(snap, 'ask_volume', 0.0))
+                            inner_vol = safe_float(getattr(snap, 'bid_volume', 0.0))
 
-                        limit_up = safe_float(getattr(snap, 'price_up', None), round(curr_price * 1.1, 2))
-                        limit_down = safe_float(getattr(snap, 'price_down', None), round(curr_price * 0.9, 2))
+                            limit_up = safe_float(getattr(snap, 'price_up', None), round(curr_price * 1.1, 2))
+                            limit_down = safe_float(getattr(snap, 'price_down', None), round(curr_price * 0.9, 2))
 
-                        start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
-                        end_date = datetime.now().strftime("%Y-%m-%d")
-                        kbars = api.kbars(contract=contract, start=start_date, end=end_date)
-                        df_raw = pd.DataFrame({"ts": kbars.ts, "Open": kbars.Open, "High": kbars.High, "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume})
+                            start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
+                            end_date = datetime.now().strftime("%Y-%m-%d")
+                            kbars = api.kbars(contract=contract, start=start_date, end=end_date)
+                            df_raw = pd.DataFrame({"ts": kbars.ts, "Open": kbars.Open, "High": kbars.High, "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume})
 
-                        bal_p = (high_price + low_price + curr_price) / 3
+                            bal_p = (high_price + low_price + curr_price) / 3
 
-                        # ⚡ 綁定 WebSocket 微秒級推播
-                        @api.on_tick_stk_v1()
-                        def on_tick_cb(exchange, tick):
-                            t_price = safe_float(getattr(tick, 'close', 0.0))
-                            t_vol = int(safe_float(getattr(tick, 'volume', 0)))
-                            t_time = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-                            
-                            tick_payload = {
-                                "price": t_price,
-                                "volume": t_vol,
-                                "time": t_time,
-                                "target_price": custom_target_price,
-                                "stop_price": custom_stop_price,
-                                "buy_cost": buy_cost_input,
-                                "buy_sheets": buy_sheets_input,
-                                "breakeven_p": breakeven_p,
-                                "total_cost": total_cost,
-                                "vwap": avg_price,
-                                "pivot": bal_p,
-                                "chk_vwap": chk_vwap,
-                                "chk_pivot": chk_pivot,
-                                "chk_momentum": chk_momentum
+                            # ⚡ 綁定 WebSocket 微秒級推播
+                            @api.on_tick_stk_v1()
+                            def on_tick_cb(exchange, tick):
+                                t_price = safe_float(getattr(tick, 'close', 0.0))
+                                t_vol = int(safe_float(getattr(tick, 'volume', 0)))
+                                t_time = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                                
+                                tick_payload = {
+                                    "price": t_price,
+                                    "volume": t_vol,
+                                    "time": t_time,
+                                    "target_price": custom_target_price,
+                                    "stop_price": custom_stop_price,
+                                    "buy_cost": buy_cost_input,
+                                    "buy_sheets": buy_sheets_input,
+                                    "breakeven_p": breakeven_p,
+                                    "total_cost": total_cost,
+                                    "vwap": avg_price,
+                                    "pivot": bal_p,
+                                    "chk_vwap": chk_vwap,
+                                    "chk_pivot": chk_pivot,
+                                    "chk_momentum": chk_momentum
+                                }
+                                broadcast_tick_microsecond(tick_payload)
+
+                            try:
+                                api.quote.subscribe(contract, quote_type=sj.constant.QuoteType.Tick)
+                            except Exception:
+                                pass
+
+                            st.session_state["analysis_data"] = {
+                                "target_code": target_code, "target_name": target_name, "curr_price": curr_price,
+                                "high_price": high_price, "low_price": low_price, "open_price": open_price, "volume": volume,
+                                "avg_price": avg_price, "limit_up": limit_up, "limit_down": limit_down,
+                                "bias_rate": ((curr_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0,
+                                "momentum_coef": (outer_vol / inner_vol) if inner_vol > 0 else 1.0,
+                                "balance_point": bal_p, "df_raw": df_raw
                             }
-                            broadcast_tick_microsecond(tick_payload)
-
-                        try:
-                            api.quote.subscribe(contract, quote_type=sj.constant.QuoteType.Tick)
-                        except Exception:
-                            pass
-
-                        st.session_state["analysis_data"] = {
-                            "target_code": target_code, "target_name": target_name, "curr_price": curr_price,
-                            "high_price": high_price, "low_price": low_price, "open_price": open_price, "volume": volume,
-                            "avg_price": avg_price, "limit_up": limit_up, "limit_down": limit_down,
-                            "bias_rate": ((curr_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0,
-                            "momentum_coef": (outer_vol / inner_vol) if inner_vol > 0 else 1.0,
-                            "balance_point": bal_p, "df_raw": df_raw
-                        }
-            except Exception as e: st.error(f"連線失敗: {str(e)}")
+                except Exception as e: st.error(f"連線失敗: {str(e)}")
 
     if "analysis_data" in st.session_state and st.session_state["analysis_data"]["target_code"] == target_code:
         data = st.session_state["analysis_data"]
@@ -1129,7 +1143,7 @@ else:
                 <div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">{ai_res['resistance']}</span></div>
                 <div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">{ai_res['entry_price']}</span></div>
                 <div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">{curr_price:.2f}</span></div>
-                <div class="level-box"><span class="lbl">🛡️ 多空平衡點</span><span class="val" style="color:var(--gold);">{balance_point:.2f}</span></div>
+                <div class="level-box"><span class="lbl">🛡 多空平衡點</span><span class="val" style="color:var(--gold);">{balance_point:.2f}</span></div>
                 <div class="level-box"><span class="lbl">🛡️ 技術強撐價</span><span class="val text-green">{ai_res['support']}</span></div>
                 <div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">{limit_down:.2f}</span></div>
             </div>
