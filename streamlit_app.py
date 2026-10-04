@@ -17,26 +17,26 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="三維定位法 & 6層量化選股與當沖盯盤全功能系統", layout="wide")
 
 # =========================================================
-# 🎨 UI 主題（專業券商級戰情室 Terminal 主題）
+# 🎨 UI 主題（專業券商級戰情室 Terminal 主題 — 高亮高清修復版）
 # =========================================================
 _CSS = """
 <style>
 :root {
   --bg:#0B0E14; --panel:#121721; --panel2:#1A2130; --line:#253042;
-  --text:#FFFFFF; --muted:#8D99AE; --up:#F6465D; --down:#1FC98B; --accent:#4C8DFF;
+  --text:#FFFFFF; --muted:#D1D8E0; --up:#F6465D; --down:#1FC98B; --accent:#4C8DFF;
   --gold:#FFD166;
 }
 .stApp { background:var(--bg); color:var(--text); }
 html, body, [class*="css"] { font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; }
 
-p, label, span, div, .stMarkdown { color: #E6EBF3 !important; }
+p, label, span, div, .stMarkdown { color: #F0F4F8 !important; }
 h1, h2, h3, h4 { font-weight:700 !important; color:#FFFFFF !important; }
 .block-container { padding-top:1.2rem; max-width:1400px; }
 #MainMenu, footer { visibility:hidden; }
 
 /* 側邊欄 */
 [data-testid="stSidebar"] { background:var(--panel) !important; border-right:1px solid var(--line); }
-[data-testid="stSidebar"] * { color: #E6EBF3 !important; }
+[data-testid="stSidebar"] * { color: #F0F4F8 !important; }
 [data-testid="stSidebar"] [role="radiogroup"] label { padding:8px 12px; border-radius:8px; margin-bottom:2px; width:100%; }
 [data-testid="stSidebar"] [role="radiogroup"] label:hover { background:var(--panel2); }
 [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {
@@ -46,7 +46,7 @@ h1, h2, h3, h4 { font-weight:700 !important; color:#FFFFFF !important; }
 /* 分頁：膠囊式 */
 .stTabs [data-baseweb="tab-list"] { gap:6px; flex-wrap:wrap; }
 .stTabs [data-baseweb="tab"] { background:var(--panel); border:1px solid var(--line); border-radius:999px; padding:6px 16px; height:auto; }
-.stTabs [data-baseweb="tab"] * { color: #D1D8E0 !important; }
+.stTabs [data-baseweb="tab"] * { color: #E6EBF3 !important; }
 .stTabs [aria-selected="true"] { background:var(--accent); border-color:var(--accent); }
 .stTabs [aria-selected="true"] * { color:#FFFFFF !important; font-weight:700; }
 .stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] { display:none; }
@@ -59,10 +59,10 @@ h1, h2, h3, h4 { font-weight:700 !important; color:#FFFFFF !important; }
 /* 輸入框 */
 input, [data-baseweb="select"] > div { background:var(--panel2) !important; color:#FFFFFF !important; border-radius:8px !important; }
 
-/* 台股色彩 */
+/* 台股色彩與清晰標籤 */
 .up, .text-red { color:var(--up) !important; font-weight:700; }
 .down, .text-green { color:var(--down) !important; font-weight:700; }
-.muted { color:var(--muted) !important; font-size:.85rem; }
+.muted { color:#D1D8E0 !important; font-size:.9rem; font-weight:500; }
 
 /* 通用卡片 */
 .navy-card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 16px; margin-bottom:10px; }
@@ -81,7 +81,7 @@ input, [data-baseweb="select"] > div { background:var(--panel2) !important; colo
   padding:8px 12px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;
 }
 .level-box.normal { border-color:var(--line); }
-.level-box .lbl { font-size:.88rem; color:#E6EBF3; font-weight:600; }
+.level-box .lbl { font-size:.9rem; color:#FFFFFF !important; font-weight:600; }
 .level-box .val { font-size:1.15rem; font-weight:800; }
 
 /* 個股列 */
@@ -140,12 +140,9 @@ def calculate_breakeven_price(buy_price, qty_sheets=1, discount=0.2, tax_rate=0.
     if buy_fee < 20: buy_fee = 20 # 最低手續費 20 元
     total_buy_cost = buy_amt + buy_fee
 
-    # 升檔反推損益兩平價 (估算滿足賣出淨收入 >= 總買入成本的最低賣價)
-    # P_sell * shares - (P_sell * shares * 0.001425 * 0.2) - (P_sell * shares * tax_rate) >= total_buy_cost
     factor = 1.0 - (0.001425 * discount) - tax_rate
     raw_breakeven = total_buy_cost / (shares * factor)
 
-    # 進行台股檔位跳動 (Tick Size) 微調
     def get_tick_size(price):
         if price < 10: return 0.01
         elif price < 50: return 0.05
@@ -666,7 +663,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (含買進成本與損益兩平價即時運算)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (含高清晰對比報價與損益運算)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
@@ -751,8 +748,8 @@ else:
     if buy_cost_input > 0:
         st.markdown(f"""
         <div style="background:var(--panel2); border:1px solid var(--accent); border-radius:8px; padding:10px 16px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
-            <div><span>📦 預估總投入成本：<b style="color:#FFFFFF;">{total_cost:,.0f} 元</b> <small class="muted">(含買進手續費 {b_fee:.0f}元)</small></span></div>
-            <div><span style="font-size:1.1rem;">🚀 自動試算損益兩平賣出價：<b style="color:var(--gold); font-size:1.3rem;">{breakeven_p:.2f} 元</b></span></div>
+            <div><span style="color:#FFFFFF; font-weight:600;">📦 預估總投入成本：<b style="color:#FFFFFF;">{total_cost:,.0f} 元</b> <small style="color:#D1D8E0;">(含買進手續費 {b_fee:.0f}元)</small></span></div>
+            <div><span style="font-size:1.1rem; color:#FFFFFF; font-weight:600;">🚀 自動試算損益兩平賣出價：<b style="color:var(--gold); font-size:1.3rem;">{breakeven_p:.2f} 元</b></span></div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -787,7 +784,7 @@ else:
 
                         bal_p = (high_price + low_price + curr_price) / 3
 
-                        # ⚡ 綁定 WebSocket 微秒級推播，帶入買進成本與損益試算
+                        # ⚡ 綁定 WebSocket 微秒級推播
                         @api.on_tick_stk_v1()
                         def on_tick_cb(exchange, tick):
                             t_price = safe_float(getattr(tick, 'close', 0.0))
@@ -865,13 +862,13 @@ else:
         pct = ((curr_price - open_price) / open_price) * 100 if open_price else 0
         t_cls = tone(pct)
 
-        # ⚡【微秒級當沖動態監控 JavaScript DOM 廣播視窗（含實時未實現損益）】
+        # ⚡【高清對比 WebSocket DOM 廣播視窗】
         ws_live_html = f"""
         <div style="background:#121721; border:1px solid #253042; border-radius:12px; padding:16px 20px; margin-bottom:12px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div>
                     <span style="font-size:1.5rem; font-weight:800; color:#FFFFFF;">{data['target_code']} {data['target_name']}</span>
-                    <span style="font-size:0.85rem; color:#8D99AE; margin-left:10px;">⚡ WebSocket 微秒級當沖條件即時監控</span>
+                    <span style="font-size:0.85rem; color:#FFD166; font-weight:600; margin-left:10px;">⚡ WebSocket 微秒級當沖條件即時監控</span>
                 </div>
                 <div style="text-align:right;">
                     <span id="live-price" class="{t_cls}" style="font-size:2.8rem; font-weight:900; line-height:1;">{curr_price:.2f}</span>
@@ -879,14 +876,14 @@ else:
                 </div>
             </div>
             <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:12px; background:#1A2130; border-radius:8px; padding:12px 16px; margin-top:12px; border:1px solid #253042;">
-                <div style="display:flex; justify-content:space-between;"><span>最高</span><b style="color:#F6465D;">{high_price:.2f}</b></div>
-                <div style="display:flex; justify-content:space-between;"><span>最低</span><b style="color:#1FC98B;">{low_price:.2f}</b></div>
-                <div style="display:flex; justify-content:space-between;"><span>漲停</span><b style="color:#F6465D;">{limit_up:.2f}</b></div>
-                <div style="display:flex; justify-content:space-between;"><span>跌停</span><b style="color:#1FC98B;">{limit_down:.2f}</b></div>
-                <div style="display:flex; justify-content:space-between;"><span>損益兩平點</span><b style="color:#FFD166;">{breakeven_p:.2f}</b></div>
-                <div style="display:flex; justify-content:space-between;"><span>最新撮合時間</span><b id="live-time" style="color:#4C8DFF;">--:--:--.--</b></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:#D1D8E0; font-weight:600;">最高</span><b style="color:#F6465D; font-size:1.05rem;">{high_price:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:#D1D8E0; font-weight:600;">最低</span><b style="color:#1FC98B; font-size:1.05rem;">{low_price:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:#D1D8E0; font-weight:600;">漲停</span><b style="color:#F6465D; font-size:1.05rem;">{limit_up:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:#D1D8E0; font-weight:600;">跌停</span><b style="color:#1FC98B; font-size:1.05rem;">{limit_down:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:#D1D8E0; font-weight:600;">均價 (VWAP)</span><b style="color:#FFD166; font-size:1.05rem;">{avg_price:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:#D1D8E0; font-weight:600;">撮合時間</span><b id="live-time" style="color:#4C8DFF; font-size:1.05rem;">--:--:--.--</b></div>
             </div>
-            <div id="pnl-box" style="margin-top:10px; padding:8px 12px; background:#1A2130; border-radius:6px; font-weight:700; display:none;"></div>
+            <div id="pnl-box" style="margin-top:10px; padding:8px 12px; background:#1A2130; border-radius:6px; font-weight:700; display:none; border:1px solid #4C8DFF;"></div>
             <div id="alarm-box" style="margin-top:10px; font-size:1.05rem; font-weight:700;"></div>
         </div>
 
@@ -917,7 +914,6 @@ else:
                     }}
                 }}
 
-                // 💰 微秒級計算未實現損益與報酬率 (含 2折手續費與 0.3% 證交稅)
                 if (data.buy_cost > 0 && data.total_cost > 0) {{
                     const shares = data.buy_sheets * 1000;
                     const sellVal = px * shares;
@@ -930,7 +926,7 @@ else:
 
                     pnlElem.style.display = "block";
                     const colorCls = pnl >= 0 ? "#F6465D" : "#1FC98B";
-                    pnlElem.innerHTML = "💰 微秒級即時預估損益：<span style='color:" + colorCls + "; font-size:1.2rem;'>" + (pnl >= 0 ? "+" : "") + Math.round(pnl).toLocaleString() + " 元 (" + (pnlRate >= 0 ? "+" : "") + pnlRate.toFixed(2) + "%)</span>";
+                    pnlElem.innerHTML = "<span style='color:#FFFFFF;'>💰 微秒級即時預估損益：</span><span style='color:" + colorCls + "; font-size:1.2rem;'>" + (pnl >= 0 ? "+" : "") + Math.round(pnl).toLocaleString() + " 元 (" + (pnlRate >= 0 ? "+" : "") + pnlRate.toFixed(2) + "%)</span>";
                 }} else {{
                     pnlElem.style.display = "none";
                 }}
@@ -1096,7 +1092,7 @@ else:
                 <div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">{ai_res['resistance']}</span></div>
                 <div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">{ai_res['entry_price']}</span></div>
                 <div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">{curr_price:.2f}</span></div>
-                <div class="level-box"><span class="lbl">🛡️ 多空平衡點</span><span class="val" style="color:var(--gold);">{balance_point:.2f}</span></div>
+                <div class="level-box"><span class="lbl">🛡️️ 多空平衡點</span><span class="val" style="color:var(--gold);">{balance_point:.2f}</span></div>
                 <div class="level-box"><span class="lbl">🛡️ 技術強撐價</span><span class="val text-green">{ai_res['support']}</span></div>
                 <div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">{limit_down:.2f}</span></div>
             </div>
