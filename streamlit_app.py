@@ -280,7 +280,7 @@ def calculate_atr(df, period=14):
     df['ATR'] = df['TR'].rolling(period).mean()
     return df
 
-# 🤖 終極穩定版：使用 HTTP REST API 直連 Gemini，徹底解決 SDK 404 與模型別名錯誤
+# 🤖 REST API 直連 Gemini (全 Endpoint 相容與自動試錯)
 def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     c_code = str(data_dict.get('股票代碼', data_dict.get('target_code', '')))
     c_name = str(data_dict.get('股票名稱', data_dict.get('target_name', '')))
@@ -298,7 +298,7 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     momentum_coef = safe_float(data_dict.get('momentum_coef', 1.0))
     balance_point = safe_float(data_dict.get('balance_point', price))
 
-    key_to_use = user_gemini_key if user_gemini_key else gemini_api_key
+    key_to_use = user_gemini_key.strip() if user_gemini_key else gemini_api_key.strip()
 
     if not key_to_use:
         return "⚠️ 請先在左側選單輸入 **Gemini API Key**，或於 Secrets 設定 `GEMINI_API_KEY` 以啟動 AI 實時診斷！"
@@ -323,27 +323,35 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     endpoints = [
         f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key_to_use}",
         f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={key_to_use}",
-        f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={key_to_use}"
+        f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={key_to_use}",
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={key_to_use}"
     ]
 
+    headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [{
+            "role": "user",
             "parts": [{"text": prompt}]
         }]
     }
 
+    err_msgs = []
     for url in endpoints:
         try:
-            res = requests.post(url, json=payload, timeout=12)
+            res = requests.post(url, headers=headers, json=payload, timeout=12)
             if res.status_code == 200:
                 res_data = res.json()
-                return res_data['candidates'][0]['content']['parts'][0]['text']
-            elif res.status_code in [400, 403]:
-                return f"❌ API Key 無效或未授權 (HTTP {res.status_code})。請確認在 Google AI Studio 申請的金鑰是否正確。"
-        except Exception:
+                try:
+                    return res_data['candidates'][0]['content']['parts'][0]['text']
+                except (KeyError, IndexError):
+                    continue
+            else:
+                err_msgs.append(f"Endpoint HTTP {res.status_code}: {res.text[:100]}")
+        except Exception as e:
+            err_msgs.append(str(e))
             continue
 
-    return "❌ 呼叫 Gemini API 分析時發生錯誤: 所有 Endpoint 皆回應 404 或連線逾時。請至 Google AI Studio 重新點擊『Create API key in new project』建立全新 Key 貼入。"
+    return f"❌ 呼叫 Gemini API 失敗，請確認 API Key 權限。若為新 Key 請確定連線正常。\n細節: {err_msgs[0] if err_msgs else '無回應'}"
 
 # 技術面演算：計算強壓與強撐位
 def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high, prev_low, balance_point, chip_data):
@@ -596,7 +604,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (全功能直連板)
+# 頁面 5：📈 三維定位與當沖盯盤系統
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
@@ -798,7 +806,7 @@ else:
         left_main, right_panel = st.columns([3, 1])
 
         with left_main:
-            # 1. 主 K 線與成交量圖（完整指標線整合）
+            # 1. 主 K 線與成交量圖
             kbar_tf = st.radio("顯示週期：", ["5分K", "1分K", "60分K", "日K"], horizontal=True)
 
             if "日K" in kbar_tf and 'df_k_daily' in locals() and not df_k_daily.empty:
@@ -834,7 +842,7 @@ else:
                     name='成交量', marker_color="#4C8DFF"
                 ), row=2, col=1)
 
-                # 🎯 多週期技術指標線
+                # 多週期技術指標線
                 if "日K" in kbar_tf:
                     if "5MA" in df_chart.columns: fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['5MA'], mode='lines', name='5MA', line=dict(color='lightskyblue', width=1)), row=1, col=1)
                     if "10MA" in df_chart.columns: fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['10MA'], mode='lines', name='10MA', line=dict(color='blue', width=1.5)), row=1, col=1)
