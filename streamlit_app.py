@@ -193,7 +193,7 @@ app_mode = st.sidebar.radio(
     [
         "🚀 6層量化戰略選股",
         "💡 大戶投 — 智慧選股",
-        "🔥 大戶投 — 盘中熱門",
+        "🔥 大戶投 — 盤中熱門",
         "⚡ 當沖強勢股篩選",
         "📈 三維定位與當沖盯盤系統"
     ]
@@ -266,7 +266,7 @@ def calculate_atr(df, period=14):
     df['ATR'] = df['TR'].rolling(period).mean()
     return df
 
-# 🤖 真正呼叫 Gemini API 的高盛資深分析師診斷函式
+# 🤖 真正呼叫 Gemini API 的高盛資深分析師診斷函式 (已修復 404 模型名稱與相容語法)
 def run_goldman_sachs_ai_evaluation(row, user_gemini_key=""):
     c_code = str(row['股票代碼'])
     c_name = str(row['股票名稱'])
@@ -297,20 +297,29 @@ def run_goldman_sachs_ai_evaluation(row, user_gemini_key=""):
 * 產業催化劑題材：{catalyst}
 
 【請嚴格依據下列 3 大點輸出深度評估】
-1. **🎯 核心操作策略與進場指引**：分析該股營收成長是否真正轉化為獲利，評估其目前股價位置，給出最佳買進點位與短中線操作戰術（是否宜追高，或是應等待拉回拉回關鍵均線）。
+1. **🎯 核心操作策略與進場指引**：分析該股營收成長是否真正轉化為獲利，評估其目前股價位置，給出最佳買進點位與短中線操作戰法（是否宜追高，或是應等待拉回關鍵均線）。
 2. **📊 買進勝率與勝率結構評估**：請給出具體的短線/波段買進勝率預估（例如 75%），並列出勝率支撐的主要理由與技術/基本面優勢。
 3. **⚠️ 風險提示與嚴格停損位**：指出該股當前最大的風險因子（如本益比過高、獲利未跟上營收、高檔獲利吐回等），並給出精確的**停損參考價格**。
 """
 
     try:
+        # 使用現行穩定模型 gemini-1.5-flash
         client = genai.Client(api_key=key_to_use)
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-1.5-flash',
             contents=prompt,
         )
         return response.text
     except Exception as e:
-        return f"❌ 呼叫 Gemini API 分析時發生錯誤: {str(e)}"
+        # 降級相容機制：支援舊版 google.generativeai SDK
+        try:
+            import google.generativeai as old_genai
+            old_genai.configure(api_key=key_to_use)
+            model = old_genai.GenerativeModel('gemini-1.5-flash')
+            res = model.generate_content(prompt)
+            return res.text
+        except Exception as ex:
+            return f"❌ 呼叫 Gemini API 分析時發生錯誤: {str(e)}"
 
 # 資深證券分析師 AI 技術面與籌碼面診斷模組
 def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high, prev_low, balance_point, chip_data):
