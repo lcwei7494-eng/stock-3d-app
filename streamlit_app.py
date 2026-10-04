@@ -66,6 +66,17 @@ input, [data-baseweb="select"] > div { background:var(--panel2) !important; colo
 .level-box .lbl { font-size:.88rem; color:#E6EBF3; font-weight:600; }
 .level-box .val { font-size:1.15rem; font-weight:800; }
 
+/* 關鍵價：漲跌停專用區塊 */
+.limit-section {
+  background:var(--panel2); border:1px solid var(--line); border-radius:8px;
+  padding:10px 12px; margin-bottom:10px;
+}
+.limit-title { font-size:.88rem; color:var(--gold); font-weight:700; margin-bottom:6px; }
+.limit-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; text-align:center; }
+.limit-item { background:var(--panel); padding:6px; border-radius:6px; border:1px solid var(--line); }
+.limit-item small { display:block; font-size:.75rem; color:var(--muted); }
+.limit-item b { font-size:1.1rem; }
+
 /* 個股列 */
 .row { display:flex; justify-content:space-between; align-items:center; background:var(--panel);
   border:1px solid var(--line); border-left:4px solid var(--muted); border-radius:10px; padding:10px 14px; margin:6px 0; }
@@ -457,7 +468,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
         render_smart_stock_table(pd.DataFrame([{"股票代碼": "2466", "股票名稱": "冠西電", "最新價": 141.0, "漲跌幅(%)": +9.73, "成交量(張)": 8500, "篩選特徵": "🚀 5分K帶量發動"}]), "flt")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (校正全週期均線 + 布林通道)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (右側新增關鍵價：漲停/跌停)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
@@ -515,6 +526,11 @@ else:
                         outer_vol = float(getattr(snap, 'ask_volume', 0.0))
                         inner_vol = float(getattr(snap, 'bid_volume', 0.0))
 
+                        # 🎯 漲跌停價格計算 (以開盤價或昨天收盤價為基準衍生 +-10%)
+                        ref_p = open_price if open_price > 0 else curr_price
+                        limit_up = round(ref_p * 1.10, 2)
+                        limit_down = round(ref_p * 0.90, 2)
+
                         start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
                         end_date = datetime.now().strftime("%Y-%m-%d")
                         kbars = api.kbars(contract=contract, start=start_date, end=end_date)
@@ -523,6 +539,7 @@ else:
                         st.session_state["analysis_data"] = {
                             "target_code": target_code, "target_name": target_name, "curr_price": curr_price,
                             "high_price": high_price, "low_price": low_price, "open_price": open_price, "volume": volume,
+                            "limit_up": limit_up, "limit_down": limit_down,
                             "bias_rate": ((curr_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0,
                             "momentum_coef": (outer_vol / inner_vol) if inner_vol > 0 else 1.0,
                             "balance_point": (high_price + low_price + curr_price) / 3, "df_raw": df_raw
@@ -575,7 +592,7 @@ else:
         left_main, right_panel = st.columns([3, 1])
 
         with left_main:
-            # 1. 🎯 多週期 K 線 (完全符合均線與布林通道指示)
+            # 1. 主 K 線 (含均線與布林通道)
             kbar_tf = st.radio("顯示週期：", ["5分K", "1分K", "60分K", "日K"], horizontal=True)
             
             if "日K" in kbar_tf and 'df_k_daily' in locals():
@@ -599,22 +616,18 @@ else:
             if len(df_c) > 0:
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.03)
                 
-                # 主 K 線
                 fig.add_trace(go.Candlestick(
                     x=df_c['DateTime'].dt.strftime(time_fmt), open=df_c['Open'], high=df_c['High'], low=df_c['Low'], close=df_c['Close'],
                     name='K線', increasing_line_color="#F6465D", decreasing_line_color="#1FC98B"
                 ), row=1, col=1)
 
-                # 🎯 指標繪製邏輯
                 if "日K" in kbar_tf:
-                    # 日K 增加 ma5, ma20, ma60, ma120
                     fig.add_trace(go.Scatter(x=df_c['DateTime'].dt.strftime(time_fmt), y=df_c['5MA'], mode='lines', name='5MA', line=dict(color='#38BDF8', width=1.2)), row=1, col=1)
                     fig.add_trace(go.Scatter(x=df_c['DateTime'].dt.strftime(time_fmt), y=df_c['20MA'], mode='lines', name='20MA(月線)', line=dict(color='#3B82F6', width=1.5)), row=1, col=1)
                     fig.add_trace(go.Scatter(x=df_c['DateTime'].dt.strftime(time_fmt), y=df_c['60MA'], mode='lines', name='60MA(季線)', line=dict(color='#A855F7', width=1.8)), row=1, col=1)
                     if "120MA" in df_c.columns:
                         fig.add_trace(go.Scatter(x=df_c['DateTime'].dt.strftime(time_fmt), y=df_c['120MA'], mode='lines', name='120MA(半年線)', line=dict(color='#F97316', width=1.8)), row=1, col=1)
                 else:
-                    # 分時圖（1分K、5分K、60分K）增加 ma5, ma20, 布林通道
                     df_c["5MA"] = df_c["Close"].rolling(5).mean()
                     df_c["20MA"] = df_c["Close"].rolling(20).mean()
                     df_c["Std"] = df_c["Close"].rolling(20).std()
@@ -632,7 +645,6 @@ else:
                         df_c["VWAP"] = (df_c["Cum_Val"] / df_c["Cum_Vol"]).fillna(df_c["Close"])
                         fig.add_trace(go.Scatter(x=df_c['DateTime'].dt.strftime(time_fmt), y=df_c['VWAP'], mode='lines', name='當日均線(VWAP)', line=dict(color='#F59E0B', width=2)), row=1, col=1)
 
-                # 成交量
                 fig.add_trace(go.Bar(x=df_c['DateTime'].dt.strftime(time_fmt), y=df_c['Volume'], name='成交量', marker_color="#4C8DFF"), row=2, col=1)
                 
                 fig.update_layout(
@@ -665,19 +677,38 @@ else:
                     {"日期": "09/26", "融資買賣超(張)": "+90", "融資餘額(張)": "12,710", "融券買賣超(張)": "-15", "融券餘額(張)": "1,485", "券資比(%)": "11.68%"},
                 ]), use_container_width=True)
 
-        # 🎯 右側欄：黃框壓力/支撐看板
+        # 🎯 右側欄：黃框壓力/支撐/關鍵價看板 (新增關鍵價：漲停/跌停)
         with right_panel:
+            limit_u = data.get('limit_up', round(curr_price*1.1, 2))
+            limit_d = data.get('limit_down', round(curr_price*0.9, 2))
+
             st.markdown(f"""
             <div class="level-container">
                 <div class="level-head">
                     <div><span class="muted">強壓</span><br><b class="text-red" style="font-size:1.2rem;">{ai_res['resistance']}</b></div>
                     <div style="text-align:right;"><span class="muted">強撐</span><br><b class="text-green" style="font-size:1.2rem;">{ai_res['support']}</b></div>
                 </div>
+                
+                <!-- 🎯 新增「關鍵價」區塊（秀出當天漲停與跌停） -->
+                <div class="limit-section">
+                    <div class="limit-title">🔑 當日極限關鍵價</div>
+                    <div class="limit-grid">
+                        <div class="limit-item">
+                            <small>漲停價 🔴</small>
+                            <b class="text-red">{limit_u:.2f}</b>
+                        </div>
+                        <div class="limit-item">
+                            <small>跌停價 🟢</small>
+                            <b class="text-green">{limit_d:.2f}</b>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="level-box"><span class="lbl">🎯 極限壓力位</span><span class="val text-red">{ai_res['resistance']}</span></div>
                 <div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">{ai_res['entry_price']}</span></div>
                 <div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">{curr_price}</span></div>
                 <div class="level-box"><span class="lbl">🛡️ 多空平衡點</span><span class="val" style="color:var(--gold);">{data['balance_point']:.2f}</span></div>
-                <div class="level-box"><span class="lbl">🛡️️ 關鍵停損價</span><span class="val text-green">{ai_res['support']}</span></div>
+                <div class="level-box"><span class="lbl">🛡 關鍵停損價</span><span class="val text-green">{ai_res['support']}</span></div>
             </div>
             """, unsafe_allow_html=True)
 
