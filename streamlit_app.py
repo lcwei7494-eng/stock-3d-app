@@ -457,7 +457,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
         render_smart_stock_table(pd.DataFrame([{"股票代碼": "2466", "股票名稱": "冠西電", "最新價": 141.0, "漲跌幅(%)": +9.73, "成交量(張)": 8500, "篩選特徵": "🚀 5分K帶量發動"}]), "flt")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (校正三大法人與融資融券雙表格)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (校正全週期均線 + 布林通道)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
@@ -546,6 +546,7 @@ else:
             df_k_daily["10MA"] = df_k_daily["Close"].rolling(10).mean()
             df_k_daily["20MA"] = df_k_daily["Close"].rolling(20).mean()
             df_k_daily["60MA"] = df_k_daily["Close"].rolling(60).mean()
+            df_k_daily["120MA"] = df_k_daily["Close"].rolling(120).mean()
             ma5 = df_k_daily['5MA'].iloc[-1]; ma20 = df_k_daily['20MA'].iloc[-1]
             prev_high = df_k_daily['High'].iloc[-2] if len(df_k_daily)>1 else data['high_price']
             prev_low = df_k_daily['Low'].iloc[-2] if len(df_k_daily)>1 else data['low_price']
@@ -574,25 +575,75 @@ else:
         left_main, right_panel = st.columns([3, 1])
 
         with left_main:
-            # 1. 主 K 線與成交量圖
+            # 1. 🎯 多週期 K 線 (完全符合均線與布林通道指示)
             kbar_tf = st.radio("顯示週期：", ["5分K", "1分K", "60分K", "日K"], horizontal=True)
+            
             if "日K" in kbar_tf and 'df_k_daily' in locals():
-                df_c = df_k_daily.tail(60).copy(); df_c["DateTime"] = pd.to_datetime(df_c["DateTime"])
+                df_c = df_k_daily.tail(60).copy()
+                df_c["DateTime"] = pd.to_datetime(df_c["DateTime"])
                 time_fmt = '%Y-%m-%d'
             else:
                 latest_d = df_raw["DateTime"].dt.date.max() if len(df_raw)>0 else datetime.now().date()
                 df_sub = df_raw[df_raw["DateTime"].dt.date == latest_d]
-                df_c = df_sub.set_index("DateTime").resample("5min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index() if len(df_sub)>0 else pd.DataFrame()
-                time_fmt = '%H:%M'
+                
+                if "1分K" in kbar_tf:
+                    df_c = df_sub.set_index("DateTime").resample("1min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index() if len(df_sub)>0 else pd.DataFrame()
+                    time_fmt = '%H:%M'
+                elif "60分K" in kbar_tf:
+                    df_c = df_raw.set_index("DateTime").resample("60min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index().tail(60) if len(df_raw)>0 else pd.DataFrame()
+                    time_fmt = '%m-%d %H:%M'
+                else: # 5分K
+                    df_c = df_sub.set_index("DateTime").resample("5min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index() if len(df_sub)>0 else pd.DataFrame()
+                    time_fmt = '%H:%M'
 
             if len(df_c) > 0:
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.03)
-                fig.add_trace(go.Candlestick(x=df_c['DateTime'].dt.strftime(time_fmt), open=df_c['Open'], high=df_c['High'], low=df_c['Low'], close=df_c['Close'], name='K線', increasing_line_color="#F6465D", decreasing_line_color="#1FC98B"), row=1, col=1)
+                
+                # 主 K 線
+                fig.add_trace(go.Candlestick(
+                    x=df_c['DateTime'].dt.strftime(time_fmt), open=df_c['Open'], high=df_c['High'], low=df_c['Low'], close=df_c['Close'],
+                    name='K線', increasing_line_color="#F6465D", decreasing_line_color="#1FC98B"
+                ), row=1, col=1)
+
+                # 🎯 指標繪製邏輯
+                if "日K" in kbar_tf:
+                    # 日K 增加 ma5, ma20, ma60, ma120
+                    fig.add_trace(go.Scatter(x=df_c['DateTime'].dt.strftime(time_fmt), y=df_c['5MA'], mode='lines', name='5MA', line=dict(color='#38BDF8', width=1.2)), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_c['DateTime'].dt.strftime(time_fmt), y=df_c['20MA'], mode='lines', name='20MA(月線)', line=dict(color='#3B82F6', width=1.5)), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_c['DateTime'].dt.strftime(time_fmt), y=df_c['60MA'], mode='lines', name='60MA(季線)', line=dict(color='#A855F7', width=1.8)), row=1, col=1)
+                    if "120MA" in df_c.columns:
+                        fig.add_trace(go.Scatter(x=df_c['DateTime'].dt.strftime(time_fmt), y=df_c['120MA'], mode='lines', name='120MA(半年線)', line=dict(color='#F97316', width=1.8)), row=1, col=1)
+                else:
+                    # 分時圖（1分K、5分K、60分K）增加 ma5, ma20, 布林通道
+                    df_c["5MA"] = df_c["Close"].rolling(5).mean()
+                    df_c["20MA"] = df_c["Close"].rolling(20).mean()
+                    df_c["Std"] = df_c["Close"].rolling(20).std()
+                    df_c["UpperBand"] = df_c["20MA"] + (df_c["Std"] * 2)
+                    df_c["LowerBand"] = df_c["20MA"] - (df_c["Std"] * 2)
+
+                    fig.add_trace(go.Scatter(x=df_c['DateTime'].dt.strftime(time_fmt), y=df_c['5MA'], mode='lines', name='5MA', line=dict(color='#38BDF8', width=1.2)), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_c['DateTime'].dt.strftime(time_fmt), y=df_c['20MA'], mode='lines', name='20MA', line=dict(color='#3B82F6', width=1.5)), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_c['DateTime'].dt.strftime(time_fmt), y=df_c['UpperBand'], mode='lines', name='布林上軌', line=dict(color='#EF4444', width=1, dash='dash')), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_c['DateTime'].dt.strftime(time_fmt), y=df_c['LowerBand'], mode='lines', name='布林下軌', line=dict(color='#10B981', width=1, dash='dash')), row=1, col=1)
+
+                    if "1分K" in kbar_tf or "5分K" in kbar_tf:
+                        df_c["Cum_Vol"] = df_c["Volume"].cumsum()
+                        df_c["Cum_Val"] = (df_c["Close"] * df_c["Volume"]).cumsum()
+                        df_c["VWAP"] = (df_c["Cum_Val"] / df_c["Cum_Vol"]).fillna(df_c["Close"])
+                        fig.add_trace(go.Scatter(x=df_c['DateTime'].dt.strftime(time_fmt), y=df_c['VWAP'], mode='lines', name='當日均線(VWAP)', line=dict(color='#F59E0B', width=2)), row=1, col=1)
+
+                # 成交量
                 fig.add_trace(go.Bar(x=df_c['DateTime'].dt.strftime(time_fmt), y=df_c['Volume'], name='成交量', marker_color="#4C8DFF"), row=2, col=1)
-                fig.update_layout(height=420, margin=dict(l=10, r=10, t=10, b=10), template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis_rangeslider_visible=False)
+                
+                fig.update_layout(
+                    height=450, margin=dict(l=10, r=10, t=10, b=10), template="plotly_dark",
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                    xaxis_rangeslider_visible=False,
+                    legend=dict(orientation="h", y=1.08, font=dict(color="#FFFFFF", size=11))
+                )
                 st.plotly_chart(fig, use_container_width=True)
 
-            # 2. 🎯 校正數據結構：三大法人近5日買賣超 & 融資融券近5日張數表格
+            # 2. 三大法人與融資融券雙表格
             st.markdown("##### 📊 籌碼面進階數據 (三大法人近5日買賣超 & 融資融券籌碼變動)")
             c_left, c_right = st.columns(2)
             with c_left:
@@ -614,7 +665,7 @@ else:
                     {"日期": "09/26", "融資買賣超(張)": "+90", "融資餘額(張)": "12,710", "融券買賣超(張)": "-15", "融券餘額(張)": "1,485", "券資比(%)": "11.68%"},
                 ]), use_container_width=True)
 
-        # 🎯 右側欄：對齊黃框壓力/支撐看板
+        # 🎯 右側欄：黃框壓力/支撐看板
         with right_panel:
             st.markdown(f"""
             <div class="level-container">
@@ -626,7 +677,7 @@ else:
                 <div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">{ai_res['entry_price']}</span></div>
                 <div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">{curr_price}</span></div>
                 <div class="level-box"><span class="lbl">🛡️ 多空平衡點</span><span class="val" style="color:var(--gold);">{data['balance_point']:.2f}</span></div>
-                <div class="level-box"><span class="lbl">🛡️ 關鍵停損價</span><span class="val text-green">{ai_res['support']}</span></div>
+                <div class="level-box"><span class="lbl">🛡️️ 關鍵停損價</span><span class="val text-green">{ai_res['support']}</span></div>
             </div>
             """, unsafe_allow_html=True)
 
