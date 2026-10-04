@@ -112,6 +112,31 @@ def stock_row_html(code, name, price, pct, tag=""):
     )
 
 
+# 🇹🇼 台股標準升降單位 (Tick Size) 與精準漲跌停計算
+def get_tw_tick_size(price):
+    if price < 10: return 0.01
+    elif price < 50: return 0.05
+    elif price < 100: return 0.1
+    elif price < 500: return 0.5
+    elif price < 1000: return 1.0
+    else: return 5.0
+
+def calculate_tw_limit_prices(ref_price):
+    if ref_price <= 0: return 0.0, 0.0
+    
+    # 漲停：原價 * 1.10，向下取最接近的 Tick
+    raw_limit_up = ref_price * 1.10
+    tick_up = get_tw_tick_size(raw_limit_up)
+    limit_up = round(int(raw_limit_up / tick_up) * tick_up, 2)
+    
+    # 跌停：原價 * 0.90，向上取最接近的 Tick
+    raw_limit_down = ref_price * 0.90
+    tick_down = get_tw_tick_size(raw_limit_down)
+    limit_down = round(int(raw_limit_down / tick_down + 0.9999) * tick_down, 2)
+    
+    return limit_up, limit_down
+
+
 # 💾 自選股 JSON 檔案永久保留讀寫邏輯
 WATCHLIST_FILE = "watchlist.json"
 
@@ -271,9 +296,14 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
 * **嚴格停損價**：設定為 **`{stop_px}` 元**（跌破約 6% 果斷離場停損）。
 """
 
+# 🎯 動態修正價格邏輯（確保壓力位 > 現價 > 支撐位/停損位）
 def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high, prev_low, balance_point, chip_data):
-    support_price = round(min(ma5, prev_low), 2)
-    resistance_price = round(max(prev_high, balance_point * 1.02), 2)
+    # 壓力位：必須大於現價
+    resistance_price = round(max(prev_high, balance_point * 1.02, curr * 1.03), 2)
+    # 支撐價與停損價：必須小於現價
+    support_price = round(min(ma5, prev_low, curr * 0.97), 2)
+    entry_price = round(min(curr, max(ma5, balance_point)), 2)
+
     foreign_buy = chip_data.get("foreign", 0)
     investment_buy = chip_data.get("investment", 0)
 
@@ -282,15 +312,12 @@ def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high,
 
     if is_tech_bull and is_chip_bull:
         trend = "強勢多頭 (技術面多頭 + 法人合買)"
-        entry_price = round(max(ma5, support_price), 2)
         strategy = f"型態呈多頭排列且法人呈買超。建議採『拉回當日均線或支撐價 ({support_price}元) 不破』試買。"
     elif not is_tech_bull and not is_chip_bull:
         trend = "偏空觀望 (均線空頭排列 + 法人賣超)"
-        entry_price = round(min(ma5, resistance_price), 2)
         strategy = f"均線呈現空頭排列且籌碼流出。不宜盲目抄底，可等待反彈至壓力位 ({resistance_price}元) 出現爆量黑K尋找空點。"
     else:
         trend = "多空拉鋸震盪 (籌碼與型態分歧)"
-        entry_price = round(balance_point, 2)
         strategy = f"股價於均線區間震盪。操作上應嚴守多空平衡點 ({balance_point:.2f}元) 附近低吸高拋。"
 
     return {
@@ -468,7 +495,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
         render_smart_stock_table(pd.DataFrame([{"股票代碼": "2466", "股票名稱": "冠西電", "最新價": 141.0, "漲跌幅(%)": +9.73, "成交量(張)": 8500, "篩選特徵": "🚀 5分K帶量發動"}]), "flt")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (右側新增關鍵價：漲停/跌停)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (精準台股 Tick 漲跌停校正版)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
@@ -526,10 +553,10 @@ else:
                         outer_vol = float(getattr(snap, 'ask_volume', 0.0))
                         inner_vol = float(getattr(snap, 'bid_volume', 0.0))
 
-                        # 🎯 漲跌停價格計算 (以開盤價或昨天收盤價為基準衍生 +-10%)
-                        ref_p = open_price if open_price > 0 else curr_price
-                        limit_up = round(ref_p * 1.10, 2)
-                        limit_down = round(ref_p * 0.90, 2)
+                        # 🎯 採用昨收/開盤基準價計算台股標準 Tick 漲跌停價格
+                        ref_p = getattr(snap, 'reference_price', open_price)
+                        if not ref_p or ref_p == 0: ref_p = open_price if open_price > 0 else curr_price
+                        limit_up, limit_down = calculate_tw_limit_prices(ref_p)
 
                         start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
                         end_date = datetime.now().strftime("%Y-%m-%d")
@@ -677,7 +704,7 @@ else:
                     {"日期": "09/26", "融資買賣超(張)": "+90", "融資餘額(張)": "12,710", "融券買賣超(張)": "-15", "融券餘額(張)": "1,485", "券資比(%)": "11.68%"},
                 ]), use_container_width=True)
 
-        # 🎯 右側欄：黃框壓力/支撐/關鍵價看板 (新增關鍵價：漲停/跌停)
+        # 🎯 右側欄：黃框壓力/支撐/關鍵價看板 (校正版：漲跌停以 Tick Size 計算，壓力位 > 現價 > 支撐位)
         with right_panel:
             limit_u = data.get('limit_up', round(curr_price*1.1, 2))
             limit_d = data.get('limit_down', round(curr_price*0.9, 2))
@@ -689,17 +716,17 @@ else:
                     <div style="text-align:right;"><span class="muted">強撐</span><br><b class="text-green" style="font-size:1.2rem;">{ai_res['support']}</b></div>
                 </div>
                 
-                <!-- 🎯 新增「關鍵價」區塊（秀出當天漲停與跌停） -->
+                <!-- 🎯 精準台股漲跌停關鍵價 -->
                 <div class="limit-section">
                     <div class="limit-title">🔑 當日極限關鍵價</div>
                     <div class="limit-grid">
                         <div class="limit-item">
                             <small>漲停價 🔴</small>
-                            <b class="text-red">{limit_u:.2f}</b>
+                            <b class="text-red">{limit_u}</b>
                         </div>
                         <div class="limit-item">
                             <small>跌停價 🟢</small>
-                            <b class="text-green">{limit_d:.2f}</b>
+                            <b class="text-green">{limit_d}</b>
                         </div>
                     </div>
                 </div>
