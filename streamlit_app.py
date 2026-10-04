@@ -7,6 +7,7 @@ from plotly.subplots import make_subplots
 import time
 import json
 import os
+import math
 import requests
 import asyncio
 import threading
@@ -128,6 +129,37 @@ def level_card_html(title, items, color_class):
     return f'<div class="lv"><h5 class="{color_class}">{title}</h5>{rows}</div>'
 
 
+# 🧮 計算買進總成本與損益兩平價（含 2 折手續費與 0.3% 證交稅）
+def calculate_breakeven_price(buy_price, qty_sheets=1, discount=0.2, tax_rate=0.003):
+    if buy_price <= 0 or qty_sheets <= 0:
+        return 0.0, 0.0, 0.0
+    
+    shares = qty_sheets * 1000
+    buy_amt = buy_price * shares
+    buy_fee = math.floor(buy_amt * 0.001425 * discount)
+    if buy_fee < 20: buy_fee = 20 # 最低手續費 20 元
+    total_buy_cost = buy_amt + buy_fee
+
+    # 升檔反推損益兩平價 (估算滿足賣出淨收入 >= 總買入成本的最低賣價)
+    # P_sell * shares - (P_sell * shares * 0.001425 * 0.2) - (P_sell * shares * tax_rate) >= total_buy_cost
+    factor = 1.0 - (0.001425 * discount) - tax_rate
+    raw_breakeven = total_buy_cost / (shares * factor)
+
+    # 進行台股檔位跳動 (Tick Size) 微調
+    def get_tick_size(price):
+        if price < 10: return 0.01
+        elif price < 50: return 0.05
+        elif price < 100: return 0.1
+        elif price < 500: return 0.5
+        elif price < 1000: return 1.0
+        else: return 5.0
+
+    tick = get_tick_size(raw_breakeven)
+    breakeven_price = math.ceil(raw_breakeven / tick) * tick
+
+    return breakeven_price, total_buy_cost, buy_fee
+
+
 # 💾 自選股 JSON 檔案永久保留讀寫邏輯
 WATCHLIST_FILE = "watchlist.json"
 
@@ -208,7 +240,7 @@ def start_websocket_server():
     asyncio.set_event_loop(loop)
     async def run_server():
         async with serve(ws_handler, "0.0.0.0", 8765):
-            await asyncio.Future() # run forever
+            await asyncio.Future()
     try:
         loop.run_until_complete(run_server())
     except Exception:
@@ -294,7 +326,7 @@ def calculate_atr(df, period=14):
     df['ATR'] = df['TR'].rolling(period).mean()
     return df
 
-# 🤖 REST API 直連 Gemini (具備動態模型查詢與備援機制)
+# 🤖 REST API 直連 Gemini
 def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     c_code = str(data_dict.get('股票代碼', data_dict.get('target_code', '')))
     c_name = str(data_dict.get('股票名稱', data_dict.get('target_name', '')))
@@ -583,7 +615,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
     st.title("🔥 短線多頭精選 — 當沖強勢股篩選雷達")
     st.caption("掃描上市櫃成交額前段個股，嚴格依據 5 大核心指標過濾無量假突破與死股。")
 
-    with st.sidebar.expander("⚙️️ 篩選參數設定", expanded=True):
+    with st.sidebar.expander("⚙️ 篩選參數設定", expanded=True):
         param_vol_mult = st.number_input("① 今量達前5日均量倍數", value=1.5, step=0.1)
         param_break_days = st.number_input("③ 站上前 N 日高點 (壓力位)", value=60, step=10)
         param_min_amount = st.number_input("④ 近20日均成交額門檻 (萬元)", value=5000, step=1000)
@@ -634,7 +666,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (含微秒級 WebSocket 逐筆 DOM 推播組件)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (含買進成本與損益兩平價即時運算)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
@@ -650,8 +682,6 @@ else:
            * **四大設定法**：百分比法、技術位法、K線法、ATR波幅法（1~2倍ATR停損，2~4倍ATR停利）。
            * **風格定位**：短線當沖 (停損3~5%/停利5~8%)、波段 (停損5~10%/停利10~20%)、長線 (停損10~15%/停利20~50%)。
         """)
-
-    enable_sound = st.sidebar.checkbox("開啟轉折警示音效", value=True)
 
     if "selected_stock" not in st.session_state: st.session_state["selected_stock"] = "4991"
 
@@ -685,26 +715,51 @@ else:
     with col_style:
         trade_style = st.selectbox("🎯 交易風格", ["短線/當沖 (1~3天)", "波段操作 (幾天~幾週)", "長線投資"])
 
+    # ⚡ 盤中當沖動態監控條件面板
+    st.markdown("##### ⚡ 盤中當沖動態監控條件 (微秒級 Tick 自動比對與警示)")
+    col_c1, col_c2, col_c3 = st.columns(3)
+    with col_c1:
+        chk_vwap = st.checkbox("監控當日均線 (VWAP) 支撐/跌破", value=True)
+    with col_c2:
+        chk_pivot = st.checkbox("監控多空平衡點 站上/跌破", value=True)
+    with col_c3:
+        chk_momentum = st.checkbox("監控大戶動能爆量 (買賣單比 > 1.3)", value=True)
+
     if "last_stock" not in st.session_state or st.session_state["last_stock"] != target_code:
         st.session_state["last_stock"] = target_code
         st.session_state["custom_target"] = 0.0
         st.session_state["custom_stop"] = 0.0
+        st.session_state["buy_cost"] = 0.0
+        st.session_state["buy_sheets"] = 1
         if "analysis_data" in st.session_state: del st.session_state["analysis_data"]
 
-    # 🎯 手動交易計劃設定
-    st.markdown("##### ⚙️ 手動交易計劃設定 (左側預設支撐價 / 右側預設壓力價)")
-    col_stop, col_target = st.columns(2)
+    # 💰 交易計劃與個人持股成本計算器
+    st.markdown("##### ⚙️ 交易計劃與個人持股成本設定 (含 2折手續費 + 0.3% 證交稅損益兩平試算)")
+    col_p1, col_p2, col_stop, col_target = st.columns([1, 1, 1, 1])
+    with col_p1:
+        buy_cost_input = st.number_input("💵 買進成本價 (元)", value=float(st.session_state.get("buy_cost", 0.0)), step=0.5)
+    with col_p2:
+        buy_sheets_input = st.number_input("📦 買進張數", value=int(st.session_state.get("buy_sheets", 1)), min_value=1, step=1)
     with col_stop:
-        st.markdown("<h6 class='text-green'>🛡 手動停損/支撐價 (左側 / 綠色)</h6>", unsafe_allow_html=True)
-        custom_stop_price = st.number_input("停損價 (元)", value=float(st.session_state.get("custom_stop", 0.0)), step=0.5, label_visibility="collapsed")
+        custom_stop_price = st.number_input("🛡️ 停損價 (元)", value=float(st.session_state.get("custom_stop", 0.0)), step=0.5)
     with col_target:
-        st.markdown("<h6 class='text-red'>🎯 手動目標/壓力價 (右側 / 紅色)</h6>", unsafe_allow_html=True)
-        custom_target_price = st.number_input("目標價 (元)", value=float(st.session_state.get("custom_target", 0.0)), step=0.5, label_visibility="collapsed")
+        custom_target_price = st.number_input("🎯 目標價 (元)", value=float(st.session_state.get("custom_target", 0.0)), step=0.5)
+
+    # 計算損益兩平價
+    breakeven_p, total_cost, b_fee = calculate_breakeven_price(buy_cost_input, buy_sheets_input, discount=0.2, tax_rate=0.003)
+
+    if buy_cost_input > 0:
+        st.markdown(f"""
+        <div style="background:var(--panel2); border:1px solid var(--accent); border-radius:8px; padding:10px 16px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+            <div><span>📦 預估總投入成本：<b style="color:#FFFFFF;">{total_cost:,.0f} 元</b> <small class="muted">(含買進手續費 {b_fee:.0f}元)</small></span></div>
+            <div><span style="font-size:1.1rem;">🚀 自動試算損益兩平賣出價：<b style="color:var(--gold); font-size:1.3rem;">{breakeven_p:.2f} 元</b></span></div>
+        </div>
+        """, unsafe_allow_html=True)
 
     need_fetch = ("analysis_data" not in st.session_state) or (st.session_state["analysis_data"]["target_code"] != target_code)
 
     if need_fetch and api_key and secret_key:
-        with st.spinner(f"正在讀取【{target_code} {target_name}】戰情室即時數據與訂閱 WebSocket Tick..."):
+        with st.spinner(f"正在讀取【{target_code} {target_name}】戰情室即時數據與訂閱 WebSocket..."):
             api = None
             try:
                 api = sj.Shioaji(simulation=True); api.login(api_key=api_key, secret_key=secret_key)
@@ -730,7 +785,9 @@ else:
                         kbars = api.kbars(contract=contract, start=start_date, end=end_date)
                         df_raw = pd.DataFrame({"ts": kbars.ts, "Open": kbars.Open, "High": kbars.High, "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume})
 
-                        # ⚡ 綁定 Shioaji WebSocket 微秒級 On-Tick 推播回呼
+                        bal_p = (high_price + low_price + curr_price) / 3
+
+                        # ⚡ 綁定 WebSocket 微秒級推播，帶入買進成本與損益試算
                         @api.on_tick_stk_v1()
                         def on_tick_cb(exchange, tick):
                             t_price = safe_float(getattr(tick, 'close', 0.0))
@@ -742,7 +799,16 @@ else:
                                 "volume": t_vol,
                                 "time": t_time,
                                 "target_price": custom_target_price,
-                                "stop_price": custom_stop_price
+                                "stop_price": custom_stop_price,
+                                "buy_cost": buy_cost_input,
+                                "buy_sheets": buy_sheets_input,
+                                "breakeven_p": breakeven_p,
+                                "total_cost": total_cost,
+                                "vwap": avg_price,
+                                "pivot": bal_p,
+                                "chk_vwap": chk_vwap,
+                                "chk_pivot": chk_pivot,
+                                "chk_momentum": chk_momentum
                             }
                             broadcast_tick_microsecond(tick_payload)
 
@@ -757,7 +823,7 @@ else:
                             "avg_price": avg_price, "limit_up": limit_up, "limit_down": limit_down,
                             "bias_rate": ((curr_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0,
                             "momentum_coef": (outer_vol / inner_vol) if inner_vol > 0 else 1.0,
-                            "balance_point": (high_price + low_price + curr_price) / 3, "df_raw": df_raw
+                            "balance_point": bal_p, "df_raw": df_raw
                         }
             except Exception as e: st.error(f"連線失敗: {str(e)}")
 
@@ -799,13 +865,13 @@ else:
         pct = ((curr_price - open_price) / open_price) * 100 if open_price else 0
         t_cls = tone(pct)
 
-        # ⚡【微秒級逐筆 JavaScript DOM 更新面板】0 閃爍 / 無須 reload 網頁
+        # ⚡【微秒級當沖動態監控 JavaScript DOM 廣播視窗（含實時未實現損益）】
         ws_live_html = f"""
         <div style="background:#121721; border:1px solid #253042; border-radius:12px; padding:16px 20px; margin-bottom:12px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div>
                     <span style="font-size:1.5rem; font-weight:800; color:#FFFFFF;">{data['target_code']} {data['target_name']}</span>
-                    <span style="font-size:0.85rem; color:#8D99AE; margin-left:10px;">⚡ WebSocket 微秒級 Tick 直連監控</span>
+                    <span style="font-size:0.85rem; color:#8D99AE; margin-left:10px;">⚡ WebSocket 微秒級當沖條件即時監控</span>
                 </div>
                 <div style="text-align:right;">
                     <span id="live-price" class="{t_cls}" style="font-size:2.8rem; font-weight:900; line-height:1;">{curr_price:.2f}</span>
@@ -817,10 +883,11 @@ else:
                 <div style="display:flex; justify-content:space-between;"><span>最低</span><b style="color:#1FC98B;">{low_price:.2f}</b></div>
                 <div style="display:flex; justify-content:space-between;"><span>漲停</span><b style="color:#F6465D;">{limit_up:.2f}</b></div>
                 <div style="display:flex; justify-content:space-between;"><span>跌停</span><b style="color:#1FC98B;">{limit_down:.2f}</b></div>
-                <div style="display:flex; justify-content:space-between;"><span>均價</span><b style="color:#FFD166;">{avg_price:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span>損益兩平點</span><b style="color:#FFD166;">{breakeven_p:.2f}</b></div>
                 <div style="display:flex; justify-content:space-between;"><span>最新撮合時間</span><b id="live-time" style="color:#4C8DFF;">--:--:--.--</b></div>
             </div>
-            <div id="alarm-box" style="margin-top:8px; font-weight:700;"></div>
+            <div id="pnl-box" style="margin-top:10px; padding:8px 12px; background:#1A2130; border-radius:6px; font-weight:700; display:none;"></div>
+            <div id="alarm-box" style="margin-top:10px; font-size:1.05rem; font-weight:700;"></div>
         </div>
 
         <script>
@@ -835,6 +902,7 @@ else:
                 const pctElem = document.getElementById("live-pct");
                 const timeElem = document.getElementById("live-time");
                 const alarmElem = document.getElementById("alarm-box");
+                const pnlElem = document.getElementById("pnl-box");
 
                 pxElem.innerText = px.toFixed(2);
                 timeElem.innerText = data.time;
@@ -849,17 +917,49 @@ else:
                     }}
                 }}
 
-                if (data.target_price > 0 && px >= data.target_price) {{
-                    alarmElem.innerHTML = "<span style='color:#F6465D;'>🎯【目標價觸發】最新 Tick " + px + " 元已達預設目標位！</span>";
-                }} else if (data.stop_price > 0 && px <= data.stop_price) {{
-                    alarmElem.innerHTML = "<span style='color:#1FC98B;'>🚨【停損價觸發】最新 Tick " + px + " 元已觸及預設停損位！</span>";
+                // 💰 微秒級計算未實現損益與報酬率 (含 2折手續費與 0.3% 證交稅)
+                if (data.buy_cost > 0 && data.total_cost > 0) {{
+                    const shares = data.buy_sheets * 1000;
+                    const sellVal = px * shares;
+                    let sellFee = Math.floor(sellVal * 0.001425 * 0.2);
+                    if (sellFee < 20) sellFee = 20;
+                    const sellTax = Math.floor(sellVal * 0.003);
+                    const netIncome = sellVal - sellFee - sellTax;
+                    const pnl = netIncome - data.total_cost;
+                    const pnlRate = (pnl / data.total_cost) * 100;
+
+                    pnlElem.style.display = "block";
+                    const colorCls = pnl >= 0 ? "#F6465D" : "#1FC98B";
+                    pnlElem.innerHTML = "💰 微秒級即時預估損益：<span style='color:" + colorCls + "; font-size:1.2rem;'>" + (pnl >= 0 ? "+" : "") + Math.round(pnl).toLocaleString() + " 元 (" + (pnlRate >= 0 ? "+" : "") + pnlRate.toFixed(2) + "%)</span>";
                 }} else {{
-                    alarmElem.innerHTML = "";
+                    pnlElem.style.display = "none";
                 }}
+
+                let msgs = [];
+                if (data.target_price > 0 && px >= data.target_price) {{
+                    msgs.push("<span style='color:#F6465D;'>🎯【目標價觸發】最新 Tick " + px + " 元已達目標位！</span>");
+                }}
+                if (data.stop_price > 0 && px <= data.stop_price) {{
+                    msgs.push("<span style='color:#1FC98B;'>🚨【停損價觸發】最新 Tick " + px + " 元已觸及停損位！</span>");
+                }}
+                if (data.chk_vwap && data.vwap > 0) {{
+                    if (px > data.vwap && px <= data.vwap * 1.003) {{
+                        msgs.push("<span style='color:#FFD166;'>🟡【當沖轉折】現價回踩 VWAP 當日均線 (" + data.vwap.toFixed(2) + "元) 支撐，關注不破點！</span>");
+                    }} else if (px < data.vwap) {{
+                        msgs.push("<span style='color:#1FC98B;'>⚠️【當沖轉弱】現價已跌破 VWAP 當日均線 (" + data.vwap.toFixed(2) + "元)！</span>");
+                    }}
+                }}
+                if (data.chk_pivot && data.pivot > 0) {{
+                    if (px >= data.pivot) {{
+                        msgs.push("<span style='color:#4C8DFF;'>⚡【多空轉折】現價站上多空平衡點 (" + data.pivot.toFixed(2) + "元) 多方佔優！</span>");
+                    }}
+                }}
+
+                alarmElem.innerHTML = msgs.join("<br>");
             }};
         </script>
         """
-        st.components.v1.html(ws_live_html, height=180)
+        st.components.v1.html(ws_live_html, height=250)
 
         # 🎯 四大停損與停利參考試算卡片
         st.markdown("#### 2️⃣ 四大停損與停利參考設定 (多重停損綠色 / 多重停利紅色)")
