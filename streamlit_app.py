@@ -10,116 +10,122 @@ from datetime import datetime, timedelta
 
 st.set_page_config(page_title="三維定位法 & 6層量化選股與當沖盯盤全功能系統", layout="wide")
 
-# 🎨 注入「高對比高清晰度黑金風格」CSS 樣式表
-custom_dark_gold_css = """
+# 🎨 注入「深藍極簡科技風 (Dark Navy Tech UI)」CSS 樣式表
+custom_tech_navy_css = """
 <style>
-/* 1. 主背景與基礎文字色彩（提升對比度） */
+/* 1. 全局背景：深藍灰科技質感 (Dark Navy) */
 .stApp {
-    background-color: #121212 !important;
-    color: #F0F0F0 !important;
+    background-color: #0F141C !important;
+    color: #E2E8F0 !important;
 }
 
-/* 全局一般段落與標籤文字（調亮） */
+/* 2. 全局文字與標題 */
 p, label, span, div {
-    color: #E2E2E6 !important;
+    color: #D1D5DB !important;
 }
 
-/* 2. 標題與強調文字（亮金黃色） */
-h1, h2, h3, h4, .gold-title {
-    color: #FFD700 !important;
+h1, h2, h3, h4, .navy-title {
+    color: #FFFFFF !important;
     font-weight: 700 !important;
     letter-spacing: 0.5px;
 }
 
-/* 3. 側邊欄樣式美化 */
+/* 3. 側邊欄樣式美化 (深藍灰色調) */
 [data-testid="stSidebar"] {
-    background-color: #1A1A1D !important;
-    border-right: 1px solid #333338 !important;
+    background-color: #141A24 !important;
+    border-right: 1px solid #232D3F !important;
 }
 
-/* 4. 高對比黑金懸浮卡片容器 */
-.gold-card {
-    background: linear-gradient(145deg, #222226, #1A1A1D);
-    border: 1px solid #3A3A40;
+/* 4. 深藍灰極簡懸浮卡片容器 */
+.navy-card {
+    background-color: #161C24;
+    border: 1px solid #283242;
     border-radius: 12px;
     padding: 14px 18px;
     margin-bottom: 12px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     transition: transform 0.2s, border-color 0.2s;
 }
 
-.gold-card:hover {
-    border-color: #FFD700;
+.navy-card:hover {
+    border-color: #5B82F6;
     transform: translateY(-2px);
 }
 
-/* 5. 金色圓圈數字 Badge */
-.gold-badge {
-    background: linear-gradient(135deg, #FFB703, #FFD700);
-    color: #000000;
-    font-weight: 800;
-    border-radius: 50%;
-    width: 26px;
-    height: 26px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    margin-right: 10px;
-    font-size: 13px;
-    box-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+/* 5. 藍色圓角膠囊 Badge (對齊圖片中 藍色Pills風格) */
+.blue-badge {
+    background-color: #3B82F6;
+    color: #FFFFFF !important;
+    font-weight: 700;
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 12px;
+    margin-right: 8px;
+    display: inline-block;
 }
 
-/* 6. 按鈕美化（高對比亮字） */
+.navy-pill {
+    background-color: #1E293B;
+    border: 1px solid #334155;
+    color: #94A3B8 !important;
+    border-radius: 20px;
+    padding: 2px 10px;
+    font-size: 12px;
+    margin-right: 6px;
+}
+
+/* 6. 按鈕美化 (靛藍科技風) */
 .stButton>button {
-    background-color: #28282C !important;
-    color: #FFD700 !important;
-    border: 1px solid #4A4A50 !important;
-    border-radius: 8px !important;
-    font-weight: 700 !important;
+    background-color: #1E293B !important;
+    color: #60A5FA !important;
+    border: 1px solid #334155 !important;
+    border-radius: 20px !important;
+    font-weight: 600 !important;
     transition: all 0.2s ease-in-out;
 }
 
 .stButton>button:hover {
-    background-color: #FFD700 !important;
-    color: #000000 !important;
-    border-color: #FFF !important;
-    box-shadow: 0 0 12px rgba(255, 215, 0, 0.6);
+    background-color: #2563EB !important;
+    color: #FFFFFF !important;
+    border-color: #60A5FA !important;
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
 }
 
-/* 7. Metric 數據卡美化（文字調亮） */
+/* 7. Metric 數據卡美化 */
 [data-testid="stMetric"] {
-    background-color: #1E1E22;
-    border: 1px solid #3A3A40;
-    border-radius: 10px;
-    padding: 10px 14px;
+    background-color: #161C24;
+    border: 1px solid #242D3C;
+    border-radius: 12px;
+    padding: 12px 16px;
 }
 
 [data-testid="stMetricLabel"] {
-    color: #C0C0C8 !important;
+    color: #94A3B8 !important;
     font-size: 13px !important;
     font-weight: 600 !important;
 }
 
 [data-testid="stMetricValue"] {
-    color: #FFD700 !important;
+    color: #60A5FA !important;
     font-weight: 800 !important;
 }
 
 /* 8. Expander 摺疊區美化 */
 .stExpander {
-    background-color: #1E1E22 !important;
-    border: 1px solid #3A3A40 !important;
-    border-radius: 10px !important;
+    background-color: #161C24 !important;
+    border: 1px solid #242D3C !important;
+    border-radius: 12px !important;
 }
 
-/* 9. 輸入框文字與背景清晰對比 */
+/* 9. 輸入框深藍灰樣式 */
 input {
     color: #FFFFFF !important;
-    background-color: #242428 !important;
+    background-color: #1E293B !important;
+    border-radius: 8px !important;
 }
 </style>
 """
-st.markdown(custom_dark_gold_css, unsafe_allow_html=True)
+st.markdown(custom_tech_navy_css, unsafe_allow_html=True)
 
 # 💾 自選股 JSON 檔案永久保留讀寫邏輯
 WATCHLIST_FILE = "watchlist.json"
@@ -277,10 +283,10 @@ def check_fundamental_6layer(code):
     }
     return fund_db.get(code, {"eps": 1.2, "yoy": 10.0, "roe": 10.0, "pe": 18.0, "peg": 0.80, "catalyst": "產業復甦成長"})
 
-# 重構美化版表格連動（高對比亮字黑金卡片風格 + 自選同步寫檔）
+# 🎨 美化版表格連動（深藍極簡科技卡片風格）
 def render_smart_stock_table(df_display, key_prefix):
     st.dataframe(df_display, use_container_width=True)
-    st.markdown("##### ⚡ 尊爵高對比黑金動態卡片（一鍵帶入盯盤或加自選）")
+    st.markdown("##### ⚡ 深藍科技動態卡片清單（一鍵帶入盯盤或加自選）")
     for idx, row in df_display.reset_index(drop=True).iterrows():
         c_code = str(row['股票代碼'])
         c_name = str(row['股票名稱'])
@@ -288,17 +294,17 @@ def render_smart_stock_table(df_display, key_prefix):
         curr_p = row.get('最新真實價', row.get('最新價', 'N/A'))
         feature_lbl = row.get('連續買單(張)', row.get('狀態', row.get('篩選特徵', '精選')))
         
-        # 繪製高對比黑金卡片
+        # 繪製對齊新圖樣式的深藍灰色懸浮卡片
         st.markdown(f"""
-        <div class="gold-card">
+        <div class="navy-card">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <span class="gold-badge">{idx+1}</span>
-                    <span style="font-size: 18px; font-weight: 800; color: #FFFFFF; margin-right: 12px;">{stock_lbl}</span>
-                    <span style="font-size: 14px; color: #D0D0D0;">指標: <code style="color:#FFE066; background-color:#2A2A30; padding:2px 6px; border-radius:4px;">{feature_lbl}</code></span>
+                    <span class="blue-badge">{idx+1}</span>
+                    <span style="font-size: 17px; font-weight: 700; color: #FFFFFF; margin-right: 12px;">{stock_lbl}</span>
+                    <span class="navy-pill">指標: {feature_lbl}</span>
                 </div>
                 <div style="text-align: right;">
-                    <span style="font-size: 19px; font-weight: 800; color: #FF5555;">{curr_p} 元</span>
+                    <span style="font-size: 19px; font-weight: 800; color: #EF4444;">{curr_p} 元</span>
                 </div>
             </div>
         </div>
@@ -448,7 +454,7 @@ elif app_mode == "💡 大戶投 — 智慧選股":
             ]), "smart_fin")
 
 # =========================================================
-# 頁面 3：🔥 大戶投 — 盤中熱門 (對齊 APP 8 大排行榜)
+# 頁面 3：🔥 大戶投 — 盤中熱門
 # =========================================================
 elif app_mode == "🔥 大戶投 — 盤中熱門":
     st.title("🔥 大戶投 — 盤中熱門 8 大排行榜")
@@ -647,10 +653,10 @@ else:
     st.markdown("##### ⚙️ 手動交易計劃設定 (左側預設支撐價 / 右側預設壓力價)")
     col_stop, col_target = st.columns(2)
     with col_stop:
-        st.markdown("<h6 style='color: #2ECC71;'>🛡 手動停損/支撐價 (左側 / 綠色)</h6>", unsafe_allow_html=True)
+        st.markdown("<h6 style='color: #10B981;'>🛡 手動停損/支撐價 (左側 / 綠色)</h6>", unsafe_allow_html=True)
         custom_stop_price = st.number_input("停損價 (元)", value=float(st.session_state.get("custom_stop", 0.0)), step=0.5, label_visibility="collapsed")
     with col_target:
-        st.markdown("<h6 style='color: #E74C3C;'>🎯 手動目標/壓力價 (右側 / 紅色)</h6>", unsafe_allow_html=True)
+        st.markdown("<h6 style='color: #EF4444;'>🎯 手動目標/壓力價 (右側 / 紅色)</h6>", unsafe_allow_html=True)
         custom_target_price = st.number_input("目標價 (元)", value=float(st.session_state.get("custom_target", 0.0)), step=0.5, label_visibility="collapsed")
 
     need_fetch = ("analysis_data" not in st.session_state) or (st.session_state["analysis_data"]["target_code"] != target_code) or auto_refresh
