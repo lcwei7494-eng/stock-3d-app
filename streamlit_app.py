@@ -8,6 +8,105 @@ from datetime import datetime, timedelta
 
 st.set_page_config(page_title="三維定位法 & 6層量化選股與當沖盯盤全功能系統", layout="wide")
 
+# 🎨 注入「旺來質感黑金風格」CSS 樣式表
+custom_dark_gold_css = """
+<style>
+/* 1. 主背景與基礎文字色彩 */
+.stApp {
+    background-color: #121212 !important;
+    color: #E0E0E0 !important;
+}
+
+/* 2. 標題與強調文字（香檳金） */
+h1, h2, h3, h4, .gold-title {
+    color: #F1C40F !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.5px;
+}
+
+/* 3. 側邊欄樣式美化 */
+[data-testid="stSidebar"] {
+    background-color: #1A1A1A !important;
+    border-right: 1px solid #2C2C2C !important;
+}
+
+/* 4. 尊爵黑金懸浮卡片容器 */
+.gold-card {
+    background: linear-gradient(145deg, #1C1C1E, #161618);
+    border: 1px solid #2A2A2D;
+    border-radius: 12px;
+    padding: 14px 18px;
+    margin-bottom: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    transition: transform 0.2s, border-color 0.2s;
+}
+
+.gold-card:hover {
+    border-color: #D4AF37;
+    transform: translateY(-2px);
+}
+
+/* 5. 金色圓圈數字 Badge */
+.gold-badge {
+    background: linear-gradient(135deg, #F39C12, #D4AF37);
+    color: #000000;
+    font-weight: 800;
+    border-radius: 50%;
+    width: 26px;
+    height: 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 10px;
+    font-size: 13px;
+    box-shadow: 0 0 8px rgba(243, 156, 18, 0.4);
+}
+
+/* 6. 按鈕美化（深灰金邊） */
+.stButton>button {
+    background-color: #222224 !important;
+    color: #F1C40F !important;
+    border: 1px solid #3A3A3D !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease-in-out;
+}
+
+.stButton>button:hover {
+    background-color: #D4AF37 !important;
+    color: #000000 !important;
+    border-color: #F1C40F !important;
+    box-shadow: 0 0 10px rgba(212, 175, 55, 0.5);
+}
+
+/* 7. Metric 數據卡美化 */
+[data-testid="stMetric"] {
+    background-color: #1A1A1D;
+    border: 1px solid #2C2C30;
+    border-radius: 10px;
+    padding: 10px 14px;
+}
+
+[data-testid="stMetricLabel"] {
+    color: #A0A0A0 !important;
+    font-size: 13px !important;
+}
+
+[data-testid="stMetricValue"] {
+    color: #F1C40F !important;
+    font-weight: 700 !important;
+}
+
+/* 8. Expander 摺疊區美化 */
+.stExpander {
+    background-color: #1A1A1D !important;
+    border: 1px solid #2A2A2D !important;
+    border-radius: 10px !important;
+}
+</style>
+"""
+st.markdown(custom_dark_gold_css, unsafe_allow_html=True)
+
 # 自動從 Streamlit Secrets 讀取 API Key
 api_key = st.secrets.get("SHIOAJI_API_KEY", "")
 secret_key = st.secrets.get("SHIOAJI_SECRET_KEY", "")
@@ -142,31 +241,47 @@ def check_fundamental_6layer(code):
     }
     return fund_db.get(code, {"eps": 1.2, "yoy": 10.0, "roe": 10.0, "pe": 18.0, "peg": 0.80, "catalyst": "產業復甦成長"})
 
-# 通用表格連動與渲染
+# 🎨 重構美化版表格連動（旺來黑金卡片風格）
 def render_smart_stock_table(df_display, key_prefix):
     st.dataframe(df_display, use_container_width=True)
-    st.markdown("##### ⚡ 一鍵帶入當沖盯盤系統或加入自選清單")
+    st.markdown("##### ⚡ 尊爵黑金動態卡片清單（一鍵帶入盯盤或加自選）")
     for idx, row in df_display.reset_index(drop=True).iterrows():
         c_code = str(row['股票代碼'])
         c_name = str(row['股票名稱'])
         stock_lbl = f"{c_code} {c_name}"
+        curr_p = row.get('最新真實價', row.get('最新價', 'N/A'))
+        feature_lbl = row.get('連續買單(張)', row.get('狀態', row.get('篩選特徵', '精選')))
         
-        col_lbl, col_b1, col_b2 = st.columns([4, 2, 2])
-        col_lbl.write(f"**第 {idx+1} 名：{stock_lbl}** | 現價: `{row.get('最新真實價', row.get('最新價', 'N/A'))}` 元 | 特徵: `{row.get('連續買單(張)', row.get('狀態', row.get('篩選特徵', '精選')))}`")
+        # 繪製黑金懸浮卡片
+        st.markdown(f"""
+        <div class="gold-card">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <span class="gold-badge">{idx+1}</span>
+                    <span style="font-size: 17px; font-weight: 700; color: #FFFFFF; margin-right: 12px;">{stock_lbl}</span>
+                    <span style="font-size: 13px; color: #A0A0A0;">指標: <code style="color:#F1C40F;">{feature_lbl}</code></span>
+                </div>
+                <div style="text-align: right;">
+                    <span style="font-size: 18px; font-weight: 800; color: #FF4D4D;">{curr_p} 元</span>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
         
+        col_b1, col_b2 = st.columns([1, 1])
         btn_nav_key = f"btn_nav_{key_prefix}_{c_code}_{idx}"
         btn_add_key = f"btn_add_{key_prefix}_{c_code}_{idx}"
 
-        if col_b1.button(f"🔍 帶入盯盤系統", key=btn_nav_key):
+        if col_b1.button(f"🔍 帶入盯盤系統", key=btn_nav_key, use_container_width=True):
             st.session_state["selected_stock"] = c_code
             st.session_state["last_stock"] = c_code
             if "analysis_data" in st.session_state: del st.session_state["analysis_data"]
             st.success(f"已帶入【{stock_lbl}】，請切換至『📈 三維定位與當沖盯盤系統』頁面！")
 
         if stock_lbl in st.session_state["watchlist"]:
-            col_b2.button(f"✅ 已在自選", key=f"disabled_{btn_add_key}", disabled=True)
+            col_b2.button(f"✅ 已在自選", key=f"disabled_{btn_add_key}", disabled=True, use_container_width=True)
         else:
-            if col_b2.button(f"➕ 加自選", key=btn_add_key):
+            if col_b2.button(f"➕ 加自選", key=btn_add_key, use_container_width=True):
                 st.session_state["watchlist"].append(stock_lbl)
                 st.success(f"已加入：{stock_lbl}")
                 st.rerun()
@@ -296,7 +411,7 @@ elif app_mode == "💡 大戶投 — 智慧選股":
             ]), "smart_fin")
 
 # =========================================================
-# 頁面 3：🔥 大戶投 — 盤中熱門 (還原 APP 真實連續買單張數與全台股對齊)
+# 頁面 3：🔥 大戶投 — 盤中熱門 (對齊 APP 8 大排行榜)
 # =========================================================
 elif app_mode == "🔥 大戶投 — 盤中熱門":
     st.title("🔥 大戶投 — 盤中熱門 8 大排行榜")
@@ -310,7 +425,6 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
                 api_hot = sj.Shioaji(simulation=True)
                 api_hot.login(api_key=api_key, secret_key=secret_key)
 
-                # 對齊 APP 截圖：加入全台股上市櫃熱門強勢股
                 hot_list = ["4991", "4908", "2466", "4764", "4971", "3006", "2330", "2317", "2454", "3035", "3037", "3624", "3042", "2382", "3231", "2303", "2603", "2615", "1513", "1519"]
                 contracts = [api_hot.Contracts.Stocks.get(code) for code in hot_list if api_hot.Contracts.Stocks.get(code)]
                 snaps = api_hot.snapshots(contracts)
@@ -331,7 +445,6 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
                     amount_val = round(close_p * tot_vol / 1000)
                     amplitude = round(((high_p - low_p) / low_p) * 100, 2) if low_p > 0 else 0
                     
-                    # 🎯 精準對齊 APP 截圖「連續買單/賣單」外盤張數累計（如 841, 514, 282...）
                     consecutive_buy_vol = int(outer_v) if outer_v > 0 else int(tot_vol * 0.18)
                     consecutive_sell_vol = int(inner_v) if inner_v > 0 else int(tot_vol * 0.12)
                     turnover_rate = round((tot_vol / 25000) * 100, 2)
@@ -353,7 +466,6 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
                 api_hot.logout()
                 df_hot = pd.DataFrame(hot_data)
 
-                # 8 大排行榜頁籤完全對齊大戶投 APP
                 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
                     "💰 成交值", "📦 成交量", "🚀 漲幅排行", "📉 跌幅排行",
                     "⚡ 連續買單", "💦 連續賣單", "🔄 週轉率", "💥 瞬間量"
@@ -432,7 +544,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (完全恢復指南圖卡、AI診斷、停損停利試算與多週期即時繪圖)
+# 頁面 5：📈 三維定位與當沖盯盤系統
 # =========================================================
 else:
     st.title("📈 三維定位法 & 盤前檢視/多週期當沖監控系統")
@@ -483,10 +595,10 @@ else:
     st.markdown("##### ⚙️ 手動交易計劃設定 (左側預設支撐價 / 右側預設壓力價)")
     col_stop, col_target = st.columns(2)
     with col_stop:
-        st.markdown("<h6 style='color: green;'>🛡 手動停損/支撐價 (左側 / 綠色)</h6>", unsafe_allow_html=True)
+        st.markdown("<h6 style='color: #2ECC71;'>🛡 手動停損/支撐價 (左側 / 綠色)</h6>", unsafe_allow_html=True)
         custom_stop_price = st.number_input("停損價 (元)", value=float(st.session_state.get("custom_stop", 0.0)), step=0.5, label_visibility="collapsed")
     with col_target:
-        st.markdown("<h6 style='color: red;'>🎯 手動目標/壓力價 (右側 / 紅色)</h6>", unsafe_allow_html=True)
+        st.markdown("<h6 style='color: #E74C3C;'>🎯 手動目標/壓力價 (右側 / 紅色)</h6>", unsafe_allow_html=True)
         custom_target_price = st.number_input("目標價 (元)", value=float(st.session_state.get("custom_target", 0.0)), step=0.5, label_visibility="collapsed")
 
     need_fetch = ("analysis_data" not in st.session_state) or (st.session_state["analysis_data"]["target_code"] != target_code) or auto_refresh
@@ -679,7 +791,7 @@ else:
                 fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['20MA'], mode='lines', name='20MA(中軌)', line=dict(color='blue', width=1.5)))
                 fig_k.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['LowerBand'], mode='lines', name='布林下軌', line=dict(color='green', width=1, dash='dash')))
 
-            fig_k.update_layout(xaxis_rangeslider_visible=False, height=420, margin=dict(l=10, r=10, t=30, b=10))
+            fig_k.update_layout(xaxis_rangeslider_visible=False, height=420, margin=dict(l=10, r=10, t=30, b=10), template="plotly_dark")
             st.plotly_chart(fig_k, use_container_width=True)
         else:
             st.info("ℹ️ 暫無該週期的 K 線數據。")
@@ -695,3 +807,4 @@ else:
     if auto_refresh:
         time.sleep(refresh_interval)
         st.rerun()
+    
