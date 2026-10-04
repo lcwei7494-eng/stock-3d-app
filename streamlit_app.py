@@ -73,7 +73,7 @@ input, [data-baseweb="select"] > div { background:var(--panel2) !important; colo
 .row .code { color:var(--muted); font-size:.82rem; margin-left:6px; }
 .row .px { font-size:1.15rem; font-weight:800; text-align:right; }
 
-/* 對齊大戶投 APP 頂部報價橫幅 */
+/* 頂部報價橫幅 */
 .terminal-quote {
   background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px 20px; margin-bottom:12px;
 }
@@ -93,7 +93,7 @@ st.markdown(_CSS, unsafe_allow_html=True)
 
 
 def safe_float(val, default=0.0):
-    """安全轉換浮點數，防範 None 或字串類型造成格式化崩潰"""
+    """防範型態問題的安全轉型」"""
     try:
         if val is None:
             return default
@@ -198,7 +198,7 @@ def get_stock_code_and_name(user_input):
             return code, info.name
     return None, None
 
-# 🤖 Gemini API 深度診斷函式 (保留防護寫法)
+# 🤖 Gemini API 深度診斷函式 (完全保留)
 def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     c_code = str(data_dict.get('股票代碼', data_dict.get('target_code', '')))
     c_name = str(data_dict.get('股票名稱', data_dict.get('target_name', '')))
@@ -469,10 +469,10 @@ elif app_mode == "⚡ 當沖強勢股篩選":
         render_smart_stock_table(pd.DataFrame([{"股票代碼": "6603", "股票名稱": "富強鑫", "最新價": 29.25, "漲跌幅(%)": -1.85, "成交量(張)": 10827, "篩選特徵": "🚀 當沖熱門突破"}]), "flt")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (已做安全浮點數轉型防護)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (完全保留原本 AI 評估與雙欄看板)
 # =========================================================
 else:
-    st.title("📈 三維定位法 & 大戶投 APP 實時盯盤系統")
+    st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
 
     if "selected_stock" not in st.session_state: st.session_state["selected_stock"] = "6603"
 
@@ -509,7 +509,7 @@ else:
     need_fetch = ("analysis_data" not in st.session_state) or (st.session_state["analysis_data"]["target_code"] != target_code)
 
     if need_fetch and api_key and secret_key:
-        with st.spinner(f"正在讀取【{target_code} {target_name}】大戶投 API 即時報價與漲跌停價..."):
+        with st.spinner(f"正在讀取【{target_code} {target_name}】大戶投 API 即時報價與數據..."):
             api = None
             try:
                 api = sj.Shioaji(simulation=True); api.login(api_key=api_key, secret_key=secret_key)
@@ -525,7 +525,7 @@ else:
                         volume = int(safe_float(getattr(snap, 'total_volume', 0)))
                         avg_price = safe_float(getattr(snap, 'average_price', curr_price), curr_price) or curr_price
                         
-                        # 🎯 安全解析 Shioaji 的漲停價與跌停價，避免非數字類型崩潰
+                        # 🎯 安全解析漲跌停價 (修正型態錯誤)
                         limit_up = safe_float(getattr(snap, 'limit_up', None), round(curr_price * 1.1, 2))
                         limit_down = safe_float(getattr(snap, 'limit_down', None), round(curr_price * 0.9, 2))
 
@@ -563,7 +563,7 @@ else:
         pct = ((curr_price - open_price) / open_price) * 100 if open_price else 0
         t_cls = tone(pct)
 
-        # 🎯 完全對齊大戶投 APP 頂部報價橫幅 (已安全轉型，防範 ValueError)
+        # 頂部報價橫幅 (含漲跌停價)
         st.markdown(f"""
         <div class="terminal-quote">
             <div class="top-info">
@@ -586,7 +586,7 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-        # 左右分欄：左 75% K線圖，右 25% 關鍵價位看板
+        # 左右分欄：左 75% 主視窗，右 25% 關鍵價位看板
         left_main, right_panel = st.columns([3, 1])
 
         with left_main:
@@ -607,7 +607,7 @@ else:
                 fig.update_layout(height=420, margin=dict(l=10, r=10, t=10, b=10), template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis_rangeslider_visible=False)
                 st.plotly_chart(fig, use_container_width=True)
 
-            # 五檔委買委賣對齊（對齊大戶投五檔報價視覺）
+            # 五檔委買委賣
             st.markdown("##### 📊 當日五檔委買委賣籌碼分布")
             col_b1, col_b2 = st.columns(2)
             with col_b1:
@@ -617,7 +617,7 @@ else:
                 st.write("委賣 11.5% 🔴 (賣壓輕微)")
                 st.progress(0.115)
 
-        # 🎯 右側欄：包含「漲停價、跌停價」與「🤖 AI 深度評估 (Gemini 診斷)」
+        # 🎯 右側欄：包含漲跌停價與【🤖 AI 深度評估 (Gemini 診斷)】按鈕
         with right_panel:
             st.markdown(f"""
             <div class="level-container">
@@ -630,7 +630,7 @@ else:
                 <div class="level-box normal"><span class="lbl">📍 當前成交價</span><span class="val">{curr_price:.2f}</span></div>
                 <div class="level-box"><span class="lbl">📉 當日最低</span><span class="val text-green">{low_price:.2f}</span></div>
                 <div class="level-box"><span class="lbl">💦 跌停價格</span><span class="val text-green">{limit_down:.2f}</span></div>
-                <div class="level-box"><span class="lbl">🛡️ 多空平衡點</span><span class="val" style="color:var(--gold);">{balance_point:.2f}</span></div>
+                <div class="level-box"><span class="lbl">🛡️️ 多空平衡點</span><span class="val" style="color:var(--gold);">{balance_point:.2f}</span></div>
             </div>
             """, unsafe_allow_html=True)
 
