@@ -112,7 +112,7 @@ def stock_row_html(code, name, price, pct, tag=""):
     )
 
 
-# 🇹🇼 證交所標準升降單位 (Tick Size) 與精準漲跌停試算
+# 🇹🇼 證交所標準升降單位 (Tick Size) 與完全對齊價位校正
 def get_tw_tick_size(price):
     if price < 10: return 0.01
     elif price < 50: return 0.05
@@ -121,23 +121,24 @@ def get_tw_tick_size(price):
     elif price < 1000: return 1.0
     else: return 5.0
 
+def align_tw_price_tick(price, mode="round"):
+    if price <= 0: return "0"
+    tick = get_tw_tick_size(price)
+    if mode == "down": # 無條件捨去至 Tick
+        aligned = int(price / tick) * tick
+    elif mode == "up": # 無條件進位至 Tick
+        aligned = int(price / tick + 0.9999) * tick
+    else: # 四捨五入至 Tick
+        aligned = round(price / tick) * tick
+    
+    aligned = round(aligned, 2)
+    return f"{int(aligned)}" if aligned >= 500 else (f"{aligned:.2f}".rstrip('0').rstrip('.'))
+
 def calculate_tw_limit_prices(ref_price):
     if ref_price <= 0: return "0", "0"
-    
-    # 漲停價：昨收 * 1.10，向下取至 Tick
-    raw_limit_up = ref_price * 1.10
-    tick_up = get_tw_tick_size(raw_limit_up)
-    limit_up = round(int(raw_limit_up / tick_up) * tick_up, 2)
-    
-    # 跌停價：昨收 * 0.90，向上取至 Tick
-    raw_limit_down = ref_price * 0.90
-    tick_down = get_tw_tick_size(raw_limit_down)
-    limit_down = round(int(raw_limit_down / tick_down + 0.9999) * tick_down, 2)
-    
-    fmt_up = f"{limit_up:.2f}".rstrip('0').rstrip('.') if limit_up < 500 else f"{int(limit_up)}"
-    fmt_down = f"{limit_down:.2f}".rstrip('0').rstrip('.') if limit_down < 500 else f"{int(limit_down)}"
-    
-    return fmt_up, fmt_down
+    limit_up = align_tw_price_tick(ref_price * 1.10, mode="down")
+    limit_down = align_tw_price_tick(ref_price * 0.90, mode="up")
+    return limit_up, limit_down
 
 
 # 💾 自選股 JSON 檔案永久保留讀寫邏輯
@@ -277,8 +278,8 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
                 continue
 
     win_rate = min(88, max(55, int(score * 0.85 + (10 if momentum_coef > 1.2 else -5))))
-    stop_px = round(price * 0.94, 2)
-    target_px = round(price * 1.15, 2)
+    stop_px = align_tw_price_tick(price * 0.94)
+    target_px = align_tw_price_tick(price * 1.15)
     
     return f"""
 ### 🏛️ 高盛（Goldman Sachs）資深證券分析師 — 實時診斷報告 *(智能備援引擎)*
@@ -296,17 +297,19 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
 
 #### 3️⃣ ⚠️ 風險提示與嚴格停損位
 * **主要風險**：若大盤大氣候回檔，需防範高檔獲利吐回賣壓。
-* **嚴格停損價**：設定為 **`{stop_px}` 元**（跌破約 6% 果斷離場停損）。
+* **嚴格停損價**：設定為 **`{stop_px}` 元**。
 """
 
-# 🎯 動態邏輯校正：壓力位恆 > 現價 > 支撐/停損位
+# 🎯 嚴格對齊台股 Tick Size 價位計算
 def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high, prev_low, balance_point, chip_data):
-    # 極限壓力位：確保高於現價（至少高於現價 2.5% 或歷史前高）
-    resistance_price = round(max(prev_high, balance_point * 1.025, curr * 1.03), 2)
-    
-    # 支撐與停損價：確保低於現價
-    support_price = round(min(ma5, prev_low, curr * 0.96), 2)
-    entry_price = round(min(curr * 0.99, max(ma5, balance_point)), 2)
+    raw_res = max(prev_high, balance_point * 1.025, curr * 1.03)
+    raw_sup = min(ma5, prev_low, curr * 0.96)
+    raw_entry = min(curr * 0.99, max(ma5, balance_point))
+
+    resistance_price = align_tw_price_tick(raw_res)
+    support_price = align_tw_price_tick(raw_sup)
+    entry_price = align_tw_price_tick(raw_entry)
+    bal_price = align_tw_price_tick(balance_point)
 
     foreign_buy = chip_data.get("foreign", 0)
     investment_buy = chip_data.get("investment", 0)
@@ -322,13 +325,14 @@ def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high,
         strategy = f"均線呈現空頭排列且籌碼流出。不宜盲目抄底，可等待反彈至壓力位 ({resistance_price}元) 出現爆量黑K尋找空點。"
     else:
         trend = "多空拉鋸震盪 (籌碼與型態分歧)"
-        strategy = f"股價於均線區間震盪。操作上應嚴守多空平衡點 ({balance_point:.2f}元) 附近低吸高拋。"
+        strategy = f"股價於均線區間震盪。操作上應嚴守多空平衡點 ({bal_price}元) 附近低吸高拋。"
 
     return {
         "support": support_price,
         "resistance": resistance_price,
         "trend": trend,
         "entry_price": entry_price,
+        "balance_price": bal_price,
         "strategy": strategy
     }
 
@@ -499,7 +503,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
         render_smart_stock_table(pd.DataFrame([{"股票代碼": "2466", "股票名稱": "冠西電", "最新價": 141.0, "漲跌幅(%)": +9.73, "成交量(張)": 8500, "篩選特徵": "🚀 5分K帶量發動"}]), "flt")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (校正版：精準 Tick 漲跌停與壓力價動能)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (完全精準檔位對齊版)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
@@ -557,9 +561,11 @@ else:
                         outer_vol = float(getattr(snap, 'ask_volume', 0.0))
                         inner_vol = float(getattr(snap, 'bid_volume', 0.0))
 
-                        # 🎯 校正：以昨收參考價（Reference Price）為基準計算標準 Tick 漲跌停
-                        ref_p = getattr(snap, 'reference_price', open_price)
-                        if not ref_p or ref_p == 0: ref_p = open_price if open_price > 0 else curr_price
+                        # 🎯 校正：依據昨收價 (Reference Price) 導出精準 Tick 漲跌停
+                        ref_p = getattr(snap, 'reference_price', 0.0)
+                        if not ref_p or ref_p == 0:
+                            ref_p = open_price if open_price > 0 else curr_price
+                        
                         limit_u, limit_d = calculate_tw_limit_prices(ref_p)
 
                         start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
@@ -708,10 +714,11 @@ else:
                     {"日期": "09/26", "融資買賣超(張)": "+90", "融資餘額(張)": "12,710", "融券買賣超(張)": "-15", "融券餘額(張)": "1,485", "券資比(%)": "11.68%"},
                 ]), use_container_width=True)
 
-        # 🎯 右側欄：黃框壓力/支撐/關鍵價看板 (校正版：精準 Tick 漲跌停與動態壓力價)
+        # 🎯 右側欄：黃框壓力/支撐/關鍵價看板 (精準台股 Tick Size 對齊版)
         with right_panel:
             limit_u = data.get('limit_up', "0")
             limit_d = data.get('limit_down', "0")
+            curr_px_fmt = align_tw_price_tick(curr_price)
 
             st.markdown(f"""
             <div class="level-container">
@@ -720,7 +727,7 @@ else:
                     <div style="text-align:right;"><span class="muted">強撐</span><br><b class="text-green" style="font-size:1.2rem;">{ai_res['support']}</b></div>
                 </div>
                 
-                <!-- 🎯 校正後台股標準 Tick 漲跌停價區塊 -->
+                <!-- 🎯 台股標準 Tick 漲跌停價格 -->
                 <div class="limit-section">
                     <div class="limit-title">🔑 當日極限關鍵價</div>
                     <div class="limit-grid">
@@ -737,8 +744,8 @@ else:
 
                 <div class="level-box"><span class="lbl">🎯 極限壓力位</span><span class="val text-red">{ai_res['resistance']}</span></div>
                 <div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">{ai_res['entry_price']}</span></div>
-                <div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">{curr_price}</span></div>
-                <div class="level-box"><span class="lbl">🛡️ 多空平衡點</span><span class="val" style="color:var(--gold);">{data['balance_point']:.2f}</span></div>
+                <div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">{curr_px_fmt}</span></div>
+                <div class="level-box"><span class="lbl">🛡️ 多空平衡點</span><span class="val" style="color:var(--gold);">{ai_res['balance_price']}</span></div>
                 <div class="level-box"><span class="lbl">🛡 關鍵停損價</span><span class="val text-green">{ai_res['support']}</span></div>
             </div>
             """, unsafe_allow_html=True)
