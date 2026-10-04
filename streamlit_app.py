@@ -11,72 +11,92 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="三維定位法 & 6層量化選股與當沖盯盤全功能系統", layout="wide")
 
 # =========================================================
-# 🎨 UI 主題（台股習慣：紅=漲/停利/壓力，綠=跌/停損/支撐）
+# 🎨 UI 主題（高對比電腦螢幕專用：文字完全醒目亮化）
 # =========================================================
 _CSS = """
 <style>
 :root {
-  --bg:#0B1018; --panel:#121A26; --panel2:#182233; --line:#243248;
-  --text:#E6EBF3; --muted:#8A97AD; --up:#F6465D; --down:#1FC98B; --accent:#4C8DFF;
+  --bg:#0B1018; --panel:#121A26; --panel2:#182233; --line:#2A3A4E;
+  --text:#FFFFFF; --muted:#A0B0C8; --up:#F6465D; --down:#1FC98B; --accent:#4C8DFF;
 }
 .stApp { background:var(--bg); color:var(--text); }
 html, body, [class*="css"] { font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; }
-h1 { font-size:1.6rem !important; font-weight:700 !important; letter-spacing:.3px; }
-h2, h3, h4 { font-weight:650 !important; }
+
+/* 全局一般文字與標籤強制高清亮化 */
+p, label, span, div, .stMarkdown {
+  color: #E6EBF3 !important;
+}
+
+h1 { font-size:1.6rem !important; font-weight:700 !important; color:#FFFFFF !important; letter-spacing:.3px; }
+h2, h3, h4 { font-weight:650 !important; color:#FFFFFF !important; }
 .block-container { padding-top:1.4rem; max-width:1200px; }
 #MainMenu, footer { visibility:hidden; }
 
-/* 側邊欄：選單像導覽列 */
-[data-testid="stSidebar"] { background:var(--panel); border-right:1px solid var(--line); }
+/* 側邊欄：文字與選項全面高亮 (修正電腦螢幕過暗問題) */
+[data-testid="stSidebar"] { background:var(--panel) !important; border-right:1px solid var(--line); }
+[data-testid="stSidebar"] * { color: #E6EBF3 !important; }
+[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { color: #FFFFFF !important; }
 [data-testid="stSidebar"] [role="radiogroup"] label { padding:9px 12px; border-radius:10px; margin-bottom:2px; width:100%; }
 [data-testid="stSidebar"] [role="radiogroup"] label:hover { background:var(--panel2); }
 [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {
-  background:rgba(76,141,255,.16); box-shadow:inset 3px 0 0 var(--accent);
+  background:rgba(76,141,255,.24) !important; box-shadow:inset 3px 0 0 var(--accent);
+}
+[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) * {
+  color: #FFFFFF !important; font-weight: 700;
+}
+
+/* Radio 按鈕文字高亮 */
+[data-testid="stWidgetLabel"] *, [role="radiogroup"] label * {
+  color: #F0F4FC !important;
+  font-size: 0.95rem !important;
 }
 
 /* 分頁：膠囊式 */
 .stTabs [data-baseweb="tab-list"] { gap:6px; flex-wrap:wrap; }
 .stTabs [data-baseweb="tab"] { background:var(--panel); border:1px solid var(--line); border-radius:999px; padding:6px 16px; height:auto; }
-.stTabs [aria-selected="true"] { background:var(--accent); border-color:var(--accent); color:#fff; }
+.stTabs [data-baseweb="tab"] * { color: #D1D8E0 !important; }
+.stTabs [aria-selected="true"] { background:var(--accent); border-color:var(--accent); }
+.stTabs [aria-selected="true"] * { color:#FFFFFF !important; font-weight:700; }
 .stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] { display:none; }
 
 /* 按鈕 */
-.stButton>button { min-height:42px; border-radius:10px; border:1px solid var(--line); background:var(--panel2); color:var(--text); font-weight:600; }
-.stButton>button:hover { border-color:var(--accent); color:#fff; }
-.stButton>button[kind="primary"] { background:var(--accent); border-color:var(--accent); color:#fff; }
+.stButton>button { min-height:42px; border-radius:10px; border:1px solid var(--line); background:var(--panel2); color:#FFFFFF !important; font-weight:600; }
+.stButton>button:hover { border-color:var(--accent); background:var(--accent); color:#fff !important; }
+.stButton>button[kind="primary"] { background:var(--accent); border-color:var(--accent); color:#fff !important; }
 .stButton>button:disabled { opacity:.45; }
 
 /* 輸入元件 / metric / expander */
-input, [data-baseweb="select"] > div { background:var(--panel2) !important; border-radius:10px !important; }
+input, [data-baseweb="select"] > div { background:var(--panel2) !important; color:#FFFFFF !important; border-radius:10px !important; }
 [data-testid="stMetric"] { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px 14px; }
-[data-testid="stMetricLabel"] { color:var(--muted); }
+[data-testid="stMetricLabel"] { color:var(--muted) !important; }
+[data-testid="stMetricValue"] { color:#FFFFFF !important; font-weight:700; }
 .stExpander { background:var(--panel); border:1px solid var(--line) !important; border-radius:12px; }
 
 /* 台股色彩 */
-.up, .text-red { color:var(--up); font-weight:700; }
-.down, .text-green { color:var(--down); font-weight:700; }
-.flat { color:var(--muted); }
-.muted { color:var(--muted); font-size:.85rem; }
+.up, .text-red { color:var(--up) !important; font-weight:700; }
+.down, .text-green { color:var(--down) !important; font-weight:700; }
+.flat { color:var(--muted) !important; }
+.muted { color:var(--muted) !important; font-size:.85rem; }
 
-/* 通用卡片（AI 評估區使用） */
+/* 通用卡片 */
 .navy-card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 18px; margin-bottom:12px; }
 
 /* 個股列：左側色條表示漲跌 */
 .row { display:flex; justify-content:space-between; align-items:center; gap:12px; background:var(--panel);
   border:1px solid var(--line); border-left:4px solid var(--muted); border-radius:12px; padding:12px 16px; margin:8px 0 4px; }
 .row.up-bar { border-left-color:var(--up); } .row.down-bar { border-left-color:var(--down); }
-.row .name { font-size:1.05rem; font-weight:700; }
+.row .name { font-size:1.05rem; font-weight:700; color:#FFFFFF; }
 .row .code { color:var(--muted); font-size:.85rem; margin-left:8px; }
 .row .px { font-size:1.25rem; font-weight:800; text-align:right; line-height:1.2; }
 .row .px small { display:block; font-size:.85rem; font-weight:600; }
-.tag { display:inline-block; margin-top:4px; padding:2px 10px; border-radius:999px; background:var(--panel2); color:var(--muted); font-size:.78rem; }
+.tag { display:inline-block; margin-top:4px; padding:2px 10px; border-radius:999px; background:var(--panel2); color:#D1D8E0; font-size:.78rem; }
 
 /* 報價橫幅 */
 .quote { background:linear-gradient(135deg,#142033,#0F1826); border:1px solid var(--line); border-radius:16px; padding:18px 22px; margin:6px 0 14px; }
 .quote .big { font-size:2.4rem; font-weight:800; line-height:1.1; }
 .quote .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:10px; margin-top:12px; }
-.quote .cell { background:rgba(255,255,255,.03); border-radius:10px; padding:8px 12px; }
-.quote .cell b { display:block; font-size:1.05rem; }
+.quote .cell { background:rgba(255,255,255,.05); border-radius:10px; padding:8px 12px; }
+.quote .cell b { display:block; font-size:1.05rem; color:#FFFFFF; }
 
 /* 價位卡（停損/停利） */
 .lv { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 16px; height:100%; }
@@ -290,7 +310,7 @@ def check_fundamental_6layer(code):
     }
     return fund_db.get(code, {"eps": 1.2, "yoy": 10.0, "roe": 10.0, "pe": 18.0, "peg": 0.80, "catalyst": "產業復甦成長"})
 
-# 🎨 美化版表格連動（正數/漲/停利=紅，負數/跌/停損=綠）
+# 美化版表格連動（正數/漲/停利=紅，負數/跌/停損=綠）
 def render_smart_stock_table(df_display, key_prefix):
     st.dataframe(df_display, use_container_width=True)
     st.markdown("##### ⚡ 個股清單（一鍵帶入盯盤或加自選）")
@@ -541,7 +561,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                 try:
                     api_filter = sj.Shioaji(simulation=True)
                     api_filter.login(api_key=api_key, secret_key=secret_key)
-
+                    
                     target_candidates = ["4991", "4908", "2466", "4764", "4971", "3006", "2330", "2317", "2454", "3035", "3037", "3624", "3042", "2382", "3231", "2303", "2603", "2615", "1513", "1519"]
                     filter_results = []
                     start_date = (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d")
@@ -563,7 +583,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
 
                         curr_row = df_k.iloc[-1]
                         prev_5_vol_avg = df_k["Volume"].iloc[-6:-1].mean()
-
+                        
                         cond1 = (curr_row["Volume"] >= prev_5_vol_avg * param_vol_mult)
                         cond2 = (curr_row["5MA"] > curr_row["10MA"] > curr_row["20MA"])
                         cond3 = (curr_row["Close"] >= df_k["High"].iloc[-(param_break_days+1):-1].max())
@@ -850,7 +870,10 @@ else:
 
             fig_k.update_layout(xaxis_rangeslider_visible=False, height=420, margin=dict(l=10, r=10, t=30, b=10), template="plotly_dark",
                                 paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                                legend=dict(orientation="h", y=1.08))
+                                font=dict(color="#FFFFFF", size=13),
+                                xaxis=dict(tickfont=dict(color="#FFFFFF"), title=dict(font=dict(color="#FFFFFF"))),
+                                yaxis=dict(tickfont=dict(color="#FFFFFF"), title=dict(font=dict(color="#FFFFFF"))),
+                                legend=dict(orientation="h", y=1.08, font=dict(color="#FFFFFF", size=12)))
             st.plotly_chart(fig_k, use_container_width=True)
         else:
             st.info("ℹ️ 暫無該週期的 K 線數據。")
