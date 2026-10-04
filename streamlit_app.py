@@ -96,6 +96,26 @@ input, [data-baseweb="select"] > div { background:var(--panel2) !important; colo
 st.markdown(_CSS, unsafe_allow_html=True)
 
 
+# 輔助判斷漲跌趨勢色調（修復 NameError）
+def tone(pct):
+    try:
+        pct = float(pct)
+        return "up" if pct > 0 else ("down" if pct < 0 else "flat")
+    except (ValueError, TypeError):
+        return "flat"
+
+
+def stock_row_html(code, name, price, pct, tag=""):
+    t = tone(pct)
+    bar = {"up": "up-bar", "down": "down-bar"}.get(t, "")
+    tag_html = f'<span style="background:var(--panel2); padding:2px 8px; border-radius:12px; font-size:.75rem; color:var(--muted);">{tag}</span>' if tag else ""
+    return (
+        f'<div class="row {bar}"><div>'
+        f'<span class="name">{name}</span><span class="code">{code}</span><br>{tag_html}</div>'
+        f'<div class="px {t}">{price}<small style="display:block; font-size:.8rem;">{float(pct):+.2f}%</small></div></div>'
+    )
+
+
 # 🇹🇼 證交所標準升降單位 (Tick Size) 萬能精準對齊演算法
 def get_tw_tick_size(price):
     if price < 10: return 0.01
@@ -117,7 +137,7 @@ def align_tw_price_tick(price, mode="round"):
         aligned = round(round(price / tick) * tick, 2)
         
     aligned = round(aligned, 2)
-    # 🎯 絕對校正：價位 >= 500 元一律強制輸出純整數，徹底消滅無效小數點
+    # 500 元以上強制輸出純整數，低於 500 元自動格式化小數
     if aligned >= 500:
         return f"{int(aligned)}"
     else:
@@ -284,12 +304,12 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
 * **預估勝率**：**`{win_rate}%`**
 * **勝率支撐理由**：獲利加速度（營收 YoY `{yoy}`）配合 PEG 估值 `{peg}` 尚在安全邊際內，基本面防禦力良好。
 
-#### 3️⃣ ⚠️️ 風險提示與嚴格停損位
+#### 3️⃣ ⚠️ 風險提示與嚴格停損位
 * **主要風險**：若大盤大氣候回檔，需防範高檔獲利吐回賣壓。
 * **嚴格停損價**：設定為 **`{stop_px}` 元**。
 """
 
-# 🎯 嚴格對齊台股 Tick Size 價位計算（全價位對齊）
+# 🎯 嚴格對齊台股 Tick Size 價位計算
 def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high, prev_low, balance_point, chip_data):
     raw_res = max(prev_high, balance_point * 1.025, curr * 1.03)
     raw_sup = min(ma5, prev_low, curr * 0.90)
@@ -492,7 +512,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
         render_smart_stock_table(pd.DataFrame([{"股票代碼": "2466", "股票名稱": "冠西電", "最新價": 141.0, "漲跌幅(%)": +9.73, "成交量(張)": 8500, "篩選特徵": "🚀 5分K帶量發動"}]), "flt")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (完美 100% 台股檔位校正)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (校正後版本)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
@@ -550,7 +570,7 @@ else:
                         outer_vol = float(getattr(snap, 'ask_volume', 0.0))
                         inner_vol = float(getattr(snap, 'bid_volume', 0.0))
 
-                        # 🎯 依據昨收參考價 (Reference Price) 計算精準 Tick 漲跌停
+                        # 🎯 校正：依據昨收參考價 (Reference Price) 計算精準 Tick 漲跌停
                         ref_p = getattr(snap, 'reference_price', 0.0)
                         if not ref_p or ref_p == 0:
                             ref_p = open_price if open_price > 0 else curr_price
@@ -705,7 +725,7 @@ else:
                     {"日期": "09/26", "融資買賣超(張)": "+90", "融資餘額(張)": "12,710", "融券買賣超(張)": "-15", "融券餘額(張)": "1,485", "券資比(%)": "11.68%"},
                 ]), use_container_width=True)
 
-        # 🎯 右側欄：黃框壓力/支撐/關鍵價看板 (100% 台股標準 Tick 檔位對齊)
+        # 🎯 右側欄：黃框壓力/支撐/關鍵價看板 (100% 精準台股 Tick 檔位對齊)
         with right_panel:
             limit_u = data.get('limit_up', "0")
             limit_d = data.get('limit_down', "0")
