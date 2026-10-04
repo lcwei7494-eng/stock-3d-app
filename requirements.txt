@@ -3,3 +3,4 @@ shioaji
 pandas
 twstock
 plotly
+google-genai
