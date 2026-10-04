@@ -471,7 +471,7 @@ def calculate_atr(df, period=14):
     df['ATR'] = df['TR'].rolling(period).mean()
     return df
 
-# 🤖 升級版：高盛機構級全方位 AI 診斷引擎 (修復 SyntaxError 括號閉合問題)
+# 🤖 升級版：高盛機構級全方位 AI 診斷引擎 (修正 404 URL 錯誤)
 def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     c_code = str(data_dict.get('股票代碼', data_dict.get('target_code', '')))
     c_name = str(data_dict.get('股票名稱', data_dict.get('target_name', '')))
@@ -525,10 +525,10 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
         }]
     }
 
+    # 採用官方標準正式 Endpoint
     fallback_endpoints = [
-        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key_to_use}",
-        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={key_to_use}",
-        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={key_to_use}",
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key_to_use}",
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={key_to_use}",
         f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={key_to_use}"
     ]
 
@@ -1434,7 +1434,7 @@ else:
                 <div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">{ai_res['resistance']}</span></div>
                 <div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">{ai_res['entry_price']}</span></div>
                 <div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">{curr_price:.2f}</span></div>
-                <div class="level-box"><span class="lbl">🛡️️ 多空平衡點</span><span class="val" style="color:var(--gold);">{balance_point:.2f}</span></div>
+                <div class="level-box"><span class="lbl">🛡 多空平衡點</span><span class="val" style="color:var(--gold);">{balance_point:.2f}</span></div>
                 <div class="level-box"><span class="lbl">🛡️ 技術強撐價</span><span class="val text-green">{ai_res['support']}</span></div>
                 <div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">{limit_down:.2f}</span></div>
             </div>
