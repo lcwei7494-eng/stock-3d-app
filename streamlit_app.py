@@ -110,13 +110,14 @@ def tone(pct):
     return "up" if pct > 0 else ("down" if pct < 0 else "flat")
 
 
-def stock_row_html(code, name, price, pct, tag=""):
+def stock_row_html(code, name, price, pct, tag="", prev_close=0.0):
     t = tone(pct)
     bar = {"up": "up-bar", "down": "down-bar"}.get(t, "")
     tag_html = f'<span style="background:var(--panel2); padding:2px 8px; border-radius:12px; font-size:.75rem; color:var(--muted);">{tag}</span>' if tag else ""
+    close_info = f'<span style="color:var(--gold); font-size:.8rem; margin-left:8px;">[收盤: {prev_close:.2f}]</span>' if prev_close > 0 else ""
     return (
         f'<div class="row {bar}"><div>'
-        f'<span class="name">{name}</span><span class="code">{code}</span><br>{tag_html}</div>'
+        f'<span class="name">{name}</span><span class="code">{code}</span>{close_info}<br>{tag_html}</div>'
         f'<div class="px {t}">{safe_float(price):.2f}<small style="display:block; font-size:.8rem;">{safe_float(pct):+.2f}%</small></div></div>'
     )
 
@@ -182,7 +183,7 @@ def calculate_pnl_and_roi(curr_price, buy_price, qty_sheets=1, discount=0.2, tax
 WATCHLIST_FILE = "watchlist.json"
 
 def load_saved_watchlist():
-    default_list = ["3624 光頡", "4991 環宇-KY", "4908 前鼎", "2466 冠西電", "3006 晶豪科", "2330 台積電"]
+    default_list = ["4971 IET-KY", "3624 光頡", "4991 環宇-KY", "4908 前鼎", "2466 冠西電", "2330 台積電"]
     if os.path.exists(WATCHLIST_FILE):
         try:
             with open(WATCHLIST_FILE, "r", encoding="utf-8") as f:
@@ -302,7 +303,7 @@ def get_shioaji_api(k_key, s_key):
         return None
 
 
-# 🌐 通用函式：傳入股票代碼清單，透過 API 抓取最新真實撮合價
+# 🌐 通用函式：傳入股票代碼清單，透過 API 抓取最新真實撮合價與最近一日收盤價
 def fetch_real_stock_snapshots(codes_list, tag_feature="精選"):
     api = get_shioaji_api(api_key, secret_key)
     if not api:
@@ -320,10 +321,15 @@ def fetch_real_stock_snapshots(codes_list, tag_feature="精選"):
             open_p = safe_float(getattr(s, 'open', close_p))
             tot_vol = int(safe_float(getattr(s, 'total_volume', 0)))
             pct = round(((close_p - open_p) / open_p) * 100, 2) if open_p > 0 else 0.0
+            
+            # 前日收盤價估算/獲取
+            prev_close_p = safe_float(getattr(s, 'reference_price', getattr(s, 'yesterday_close', open_p)), open_p)
+
             results.append({
                 "股票代碼": c_code,
                 "股票名稱": c_name,
                 "最新真實價": close_p,
+                "最近日收盤價": prev_close_p,
                 "最新價": close_p,
                 "漲跌幅(%)": pct,
                 "成交量(張)": tot_vol,
@@ -479,7 +485,7 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
 【請嚴格依據下列 3 大點輸出深度評估】
 1. **🎯 核心操作策略與進場指引**：分析該股營收成長是否真正轉化為獲利，評估當前股價位置，給出最佳買進點位與當沖/短線操作戰法（是否宜追高，或是應等待拉回關鍵均線/多空平衡點）。
 2. **📊 買進勝率與勝率結構評估**：請給出具體的短線/當沖買進勝率預估（例如 75%），並列出勝率支撐的主要理由與技術/動能優勢。
-3. **⚠️ 風險提示與嚴格停損位**：指出該股當前最大的風險因子（如本益比過高、高檔開高走低賣壓、動能不足等），並給出精確的**停損參考價格**。
+3. **⚠️ 風險提示與嚴格停損位**：指出該股當前最大的風險因子（如本益比過高、高檔長上影線賣壓、動能不足等），並給出精確的**停損參考價格**。
 """
 
     headers = {"Content-Type": "application/json"}
@@ -569,6 +575,7 @@ def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high,
 
 def check_fundamental_6layer(code):
     fund_db = {
+        "4971": {"eps": 1.3, "yoy": 42.0, "roe": 11.5, "pe": 24.0, "peg": 0.57, "catalyst": "高頻磊晶片訂單升溫"},
         "3624": {"eps": 1.8, "yoy": 35.2, "roe": 14.5, "pe": 20.5, "peg": 0.58, "catalyst": "車用與工業被動元件急單拉貨"},
         "4991": {"eps": 1.2, "yoy": 120.5, "roe": 15.2, "pe": 28.5, "peg": 0.55, "catalyst": "化合物半導體/CPO光通訊急單"},
         "4908": {"eps": 2.5, "yoy": 85.0, "roe": 18.2, "pe": 22.0, "peg": 0.48, "catalyst": "CPO光收發模組強勁拉貨"},
@@ -578,7 +585,6 @@ def check_fundamental_6layer(code):
         "2454": {"eps": 18.5, "yoy": 22.5, "roe": 22.0, "pe": 21.0, "peg": 0.75, "catalyst": "旗艦手機 AP 晶片拉貨動能"},
         "2317": {"eps": 3.2, "yoy": 21.2, "roe": 16.0, "pe": 15.5, "peg": 0.72, "catalyst": "AI 伺服器機櫃量產出貨"},
         "3035": {"eps": 2.8, "yoy": 18.5, "roe": 14.2, "pe": 23.0, "peg": 0.81, "catalyst": "ASIC 專案量產入帳"},
-        "4971": {"eps": 1.3, "yoy": 42.0, "roe": 11.5, "pe": 24.0, "peg": 0.57, "catalyst": "高頻磊晶片訂單升溫"},
         "3042": {"eps": 2.2, "yoy": 19.8, "roe": 15.8, "pe": 16.5, "peg": 0.78, "catalyst": "車用與手機石英元件旺季"}
     }
     return fund_db.get(code, {"eps": 1.2, "yoy": 25.0, "roe": 12.0, "pe": 18.0, "peg": 0.70, "catalyst": "產業復甦成長"})
@@ -594,10 +600,11 @@ def render_smart_stock_table(df_display, key_prefix):
         c_name = str(row['股票名稱'])
         stock_lbl = f"{c_code} {c_name}"
         curr_p = row.get('最新真實價', row.get('最新價', 'N/A'))
+        prev_close_p = row.get('最近日收盤價', row.get('前日收盤', 0.0))
         feature_lbl = row.get('篩選理由', row.get('狀態', row.get('篩選特徵', '精選')))
         change_pct = row.get('漲跌幅(%)', 0.0)
 
-        st.markdown(stock_row_html(c_code, c_name, curr_p, change_pct, f"理由: {feature_lbl}"), unsafe_allow_html=True)
+        st.markdown(stock_row_html(c_code, c_name, curr_p, change_pct, f"理由: {feature_lbl}", prev_close=safe_float(prev_close_p)), unsafe_allow_html=True)
 
         col_b1, col_b2, col_b3 = st.columns([1, 1, 1])
         btn_nav_key = f"btn_nav_{key_prefix}_{c_code}_{idx}"
@@ -640,10 +647,11 @@ if app_mode == "🔍 FinMind 全市場掃描器":
         else:
             with st.spinner("正在連線 FinMind 與永豐金 API，比對 11 檔完全符合條件之強勢股..."):
                 try:
-                    target_11_codes = ["3624", "4991", "4908", "2466", "3006", "2330", "2454", "2317", "3035", "4971", "3042"]
+                    target_11_codes = ["4971", "3624", "4991", "4908", "2466", "3006", "2330", "2454", "2317", "3035", "3042"]
                     contracts = [api.Contracts.Stocks.get(code) for code in target_11_codes if api.Contracts.Stocks.get(code)]
                     snaps = api.snapshots(contracts)
                     snap_map = {s.code: safe_float(getattr(s, 'close', 0.0)) for s in snaps}
+                    prev_close_map = {s.code: safe_float(getattr(s, 'reference_price', getattr(s, 'yesterday_close', getattr(s, 'open', 0.0))), getattr(s, 'open', 0.0)) for s in snaps}
                     
                     scanned_results = []
                     start_d = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
@@ -653,6 +661,7 @@ if app_mode == "🔍 FinMind 全市場掃描器":
                         code = contract.code
                         c_name = twstock.codes[code].name if code in twstock.codes else code
                         real_p = snap_map.get(code, 0.0)
+                        prev_p = prev_close_map.get(code, real_p)
                         if real_p == 0: continue
 
                         # 1. 抓取 K 線計算季線 (60MA)
@@ -669,8 +678,8 @@ if app_mode == "🔍 FinMind 全市場掃描器":
 
                         # 外資 5 日買超張數模擬與站上季線趴數
                         foreign_buy = {
-                            "3624": 1850, "4991": 3200, "4908": 1420, "2466": 890, "3006": 2100,
-                            "2330": 15400, "2454": 4150, "2317": 8900, "3035": 1150, "4971": 650, "3042": 1280
+                            "4971": 650, "3624": 1850, "4991": 3200, "4908": 1420, "2466": 890, "3006": 2100,
+                            "2330": 15400, "2454": 4150, "2317": 8900, "3035": 1150, "3042": 1280
                         }.get(code, 1000)
 
                         dist_ma60_pct = round(((real_p - ma60) / ma60) * 100, 2)
@@ -679,6 +688,7 @@ if app_mode == "🔍 FinMind 全市場掃描器":
                             "股票代碼": code,
                             "股票名稱": c_name,
                             "最新真實價": real_p,
+                            "最近日收盤價": prev_p,
                             "最新價": real_p,
                             "月營收YoY": f"+{yoy_val}%",
                             "連3月YoY": "🟢 連 3 月正成長",
@@ -707,11 +717,11 @@ if app_mode == "🔍 FinMind 全市場掃描器":
         
         # 11 檔營收趨勢範例數據 (單位: 億元)
         revenue_trends = {
+            "4971 IET-KY": ([0.8, 0.7, 0.9, 0.8, 1.0, 1.2, 1.4, 1.8, 2.1, 2.4, 2.7, 3.0], 7, "5月高頻磊晶急單轉折"),
             "3624 光頡": ([4.2, 4.1, 4.0, 4.3, 4.2, 4.5, 4.8, 5.2, 5.6, 5.9, 6.2, 6.5], 7, "5月車用急單轉折"),
             "4991 環宇-KY": ([1.1, 1.0, 1.2, 1.1, 1.3, 1.5, 1.8, 2.3, 2.8, 3.1, 3.5, 3.8], 6, "4月CPO出貨轉折"),
             "4908 前鼎": ([2.1, 2.0, 2.2, 2.1, 2.3, 2.5, 2.7, 3.0, 3.5, 3.9, 4.2, 4.6], 8, "6月網通800G轉折"),
-            "2330 台積電": ([1600, 1580, 1620, 1650, 1610, 1720, 1850, 1980, 2080, 2150, 2220, 2300], 5, "3月CoWoS產能擴充轉折"),
-            "2454 聯發科": ([350, 340, 360, 370, 355, 380, 400, 430, 450, 470, 490, 510], 7, "5月旗艦晶片備貨轉折")
+            "2330 台積電": ([1600, 1580, 1620, 1650, 1610, 1720, 1850, 1980, 2080, 2150, 2220, 2300], 5, "3月CoWoS產能擴充轉折")
         }
 
         fig_rev = go.Figure()
@@ -756,10 +766,11 @@ elif app_mode == "🚀 6層量化戰略選股":
         else:
             with st.spinner("正在連線永豐金伺服器，抓取最新真實股票成交價與 K 線數據..."):
                 try:
-                    pool = ["4991", "4908", "2466", "4764", "4971", "3006", "2330", "2317", "2454", "3624"]
+                    pool = ["4971", "4991", "4908", "2466", "4764", "3006", "2330", "2317", "2454", "3624"]
                     contracts = [api.Contracts.Stocks.get(code) for code in pool if api.Contracts.Stocks.get(code)]
                     snaps = api.snapshots(contracts)
                     snap_map = {s.code: safe_float(getattr(s, 'close', 0.0)) for s in snaps}
+                    prev_map = {s.code: safe_float(getattr(s, 'reference_price', getattr(s, 'yesterday_close', getattr(s, 'open', 0.0))), getattr(s, 'open', 0.0)) for s in snaps}
                     start_date = (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d")
                     end_date = datetime.now().strftime("%Y-%m-%d")
                     group_a, group_b, group_c = [], [], []
@@ -768,6 +779,7 @@ elif app_mode == "🚀 6層量化戰略選股":
                         c_code = contract.code
                         c_name = twstock.codes[c_code].name if c_code in twstock.codes else c_code
                         real_price = snap_map.get(c_code, 0.0)
+                        prev_p = prev_map.get(c_code, real_price)
                         if real_price == 0: continue
 
                         fund = check_fundamental_6layer(c_code)
@@ -785,7 +797,7 @@ elif app_mode == "🚀 6層量化戰略選股":
                         if fund["yoy"] > 20: score += 15
 
                         item = {
-                            "股票代碼": c_code, "股票名稱": c_name, "最新真實價": real_price, "漲跌幅(%)": +2.5,
+                            "股票代碼": c_code, "股票名稱": c_name, "最新真實價": real_price, "最近日收盤價": prev_p, "漲跌幅(%)": +2.5,
                             "季EPS": fund["eps"], "營收YoY": f"+{fund['yoy']}%", "ROE": f"{fund['roe']}%",
                             "PEG": fund["peg"], "20日均線": round(ma20, 2), "60日均線": round(ma60, 2),
                             "綜合評分": score, "催化劑": fund["catalyst"],
@@ -820,7 +832,7 @@ elif app_mode == "💡 大戶投 — 智慧選股":
         tab_rt, tab_pv, tab_chip, tab_fin = st.tabs(["⚡ 即時排行", "📊 價量指標", "💎 籌碼精選", "🏆 經營績效"])
         
         with tab_rt:
-            df_rt = fetch_real_stock_snapshots(["4991", "4908", "3624", "2330"], "🔥 大戶鎖單")
+            df_rt = fetch_real_stock_snapshots(["4971", "4991", "4908", "3624", "2330"], "🔥 大戶鎖單")
             render_smart_stock_table(df_rt, "smart_rt")
             
         with tab_pv:
@@ -841,7 +853,7 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
     if not api_hot: st.error("請先填寫永豐金 API Key！")
     else:
         try:
-            hot_list = ["4991", "4908", "2466", "4764", "4971", "3006", "2330", "2317", "2454", "3035", "3624"]
+            hot_list = ["4971", "4991", "4908", "2466", "4764", "3006", "2330", "2317", "2454", "3035", "3624"]
             contracts = [api_hot.Contracts.Stocks.get(code) for code in hot_list if api_hot.Contracts.Stocks.get(code)]
             snaps = api_hot.snapshots(contracts)
             hot_data = []
@@ -849,6 +861,7 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
                 c_code = snap.code
                 close_p = safe_float(getattr(snap, 'close', 0.0))
                 open_p = safe_float(getattr(snap, 'open', close_p))
+                prev_p = safe_float(getattr(snap, 'reference_price', getattr(snap, 'yesterday_close', open_p)), open_p)
                 tot_vol = int(safe_float(getattr(snap, 'total_volume', 0)))
                 pct = round(((close_p - open_p) / open_p) * 100, 2) if open_p > 0 else 0.0
                 hot_data.append({
@@ -856,6 +869,7 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
                     "股票名稱": twstock.codes[c_code].name if c_code in twstock.codes else c_code,
                     "最新價": close_p,
                     "最新真實價": close_p,
+                    "最近日收盤價": prev_p,
                     "漲跌幅(%)": pct,
                     "成交量(張)": tot_vol,
                     "成交值(萬元)": round(close_p * tot_vol / 1000),
@@ -886,7 +900,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
         else:
             with st.spinner("正在掃描成交額熱門股票並比對 5 大極限條件..."):
                 try:
-                    target_candidates = ["4991", "4908", "2466", "4764", "4971", "3006", "2330", "2317", "2454", "3035", "3624"]
+                    target_candidates = ["4971", "4991", "4908", "2466", "4764", "3006", "2330", "2317", "2454", "3035", "3624"]
                     filter_results = []
                     start_date = (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d")
                     end_date = datetime.now().strftime("%Y-%m-%d")
@@ -924,7 +938,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (全域 Session 防護版)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (標題附帶最近一日收盤價高亮顯示)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
@@ -941,7 +955,7 @@ else:
            * **風格定位**：短線當沖 (停損3~5%/停利5~8%)、波段 (停損5~10%/停利10~20%)、長線 (停損10~15%/停利20~50%)。
         """)
 
-    if "selected_stock" not in st.session_state: st.session_state["selected_stock"] = "3624"
+    if "selected_stock" not in st.session_state: st.session_state["selected_stock"] = "4971"
 
     st.subheader("⭐ 自選股快捷區")
     if st.session_state["watchlist"]:
@@ -1063,6 +1077,7 @@ else:
                             high_price = safe_float(getattr(snap, 'high', curr_price))
                             low_price = safe_float(getattr(snap, 'low', curr_price))
                             open_price = safe_float(getattr(snap, 'open', curr_price))
+                            prev_close_price = safe_float(getattr(snap, 'reference_price', getattr(snap, 'yesterday_close', open_price)), open_price)
                             volume = int(safe_float(getattr(snap, 'total_volume', 0)))
                             avg_price = safe_float(getattr(snap, 'average_price', curr_price), curr_price) or curr_price
                             outer_vol = safe_float(getattr(snap, 'ask_volume', 0.0))
@@ -1110,6 +1125,7 @@ else:
 
                             st.session_state["analysis_data"] = {
                                 "target_code": target_code, "target_name": target_name, "curr_price": curr_price,
+                                "prev_close_price": prev_close_price,
                                 "high_price": high_price, "low_price": low_price, "open_price": open_price, "volume": volume,
                                 "avg_price": avg_price, "limit_up": limit_up, "limit_down": limit_down,
                                 "bias_rate": ((curr_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0,
@@ -1121,6 +1137,7 @@ else:
     if "analysis_data" in st.session_state and st.session_state["analysis_data"]["target_code"] == target_code:
         data = st.session_state["analysis_data"]
         curr_price = safe_float(data.get("curr_price", 0.0))
+        prev_close_price = safe_float(data.get("prev_close_price", curr_price), curr_price)
         open_price = safe_float(data.get('open_price', curr_price), curr_price)
         high_price = safe_float(data.get('high_price', curr_price), curr_price)
         low_price = safe_float(data.get('low_price', curr_price), curr_price)
@@ -1156,13 +1173,14 @@ else:
         pct = ((curr_price - open_price) / open_price) * 100 if open_price else 0
         t_cls = tone(pct)
 
-        # ⚡【高清對比 WebSocket DOM 廣播視窗】
+        # ⚡【盯盤標題高亮附帶最近日收盤價 + 高清 WebSocket DOM 廣播視窗】
         ws_live_html = f"""
         <div style="background:#121721; border:1px solid #253042; border-radius:12px; padding:16px 20px; margin-bottom:12px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div>
-                    <span style="font-size:1.5rem; font-weight:800; color:#FFFFFF;">{data['target_code']} {data['target_name']}</span>
-                    <span style="font-size:0.85rem; color:#FFD166; font-weight:600; margin-left:10px;">⚡ WebSocket 微秒級當沖條件即時監控</span>
+                    <span style="font-size:1.6rem; font-weight:900; color:#FFFFFF;">{data['target_code']} {data['target_name']}</span>
+                    <span style="font-size:1.05rem; font-weight:700; color:#FFD166; margin-left:12px; background:#1A2130; padding:4px 10px; border-radius:6px; border:1px solid #FFD166;">📌 前日收盤價: {prev_close_price:.2f} 元</span>
+                    <span style="font-size:0.85rem; color:#4C8DFF; font-weight:600; margin-left:10px;">⚡ WebSocket 微秒級當沖條件即時監控</span>
                 </div>
                 <div style="text-align:right;">
                     <span id="live-price" class="{t_cls}" style="font-size:2.8rem; font-weight:900; line-height:1;">{curr_price:.2f}</span>
@@ -1172,10 +1190,10 @@ else:
             <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:12px; background:#1A2130; border-radius:8px; padding:12px 16px; margin-top:12px; border:1px solid #253042;">
                 <div style="display:flex; justify-content:space-between;"><span style="color:#D1D8E0; font-weight:600;">最高</span><b style="color:#F6465D; font-size:1.05rem;">{high_price:.2f}</b></div>
                 <div style="display:flex; justify-content:space-between;"><span style="color:#D1D8E0; font-weight:600;">最低</span><b style="color:#1FC98B; font-size:1.05rem;">{low_price:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:#D1D8E0; font-weight:600;">前日收盤</span><b style="color:#FFD166; font-size:1.05rem;">{prev_close_price:.2f}</b></div>
                 <div style="display:flex; justify-content:space-between;"><span style="color:#D1D8E0; font-weight:600;">漲停</span><b style="color:#F6465D; font-size:1.05rem;">{limit_up:.2f}</b></div>
                 <div style="display:flex; justify-content:space-between;"><span style="color:#D1D8E0; font-weight:600;">跌停</span><b style="color:#1FC98B; font-size:1.05rem;">{limit_down:.2f}</b></div>
                 <div style="display:flex; justify-content:space-between;"><span style="color:#D1D8E0; font-weight:600;">均價 (VWAP)</span><b style="color:#FFD166; font-size:1.05rem;">{avg_price:.2f}</b></div>
-                <div style="display:flex; justify-content:space-between;"><span style="color:#D1D8E0; font-weight:600;">撮合時間</span><b id="live-time" style="color:#4C8DFF; font-size:1.05rem;">--:--:--.--</b></div>
             </div>
             <div id="pnl-box" style="margin-top:10px; padding:8px 12px; background:#1A2130; border-radius:6px; font-weight:700; display:none; border:1px solid #4C8DFF;"></div>
             <div id="alarm-box" style="margin-top:10px; font-size:1.05rem; font-weight:700;"></div>
@@ -1191,12 +1209,10 @@ else:
                 const px = data.price;
                 const pxElem = document.getElementById("live-price");
                 const pctElem = document.getElementById("live-pct");
-                const timeElem = document.getElementById("live-time");
                 const alarmElem = document.getElementById("alarm-box");
                 const pnlElem = document.getElementById("pnl-box");
 
                 pxElem.innerText = px.toFixed(2);
-                timeElem.innerText = data.time;
 
                 if (openPx > 0) {{
                     const diffPct = ((px - openPx) / openPx) * 100;
