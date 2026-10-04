@@ -267,6 +267,7 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
 
     return "❌ 呼叫 Gemini API 分析時發生錯誤: 所有模型別名皆回應 404 或無效，請確認金鑰權限與 API 計費狀態。"
 
+# 🎯 技術面演算：計算真正的「強壓位」與「強撐位」
 def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high, prev_low, balance_point, chip_data):
     curr = safe_float(curr)
     ma5 = safe_float(ma5, curr)
@@ -467,7 +468,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
         render_smart_stock_table(pd.DataFrame([{"股票代碼": "2466", "股票名稱": "冠西電", "最新價": 141.0, "漲跌幅(%)": +9.73, "成交量(張)": 8500, "篩選特徵": "🚀 5分K帶量發動"}]), "flt")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (安全寫入 limit_up 與 limit_down)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (獨立分開展示「強壓/強撐」與「漲跌停價」)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
@@ -525,7 +526,7 @@ else:
                         outer_vol = safe_float(getattr(snap, 'ask_volume', 0.0))
                         inner_vol = safe_float(getattr(snap, 'bid_volume', 0.0))
 
-                        # 🎯 抓取 Shioaji 漲跌停價格 (price_up / price_down) 並寫入字典
+                        # 🎯 正確抓取 Shioaji 的漲跌停價格 (price_up / price_down)
                         limit_up = safe_float(getattr(snap, 'price_up', None), round(curr_price * 1.1, 2))
                         limit_down = safe_float(getattr(snap, 'price_down', None), round(curr_price * 0.9, 2))
 
@@ -534,7 +535,6 @@ else:
                         kbars = api.kbars(contract=contract, start=start_date, end=end_date)
                         df_raw = pd.DataFrame({"ts": kbars.ts, "Open": kbars.Open, "High": kbars.High, "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume})
 
-                        # 🎯 安全將 limit_up 與 limit_down 存入字典，防止 KeyError
                         st.session_state["analysis_data"] = {
                             "target_code": target_code, "target_name": target_name, "curr_price": curr_price,
                             "high_price": high_price, "low_price": low_price, "open_price": open_price, "volume": volume,
@@ -559,12 +559,11 @@ else:
         balance_point = safe_float(data.get('balance_point', curr_price), curr_price)
         bias_rate = safe_float(data.get('bias_rate', 0.0), 0.0)
 
-        # 🎯 使用 .get() 安全讀取漲跌停價，並附帶備援計算
         limit_up = safe_float(data.get('limit_up', round(curr_price * 1.1, 2)), round(curr_price * 1.1, 2))
         limit_down = safe_float(data.get('limit_down', round(curr_price * 0.9, 2)), round(curr_price * 0.9, 2))
         df_raw = data.get("df_raw", pd.DataFrame())
 
-        # 計算指標
+        # 計算 K 線與支撐壓力指標
         if len(df_raw) > 0:
             df_raw["DateTime"] = pd.to_datetime(df_raw["ts"] / 1000000000, unit='s', errors='coerce')
             df_k_daily = df_raw.groupby(df_raw["DateTime"].dt.date).agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).reset_index()
@@ -578,11 +577,13 @@ else:
         else:
             ma5, ma20, prev_high, prev_low = curr_price, curr_price, high_price, low_price
 
+        # 🎯 計算技術面算出的強壓位（resistance）與強撐位（support）
         ai_res = ai_senior_analyst_diagnosis_advanced(target_code, target_name, curr_price, ma5, ma20, prev_high, prev_low, balance_point, {})
 
-        # 頂部大字報價橫幅
         pct = ((curr_price - open_price) / open_price) * 100 if open_price else 0
         t_cls = tone(pct)
+
+        # 🎯 頂部報價橫幅：對齊大戶投 APP 視圖（最高、最低、漲停、跌停、均價、總量）
         st.markdown(f"""
         <div class="terminal-quote">
             <div class="top-info">
@@ -645,21 +646,21 @@ else:
                     {"日期": "09/30", "主力買賣超": "-310", "籌碼集中度": "-2.1%", "買超前5總和": "48.5%"},
                 ]), use_container_width=True)
 
-        # 🎯 右側欄：對齊黃框壓力/支撐看板
+        # 🎯 右側欄：對齊黃框關鍵價位看板（明確分開「強壓/強撐」與「漲跌停價」）
         with right_panel:
             st.markdown(f"""
             <div class="level-container">
                 <div class="level-head">
-                    <div><span class="muted">強壓/漲停</span><br><b class="text-red" style="font-size:1.2rem;">{limit_up:.2f}</b></div>
-                    <div style="text-align:right;"><span class="muted">強撐/跌停</span><br><b class="text-green" style="font-size:1.2rem;">{limit_down:.2f}</b></div>
+                    <div><span class="muted">技術強壓</span><br><b class="text-red" style="font-size:1.2rem;">{ai_res['resistance']}</b></div>
+                    <div style="text-align:right;"><span class="muted">技術強撐</span><br><b class="text-green" style="font-size:1.2rem;">{ai_res['support']}</b></div>
                 </div>
-                <div class="level-box"><span class="lbl">🚀 漲停價格</span><span class="val text-red">{limit_up:.2f}</span></div>
-                <div class="level-box"><span class="lbl">🎯 極限壓力位</span><span class="val text-red">{ai_res['resistance']}</span></div>
+                <div class="level-box"><span class="lbl">🚀 法定漲停價</span><span class="val text-red">{limit_up:.2f}</span></div>
+                <div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">{ai_res['resistance']}</span></div>
                 <div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">{ai_res['entry_price']}</span></div>
                 <div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">{curr_price:.2f}</span></div>
                 <div class="level-box"><span class="lbl">🛡️ 多空平衡點</span><span class="val" style="color:var(--gold);">{balance_point:.2f}</span></div>
-                <div class="level-box"><span class="lbl">🛡️ 關鍵停損價</span><span class="val text-green">{ai_res['support']}</span></div>
-                <div class="level-box"><span class="lbl">💦 跌停價格</span><span class="val text-green">{limit_down:.2f}</span></div>
+                <div class="level-box"><span class="lbl">🛡️ 技術強撐價</span><span class="val text-green">{ai_res['support']}</span></div>
+                <div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">{limit_down:.2f}</span></div>
             </div>
             """, unsafe_allow_html=True)
 
