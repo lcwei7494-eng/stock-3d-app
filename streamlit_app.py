@@ -280,7 +280,7 @@ def calculate_atr(df, period=14):
     df['ATR'] = df['TR'].rolling(period).mean()
     return df
 
-# 🤖 REST API 直連 Gemini (全 Endpoint 相容與自動試錯)
+# 🤖 REST API 直連 Gemini (具備動態查詢可用模型與連鎖退回機制)
 def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     c_code = str(data_dict.get('股票代碼', data_dict.get('target_code', '')))
     c_name = str(data_dict.get('股票名稱', data_dict.get('target_name', '')))
@@ -320,13 +320,6 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
 3. **⚠️ 風險提示與嚴格停損位**：指出該股當前最大的風險因子（如本益比過高、高檔開高走低賣壓、動能不足等），並給出精確的**停損參考價格**。
 """
 
-    endpoints = [
-        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key_to_use}",
-        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={key_to_use}",
-        f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={key_to_use}",
-        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={key_to_use}"
-    ]
-
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [{
@@ -335,10 +328,35 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
         }]
     }
 
+    # 1. 優先向 Google 查詢該 API Key 授權可用的 generateContent 模型清單
+    list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key_to_use}"
+    available_endpoints = []
+    try:
+        res_list = requests.get(list_url, timeout=5)
+        if res_list.status_code == 200:
+            models_data = res_list.json().get("models", [])
+            for m in models_data:
+                m_name = m.get("name", "")
+                methods = m.get("supportedGenerationMethods", [])
+                if "generateContent" in methods:
+                    available_endpoints.append(f"https://generativelanguage.googleapis.com/v1beta/{m_name}:generateContent?key={key_to_use}")
+    except Exception:
+        pass
+
+    # 2. 預設多重備援端點列表
+    fallback_endpoints = [
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key_to_use}",
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={key_to_use}",
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={key_to_use}",
+        f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={key_to_use}"
+    ]
+
+    endpoints_to_try = available_endpoints + [ep for ep in fallback_endpoints if ep not in available_endpoints]
+
     err_msgs = []
-    for url in endpoints:
+    for url in endpoints_to_try:
         try:
-            res = requests.post(url, headers=headers, json=payload, timeout=12)
+            res = requests.post(url, headers=headers, json=payload, timeout=10)
             if res.status_code == 200:
                 res_data = res.json()
                 try:
@@ -346,12 +364,12 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
                 except (KeyError, IndexError):
                     continue
             else:
-                err_msgs.append(f"Endpoint HTTP {res.status_code}: {res.text[:100]}")
+                err_msgs.append(f"HTTP {res.status_code}: {res.text[:80]}")
         except Exception as e:
             err_msgs.append(str(e))
             continue
 
-    return f"❌ 呼叫 Gemini API 失敗，請確認 API Key 權限。若為新 Key 請確定連線正常。\n細節: {err_msgs[0] if err_msgs else '無回應'}"
+    return f"❌ 呼叫 Gemini API 失敗，請確認 API Key 權限。\n錯誤明細: {err_msgs[0] if err_msgs else '無回應'}"
 
 # 技術面演算：計算強壓與強撐位
 def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high, prev_low, balance_point, chip_data):
