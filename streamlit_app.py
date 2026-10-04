@@ -272,18 +272,33 @@ else:
 
 
 # =========================================================
-# 🔒 使用 @st.cache_resource 控制單一 Shioaji API Session，解決 Code 451
+# 🔒 終極防護：Shioaji API Session 全域複用，徹底避免 Code 451 錯誤
 # =========================================================
 @st.cache_resource(ttl=3600, show_spinner=False)
 def get_shioaji_api(k_key, s_key):
     if not k_key or not s_key:
         return None
+    
+    # 1. 優先檢查 Session State 是否已有連線實體
+    if "shioaji_api_instance" in st.session_state and st.session_state["shioaji_api_instance"]:
+        try:
+            return st.session_state["shioaji_api_instance"]
+        except Exception:
+            pass
+
+    # 2. 建立新連線並快取
     try:
         api = sj.Shioaji(simulation=True)
-        api.login(api_key=k_key, secret_key=s_key)
-        return api
+        accounts = api.login(api_key=k_key, secret_key=s_key)
+        if accounts:
+            st.session_state["shioaji_api_instance"] = api
+            return api
     except Exception as e:
-        st.error(f"永豐金 API 登入失敗: {str(e)}")
+        err_str = str(e)
+        if "451" in err_str or "Too Many Connections" in err_str:
+            st.error("⚠️ 永豐金伺服器顯示連線數過多 (Code 451)。請關閉多餘分頁並靜置網頁 3~5 分鐘，等待伺服器自動釋放舊連線。")
+        else:
+            st.error(f"永豐金 API 登入失敗: {err_str}")
         return None
 
 
@@ -731,7 +746,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (含預估損益 & 報酬率紅綠標示)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (全域 Session 防護版)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
@@ -798,7 +813,7 @@ else:
         st.session_state["last_stock"] = target_code
         if "analysis_data" in st.session_state: del st.session_state["analysis_data"]
 
-    # 💰 交易計劃與個人持股成本計算器 (六欄排列：新增預估損益與預估報酬率卡片)
+    # 💰 交易計劃與個人持股成本計算器 (含即時未實現損益 & 報酬率卡片)
     st.markdown("##### ⚙️ 交易計劃與個人持股成本設定 (含 2折手續費 + 0.3% 證交稅損益兩平試算)")
     col_p1, col_p2, col_p3, col_p4, col_stop, col_target = st.columns([1, 0.8, 1.1, 1.1, 1, 1])
     
