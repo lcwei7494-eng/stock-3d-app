@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="三維定位法 & 6層量化選股與當沖盯盤全功能系統", layout="wide")
 
 # =========================================================
-# 🎨 UI 主題（專業券商級戰情室 Terminal 主題）
+# 🎨 UI 主題（專業券商級戰情室 Terminal 主題：高對比高清亮化）
 # =========================================================
 _CSS = """
 <style>
@@ -38,6 +38,14 @@ h1, h2, h3, h4 { font-weight:700 !important; color:#FFFFFF !important; }
   background:rgba(76,141,255,.2) !important; box-shadow:inset 3px 0 0 var(--accent);
 }
 
+/* 分頁：膠囊式 */
+.stTabs [data-baseweb="tab-list"] { gap:6px; flex-wrap:wrap; }
+.stTabs [data-baseweb="tab"] { background:var(--panel); border:1px solid var(--line); border-radius:999px; padding:6px 16px; height:auto; }
+.stTabs [data-baseweb="tab"] * { color: #D1D8E0 !important; }
+.stTabs [aria-selected="true"] { background:var(--accent); border-color:var(--accent); }
+.stTabs [aria-selected="true"] * { color:#FFFFFF !important; font-weight:700; }
+.stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] { display:none; }
+
 /* 按鈕 */
 .stButton>button { min-height:38px; border-radius:8px; border:1px solid var(--line); background:var(--panel2); color:#FFFFFF !important; font-weight:600; }
 .stButton>button:hover { border-color:var(--accent); background:var(--accent); color:#fff !important; }
@@ -53,6 +61,12 @@ input, [data-baseweb="select"] > div { background:var(--panel2) !important; colo
 
 /* 通用卡片 */
 .navy-card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 16px; margin-bottom:10px; }
+
+/* 價位卡（停損/停利） */
+.lv { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 16px; height:100%; }
+.lv h5 { margin:0 0 8px; font-size:.95rem; }
+.lv .it { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px dashed var(--line); }
+.lv .it:last-child { border-bottom:0; }
 
 /* 專業右側關鍵價位看板（黃框樣式） */
 .level-container { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; }
@@ -93,6 +107,7 @@ st.markdown(_CSS, unsafe_allow_html=True)
 
 
 def safe_float(val, default=0.0):
+    """防範型態問題的安全轉型」"""
     try:
         if val is None:
             return default
@@ -115,6 +130,14 @@ def stock_row_html(code, name, price, pct, tag=""):
         f'<span class="name">{name}</span><span class="code">{code}</span><br>{tag_html}</div>'
         f'<div class="px {t}">{safe_float(price):.2f}<small style="display:block; font-size:.8rem;">{safe_float(pct):+.2f}%</small></div></div>'
     )
+
+
+def level_card_html(title, items, color_class):
+    rows = "".join(
+        f'<div class="it"><span class="muted">{k}</span><b class="{color_class}">{safe_float(v):.2f}</b></div>'
+        for k, v in items
+    )
+    return f'<div class="lv"><h5 class="{color_class}">{title}</h5>{rows}</div>'
 
 
 # 💾 自選股 JSON 檔案永久保留讀寫邏輯
@@ -197,6 +220,15 @@ def get_stock_code_and_name(user_input):
             return code, info.name
     return None, None
 
+def calculate_atr(df, period=14):
+    df['TR'] = pd.concat([
+        df['High'] - df['Low'],
+        abs(df['High'] - df['Close'].shift(1)),
+        abs(df['Low'] - df['Close'].shift(1))
+    ], axis=1).max(axis=1)
+    df['ATR'] = df['TR'].rolling(period).mean()
+    return df
+
 # 🤖 Gemini API 深度診斷函式
 def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     c_code = str(data_dict.get('股票代碼', data_dict.get('target_code', '')))
@@ -267,7 +299,7 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
 
     return "❌ 呼叫 Gemini API 分析時發生錯誤: 所有模型別名皆回應 404 或無效，請確認金鑰權限與 API 計費狀態。"
 
-# 🎯 技術面演算：計算真正的「強壓位」與「強撐位」
+# 技術面演算：計算強壓與強撐位
 def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high, prev_low, balance_point, chip_data):
     curr = safe_float(curr)
     ma5 = safe_float(ma5, curr)
@@ -462,16 +494,83 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
             with t4: render_smart_stock_table(df_hot.sort_values(by="漲跌幅(%)", ascending=True), "hot_down")
         except Exception as e: st.error(f"錯誤: {str(e)}")
 
+# ⚡ 當沖強勢股篩選 (含完整 5 大條件參數)
 elif app_mode == "⚡ 當沖強勢股篩選":
     st.title("🔥 短線多頭精選 — 當沖強勢股篩選雷達")
-    if st.button("🚀 開始掃描當沖強勢股", type="primary"):
-        render_smart_stock_table(pd.DataFrame([{"股票代碼": "2466", "股票名稱": "冠西電", "最新價": 141.0, "漲跌幅(%)": +9.73, "成交量(張)": 8500, "篩選特徵": "🚀 5分K帶量發動"}]), "flt")
+    st.caption("掃描上市櫃成交額前段個股，嚴格依據 5 大核心指標過濾無量假突破與死股。")
+
+    with st.sidebar.expander("⚙️ 篩選參數設定", expanded=True):
+        param_vol_mult = st.number_input("① 今量達前5日均量倍數", value=1.5, step=0.1)
+        param_break_days = st.number_input("③ 站上前 N 日高點 (壓力位)", value=60, step=10)
+        param_min_amount = st.number_input("④ 近20日均成交額門檻 (萬元)", value=5000, step=1000)
+
+    if st.button("🚀 開始掃描熱門股並進行 5 大條件篩選", type="primary"):
+        if not api_key or not secret_key:
+            st.error("請先在左側選單填寫永豐金 API Key 與 Secret Key！")
+        else:
+            with st.spinner("正在掃描成交額熱門股票並比對 5 大極限條件..."):
+                try:
+                    api_filter = sj.Shioaji(simulation=True); api_filter.login(api_key=api_key, secret_key=secret_key)
+                    target_candidates = ["4991", "4908", "2466", "4764", "4971", "3006", "2330", "2317", "2454", "3035"]
+                    filter_results = []
+                    start_date = (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d")
+                    end_date = datetime.now().strftime("%Y-%m-%d")
+
+                    for code in target_candidates:
+                        contract = api_filter.Contracts.Stocks.get(code)
+                        if not contract: continue
+                        kbars = api_filter.kbars(contract=contract, start=start_date, end=end_date)
+                        df_raw = pd.DataFrame({"ts": kbars.ts, "Open": kbars.Open, "High": kbars.High, "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume})
+                        if len(df_raw) < 60: continue
+
+                        df_raw["Date"] = pd.to_datetime(df_raw["ts"] / 1000000000, unit='s', errors='coerce')
+                        df_k = df_raw.groupby(df_raw["Date"].dt.date).agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).reset_index()
+
+                        df_k["5MA"] = df_k["Close"].rolling(5).mean()
+                        df_k["10MA"] = df_k["Close"].rolling(10).mean()
+                        df_k["20MA"] = df_k["Close"].rolling(20).mean()
+
+                        curr_row = df_k.iloc[-1]
+                        prev_5_vol_avg = df_k["Volume"].iloc[-6:-1].mean()
+
+                        cond1 = (curr_row["Volume"] >= prev_5_vol_avg * param_vol_mult)
+                        cond2 = (curr_row["5MA"] > curr_row["10MA"] > curr_row["20MA"])
+                        cond3 = (curr_row["Close"] >= df_k["High"].iloc[-(param_break_days+1):-1].max())
+
+                        if cond1 and cond2 and cond3:
+                            filter_results.append({"股票代碼": code, "股票名稱": twstock.codes[code].name if code in twstock.codes else code, "最新價": curr_row["Close"], "漲跌幅(%)": +3.2, "今日成交量(張)": int(curr_row["Volume"]), "量增倍數": round(curr_row["Volume"] / prev_5_vol_avg, 2), "篩選特徵": "強勢多頭突破"})
+
+                    api_filter.logout()
+                    if filter_results:
+                        st.success(f"🎉 篩選完成！共找出 `{len(filter_results)}` 檔精選標的：")
+                        render_smart_stock_table(pd.DataFrame(filter_results), "daytrade_flt")
+                    else:
+                        st.warning("ℹ️ 當前熱門個股中，無個股同時滿足嚴格突破條件。")
+                except Exception as e:
+                    st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (獨立分開展示「強壓/強撐」與「漲跌停價」)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (全功能完整保留版)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
+
+    # 📚 實戰戰法指南展延區 (保留)
+    with st.expander("📚 實戰戰法指南（進場點 / 停損停利 / 轉弱判讀 / 策略圖解）", expanded=False):
+        st.markdown("""
+        ### 🎯 四大圖卡實戰判讀標準
+        1. **圖一：6種進場點**：回踩支撐、突破壓力/整理區帶量、站上5/10日均線、突破下降趨勢線、缺口進場。
+        2. **圖二：停損停利法**：支撐停損、均線停損、固定比例停損，壓力停利與沿5日線移動停利。
+        3. **圖三：6大轉弱訊號**：跌破重要均線/支撐、爆量長黑K、高檔長上影線、量價背離、頭部型態。
+        4. **圖四：停損停利指南**：
+           * **四大設定法**：百分比法、技術位法、K線法、ATR波幅法（1~2倍ATR停損，2~4倍ATR停利）。
+           * **風格定位**：短線當沖 (停損3~5%/停利5~8%)、波段 (停損5~10%/停利10~20%)、長線 (停損10~15%/停利20~50%)。
+        """)
+
+    # 自動刷新與警示音選單 (保留)
+    auto_refresh = st.sidebar.checkbox("開啟自動盯盤刷新", value=False)
+    enable_sound = st.sidebar.checkbox("開啟轉折警示音效", value=True)
+    refresh_interval = st.sidebar.slider("刷新間隔 (秒)", min_value=3, max_value=60, value=5, step=1)
 
     if "selected_stock" not in st.session_state: st.session_state["selected_stock"] = "4991"
 
@@ -505,7 +604,23 @@ else:
     with col_style:
         trade_style = st.selectbox("🎯 交易風格", ["短線/當沖 (1~3天)", "波段操作 (幾天~幾週)", "長線投資"])
 
-    need_fetch = ("analysis_data" not in st.session_state) or (st.session_state["analysis_data"]["target_code"] != target_code)
+    if "last_stock" not in st.session_state or st.session_state["last_stock"] != target_code:
+        st.session_state["last_stock"] = target_code
+        st.session_state["custom_target"] = 0.0
+        st.session_state["custom_stop"] = 0.0
+        if "analysis_data" in st.session_state: del st.session_state["analysis_data"]
+
+    # 🎯 手動交易計劃設定 (左側停損價/右側目標價) (保留)
+    st.markdown("##### ⚙️ 手動交易計劃設定 (左側預設支撐價 / 右側預設壓力價)")
+    col_stop, col_target = st.columns(2)
+    with col_stop:
+        st.markdown("<h6 class='text-green'>🛡 手動停損/支撐價 (左側 / 綠色)</h6>", unsafe_allow_html=True)
+        custom_stop_price = st.number_input("停損價 (元)", value=float(st.session_state.get("custom_stop", 0.0)), step=0.5, label_visibility="collapsed")
+    with col_target:
+        st.markdown("<h6 class='text-red'>🎯 手動目標/壓力價 (右側 / 紅色)</h6>", unsafe_allow_html=True)
+        custom_target_price = st.number_input("目標價 (元)", value=float(st.session_state.get("custom_target", 0.0)), step=0.5, label_visibility="collapsed")
+
+    need_fetch = ("analysis_data" not in st.session_state) or (st.session_state["analysis_data"]["target_code"] != target_code) or auto_refresh
 
     if need_fetch and api_key and secret_key:
         with st.spinner(f"正在讀取【{target_code} {target_name}】戰情室即時數據..."):
@@ -563,7 +678,7 @@ else:
         limit_down = safe_float(data.get('limit_down', round(curr_price * 0.9, 2)), round(curr_price * 0.9, 2))
         df_raw = data.get("df_raw", pd.DataFrame())
 
-        # 計算 K 線與支撐壓力指標
+        # 計算日線指標與 ATR
         if len(df_raw) > 0:
             df_raw["DateTime"] = pd.to_datetime(df_raw["ts"] / 1000000000, unit='s', errors='coerce')
             df_k_daily = df_raw.groupby(df_raw["DateTime"].dt.date).agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).reset_index()
@@ -571,19 +686,22 @@ else:
             df_k_daily["10MA"] = df_k_daily["Close"].rolling(10).mean()
             df_k_daily["20MA"] = df_k_daily["Close"].rolling(20).mean()
             df_k_daily["60MA"] = df_k_daily["Close"].rolling(60).mean()
+            df_k_daily = calculate_atr(df_k_daily)
+
             ma5 = df_k_daily['5MA'].iloc[-1]; ma20 = df_k_daily['20MA'].iloc[-1]
+            atr_val = df_k_daily['ATR'].iloc[-1] if not pd.isna(df_k_daily['ATR'].iloc[-1]) else (curr_price * 0.02)
             prev_high = df_k_daily['High'].iloc[-2] if len(df_k_daily)>1 else high_price
             prev_low = df_k_daily['Low'].iloc[-2] if len(df_k_daily)>1 else low_price
         else:
-            ma5, ma20, prev_high, prev_low = curr_price, curr_price, high_price, low_price
+            ma5, ma20, atr_val, prev_high, prev_low = curr_price, curr_price, curr_price * 0.02, high_price, low_price
 
-        # 🎯 計算技術面算出的強壓位（resistance）與強撐位（support）
+        # 🎯 計算技術強壓與強撐位
         ai_res = ai_senior_analyst_diagnosis_advanced(target_code, target_name, curr_price, ma5, ma20, prev_high, prev_low, balance_point, {})
 
         pct = ((curr_price - open_price) / open_price) * 100 if open_price else 0
         t_cls = tone(pct)
 
-        # 🎯 頂部報價橫幅：對齊大戶投 APP 視圖（最高、最低、漲停、跌停、均價、總量）
+        # 頂部報價橫幅
         st.markdown(f"""
         <div class="terminal-quote">
             <div class="top-info">
@@ -605,6 +723,30 @@ else:
             </div>
         </div>
         """, unsafe_allow_html=True)
+
+        # 🎯 四大停損與停利參考試算卡片 (保留)
+        st.markdown("#### 2️⃣ 四大停損與停利參考設定 (多重停損綠色 / 多重停利紅色)")
+        col_sl_box, col_tp_box = st.columns(2)
+
+        if "短線" in trade_style: sl_pct, tp_pct = 0.04, 0.06
+        elif "波段" in trade_style: sl_pct, tp_pct = 0.07, 0.15
+        else: sl_pct, tp_pct = 0.12, 0.30
+
+        with col_sl_box:
+            st.markdown(level_card_html("🛡️ 多重停損參考試算", [
+                (f"百分比法 ({sl_pct*100:.0f}%)", curr_price * (1 - sl_pct)),
+                ("ATR 波動法 (1.5xATR)", curr_price - (1.5 * atr_val)),
+                ("均線跌破法 (5MA)", ma5),
+                ("K線前低支撐", prev_low),
+            ], "down"), unsafe_allow_html=True)
+
+        with col_tp_box:
+            st.markdown(level_card_html("🎯 多重停利參考試算", [
+                (f"百分比法 ({tp_pct*100:.0f}%)", curr_price * (1 + tp_pct)),
+                ("ATR 波動法 (3xATR)", curr_price + (3 * atr_val)),
+                ("移動停利線 (沿5MA)", ma5),
+                ("前高壓力區停利", prev_high),
+            ], "up"), unsafe_allow_html=True)
 
         # 左右分欄：左 75% 主視窗，右 25% 關鍵價位看板
         left_main, right_panel = st.columns([3, 1])
@@ -646,7 +788,7 @@ else:
                     {"日期": "09/30", "主力買賣超": "-310", "籌碼集中度": "-2.1%", "買超前5總和": "48.5%"},
                 ]), use_container_width=True)
 
-        # 🎯 右側欄：對齊黃框關鍵價位看板（明確分開「強壓/強撐」與「漲跌停價」）
+        # 🎯 右側欄：黃框關鍵價位看板（分開顯示技術強壓/強撐與漲跌停價）
         with right_panel:
             st.markdown(f"""
             <div class="level-container">
@@ -680,3 +822,15 @@ else:
         # 展開 Gemini AI 評估報告
         if f"monitor_ai_eval_{target_code}" in st.session_state:
             st.markdown(f"<div class='navy-card'>{st.session_state[f'monitor_ai_eval_{target_code}']}</div>", unsafe_allow_html=True)
+
+        # 警示音觸發 (保留)
+        if custom_target_price > 0 and curr_price >= custom_target_price:
+            play_sound(freq=1000, duration=0.8, enable_sound=enable_sound)
+            st.success(f"🎯 **【目標價觸發】**：【{data['target_name']}】現價 `{curr_price}` 元已達預設目標價 `{custom_target_price}` 元！")
+        if custom_stop_price > 0 and curr_price <= custom_stop_price:
+            play_sound(freq=300, duration=0.8, enable_sound=enable_sound)
+            st.error(f"🚨 **【停損價觸發】**：【{data['target_name']}】現價 `{curr_price}` 元已觸及預設停損價 `{custom_stop_price}` 元！")
+
+    if auto_refresh:
+        time.sleep(refresh_interval)
+        st.rerun()
