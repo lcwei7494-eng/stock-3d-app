@@ -73,7 +73,7 @@ input, [data-baseweb="select"] > div { background:var(--panel2) !important; colo
 .row .code { color:var(--muted); font-size:.82rem; margin-left:6px; }
 .row .px { font-size:1.15rem; font-weight:800; text-align:right; }
 
-/* 頂部報價大字橫幅 (對齊圖中大字85.80格式) */
+/* 頂部報價大字橫幅 */
 .terminal-quote { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 20px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; }
 .terminal-quote .title { font-size:1.4rem; font-weight:800; }
 .terminal-quote .sub { font-size:.85rem; color:var(--muted); margin-top:2px; }
@@ -189,7 +189,7 @@ def calculate_atr(df, period=14):
     df['ATR'] = df['TR'].rolling(period).mean()
     return df
 
-# 🤖 Gemini API 分析診斷函式
+# 🤖 多重自動相容退回（Fallback）機制的 Gemini API 診斷函式
 def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     c_code = str(data_dict.get('股票代碼', data_dict.get('target_code', '')))
     c_name = str(data_dict.get('股票名稱', data_dict.get('target_name', '')))
@@ -229,23 +229,38 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
 3. **⚠️ 風險提示與嚴格停損位**：指出該股當前最大的風險因子（如本益比過高、高檔開高走低賣壓、動能不足等），並給出精確的**停損參考價格**。
 """
 
+    models_to_try = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-flash-latest']
+
+    # 1. 優先嘗試 google-genai 新版 SDK
     try:
         from google import genai
         client = genai.Client(api_key=key_to_use)
-        response = client.models.generate_content(
-            model='gemini-1.5-flash',
-            contents=prompt,
-        )
-        return response.text
-    except Exception as e1:
-        try:
-            import google.generativeai as old_genai
-            old_genai.configure(api_key=key_to_use)
-            model = old_genai.GenerativeModel('gemini-1.5-flash')
-            res = model.generate_content(prompt)
-            return res.text
-        except Exception as e2:
-            return f"❌ 呼叫 Gemini API 分析時發生錯誤: {str(e1)}"
+        for m in models_to_try:
+            try:
+                response = client.models.generate_content(model=m, contents=prompt)
+                if response and response.text:
+                    return response.text
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    # 2. 備援嘗試 google.generativeai 傳統 SDK
+    try:
+        import google.generativeai as old_genai
+        old_genai.configure(api_key=key_to_use)
+        for m in models_to_try:
+            try:
+                model = old_genai.GenerativeModel(m)
+                res = model.generate_content(prompt)
+                if res and res.text:
+                    return res.text
+            except Exception:
+                continue
+    except Exception as e_old:
+        pass
+
+    return "❌ 呼叫 Gemini API 分析時發生錯誤: 所有模型別名皆回應 404 或無效，請確認金鑰權限與 API 計費狀態。"
 
 def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high, prev_low, balance_point, chip_data):
     support_price = round(min(ma5, prev_low), 2)
@@ -329,7 +344,7 @@ def render_smart_stock_table(df_display, key_prefix):
         if f"ai_eval_{c_code}" in st.session_state:
             st.markdown(f"<div class='navy-card'>{st.session_state[f'ai_eval_{c_code}']}</div>", unsafe_allow_html=True)
 
-# 頁面 1 至 4 (保持完美架構)
+# 頁面 1 至 4
 if app_mode == "🚀 6層量化戰略選股":
     st.title("🚀 台股 6 層量化選股模型 — 雙引擎戰略選股")
     st.caption("融合「獲利加速度 + 雙模式技術形態 + 籌碼大戶 + PEG估值 + 11大排雷系統」，自動連線 API 獲取最新市場價格。")
@@ -347,8 +362,7 @@ if app_mode == "🚀 6層量化戰略選股":
         else:
             with st.spinner("正在連線永豐金伺服器，抓取最新真實股票成交價與 K 線數據..."):
                 try:
-                    api = sj.Shioaji(simulation=True)
-                    api.login(api_key=api_key, secret_key=secret_key)
+                    api = sj.Shioaji(simulation=True); api.login(api_key=api_key, secret_key=secret_key)
                     pool = ["4991", "4908", "2466", "4764", "4971", "3006", "2330", "2317", "2454", "3035", "3037", "3624", "3042", "2382", "3231", "2303", "2603", "2615", "1513", "1519"]
                     contracts = [api.Contracts.Stocks.get(code) for code in pool if api.Contracts.Stocks.get(code)]
                     snaps = api.snapshots(contracts)
@@ -445,7 +459,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
         render_smart_stock_table(pd.DataFrame([{"股票代碼": "2466", "股票名稱": "冠西電", "最新價": 141.0, "漲跌幅(%)": +9.73, "成交量(張)": 8500, "篩選特徵": "🚀 5分K帶量發動"}]), "flt")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (對齊新圖多儀表板戰情室 UI)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (專業多儀表板 UI)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
@@ -558,7 +572,7 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-        # 🎯 專業對齊新圖 layout：左邊 75% 主視窗，右邊 25% 關鍵價位看板
+        # 左右分欄：左 75% 主視窗，右 25% 關鍵價位看板
         left_main, right_panel = st.columns([3, 1])
 
         with left_main:
@@ -580,7 +594,7 @@ else:
                 fig.update_layout(height=420, margin=dict(l=10, r=10, t=10, b=10), template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis_rangeslider_visible=False)
                 st.plotly_chart(fig, use_container_width=True)
 
-            # 2. K線下方：三大法人與籌碼集中度雙表格 (對齊新圖左下與右下)
+            # 2. K線下方：三大法人與籌碼集中度雙表格
             st.markdown("##### 📊 籌碼面進階數據 (三大法人近5日買賣超 & 籌碼集中度)")
             c_left, c_right = st.columns(2)
             with c_left:
@@ -598,7 +612,7 @@ else:
                     {"日期": "09/30", "主力買賣超": "-310", "籌碼集中度": "-2.1%", "買超前5總和": "48.5%"},
                 ]), use_container_width=True)
 
-        # 🎯 右側欄：對齊新圖黃框壓力/支撐看板
+        # 🎯 右側欄：對齊黃框壓力/支撐看板
         with right_panel:
             st.markdown(f"""
             <div class="level-container">
