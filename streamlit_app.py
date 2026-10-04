@@ -8,12 +8,15 @@ import time
 import json
 import os
 import requests
+import asyncio
+import threading
+from websockets.server import serve
 from datetime import datetime, timedelta
 
 st.set_page_config(page_title="三維定位法 & 6層量化選股與當沖盯盤全功能系統", layout="wide")
 
 # =========================================================
-# 🎨 UI 主題（專業券商級戰情室 Terminal 主題：高對比高清亮化）
+# 🎨 UI 主題（專業券商級戰情室 Terminal 主題）
 # =========================================================
 _CSS = """
 <style>
@@ -87,21 +90,6 @@ input, [data-baseweb="select"] > div { background:var(--panel2) !important; colo
 .row .name { font-size:1rem; font-weight:700; color:#FFFFFF; }
 .row .code { color:var(--muted); font-size:.82rem; margin-left:6px; }
 .row .px { font-size:1.15rem; font-weight:800; text-align:right; }
-
-/* 對齊大戶投 APP 頂部報價橫幅 */
-.terminal-quote {
-  background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px 20px; margin-bottom:12px;
-}
-.terminal-quote .top-info { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
-.terminal-quote .title { font-size:1.5rem; font-weight:800; }
-.terminal-quote .big-px { font-size:2.8rem; font-weight:900; line-height:1; }
-.terminal-quote .grid-info {
-  display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:12px;
-  background:var(--panel2); border-radius:8px; padding:12px 16px; border:1px solid var(--line);
-}
-.terminal-quote .grid-cell { font-size:.92rem; display:flex; justify-content:space-between; align-items:center; }
-.terminal-quote .grid-cell span { color:#E6EBF3 !important; font-weight:600; }
-.terminal-quote .grid-cell b { font-size:1.05rem; font-weight:800; }
 </style>
 """
 st.markdown(_CSS, unsafe_allow_html=True)
@@ -200,6 +188,49 @@ else:
     st.sidebar.success("✅ FinMind Token 已自動載入！")
 
 
+# =========================================================
+# ⚡ 真正微秒級/毫秒級 WebSocket 推播廣播引擎
+# =========================================================
+CONNECTED_CLIENTS = set()
+
+async def ws_handler(websocket):
+    CONNECTED_CLIENTS.add(websocket)
+    try:
+        async for message in websocket:
+            pass
+    except Exception:
+        pass
+    finally:
+        CONNECTED_CLIENTS.remove(websocket)
+
+def start_websocket_server():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    async def run_server():
+        async with serve(ws_handler, "0.0.0.0", 8765):
+            await asyncio.Future() # run forever
+    try:
+        loop.run_until_complete(run_server())
+    except Exception:
+        pass
+
+if "ws_thread_started" not in st.session_state:
+    st.session_state["ws_thread_started"] = True
+    t = threading.Thread(target=start_websocket_server, daemon=True)
+    t.start()
+
+def broadcast_tick_microsecond(tick_data):
+    if CONNECTED_CLIENTS:
+        msg = json.dumps(tick_data)
+        async def _send():
+            for ws in list(CONNECTED_CLIENTS):
+                try:
+                    await ws.send(msg)
+                except Exception:
+                    pass
+        asyncio.run(_send())
+
+
 # 🌐 FinMind API：真實抓取近 5 日三大法人買賣超數據
 @st.cache_data(ttl=3600)
 def fetch_finmind_chip_data(stock_code, token=""):
@@ -243,23 +274,6 @@ def fetch_finmind_chip_data(stock_code, token=""):
     return pd.DataFrame()
 
 
-def play_sound(freq=880, duration=0.5, enable_sound=True):
-    if enable_sound:
-        sound_html = f"""
-        <script>
-        var context = new (window.AudioContext || window.webkitAudioContext)();
-        var osc = context.createOscillator();
-        var gain = context.createGain();
-        osc.type = 'sawtooth';
-        osc.frequency.value = {freq};
-        osc.connect(gain);
-        gain.connect(context.destination);
-        osc.start();
-        gain.gain.exponentialRampToValueAtTime(0.00001, context.currentTime + {duration});
-        </script>
-        """
-        st.components.v1.html(sound_html, height=0)
-
 def get_stock_code_and_name(user_input):
     target = user_input.strip()
     if target.isdigit():
@@ -280,7 +294,7 @@ def calculate_atr(df, period=14):
     df['ATR'] = df['TR'].rolling(period).mean()
     return df
 
-# 🤖 REST API 直連 Gemini (具備動態查詢可用模型與連鎖退回機制)
+# 🤖 REST API 直連 Gemini (具備動態模型查詢與備援機制)
 def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     c_code = str(data_dict.get('股票代碼', data_dict.get('target_code', '')))
     c_name = str(data_dict.get('股票名稱', data_dict.get('target_name', '')))
@@ -328,7 +342,6 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
         }]
     }
 
-    # 1. 優先向 Google 查詢該 API Key 授權可用的 generateContent 模型清單
     list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key_to_use}"
     available_endpoints = []
     try:
@@ -343,7 +356,6 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     except Exception:
         pass
 
-    # 2. 預設多重備援端點列表
     fallback_endpoints = [
         f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key_to_use}",
         f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={key_to_use}",
@@ -571,7 +583,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
     st.title("🔥 短線多頭精選 — 當沖強勢股篩選雷達")
     st.caption("掃描上市櫃成交額前段個股，嚴格依據 5 大核心指標過濾無量假突破與死股。")
 
-    with st.sidebar.expander("⚙️ 篩選參數設定", expanded=True):
+    with st.sidebar.expander("⚙️️ 篩選參數設定", expanded=True):
         param_vol_mult = st.number_input("① 今量達前5日均量倍數", value=1.5, step=0.1)
         param_break_days = st.number_input("③ 站上前 N 日高點 (壓力位)", value=60, step=10)
         param_min_amount = st.number_input("④ 近20日均成交額門檻 (萬元)", value=5000, step=1000)
@@ -622,7 +634,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統
+# 頁面 5：📈 三維定位與當沖盯盤系統 (含微秒級 WebSocket 逐筆 DOM 推播組件)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
@@ -639,10 +651,7 @@ else:
            * **風格定位**：短線當沖 (停損3~5%/停利5~8%)、波段 (停損5~10%/停利10~20%)、長線 (停損10~15%/停利20~50%)。
         """)
 
-    # 自動刷新與警示音選單
-    auto_refresh = st.sidebar.checkbox("開啟自動盯盤刷新", value=False)
     enable_sound = st.sidebar.checkbox("開啟轉折警示音效", value=True)
-    refresh_interval = st.sidebar.slider("刷新間隔 (秒)", min_value=3, max_value=60, value=5, step=1)
 
     if "selected_stock" not in st.session_state: st.session_state["selected_stock"] = "4991"
 
@@ -692,10 +701,10 @@ else:
         st.markdown("<h6 class='text-red'>🎯 手動目標/壓力價 (右側 / 紅色)</h6>", unsafe_allow_html=True)
         custom_target_price = st.number_input("目標價 (元)", value=float(st.session_state.get("custom_target", 0.0)), step=0.5, label_visibility="collapsed")
 
-    need_fetch = ("analysis_data" not in st.session_state) or (st.session_state["analysis_data"]["target_code"] != target_code) or auto_refresh
+    need_fetch = ("analysis_data" not in st.session_state) or (st.session_state["analysis_data"]["target_code"] != target_code)
 
     if need_fetch and api_key and secret_key:
-        with st.spinner(f"正在讀取【{target_code} {target_name}】戰情室即時數據..."):
+        with st.spinner(f"正在讀取【{target_code} {target_name}】戰情室即時數據與訂閱 WebSocket Tick..."):
             api = None
             try:
                 api = sj.Shioaji(simulation=True); api.login(api_key=api_key, secret_key=secret_key)
@@ -721,6 +730,27 @@ else:
                         kbars = api.kbars(contract=contract, start=start_date, end=end_date)
                         df_raw = pd.DataFrame({"ts": kbars.ts, "Open": kbars.Open, "High": kbars.High, "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume})
 
+                        # ⚡ 綁定 Shioaji WebSocket 微秒級 On-Tick 推播回呼
+                        @api.on_tick_stk_v1()
+                        def on_tick_cb(exchange, tick):
+                            t_price = safe_float(getattr(tick, 'close', 0.0))
+                            t_vol = int(safe_float(getattr(tick, 'volume', 0)))
+                            t_time = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                            
+                            tick_payload = {
+                                "price": t_price,
+                                "volume": t_vol,
+                                "time": t_time,
+                                "target_price": custom_target_price,
+                                "stop_price": custom_stop_price
+                            }
+                            broadcast_tick_microsecond(tick_payload)
+
+                        try:
+                            api.quote.subscribe(contract, quote_type=sj.constant.QuoteType.Tick)
+                        except Exception:
+                            pass
+
                         st.session_state["analysis_data"] = {
                             "target_code": target_code, "target_name": target_name, "curr_price": curr_price,
                             "high_price": high_price, "low_price": low_price, "open_price": open_price, "volume": volume,
@@ -730,10 +760,6 @@ else:
                             "balance_point": (high_price + low_price + curr_price) / 3, "df_raw": df_raw
                         }
             except Exception as e: st.error(f"連線失敗: {str(e)}")
-            finally:
-                if api:
-                    try: api.logout()
-                    except: pass
 
     if "analysis_data" in st.session_state and st.session_state["analysis_data"]["target_code"] == target_code:
         data = st.session_state["analysis_data"]
@@ -773,28 +799,67 @@ else:
         pct = ((curr_price - open_price) / open_price) * 100 if open_price else 0
         t_cls = tone(pct)
 
-        # 頂部報價橫幅
-        st.markdown(f"""
-        <div class="terminal-quote">
-            <div class="top-info">
+        # ⚡【微秒級逐筆 JavaScript DOM 更新面板】0 閃爍 / 無須 reload 網頁
+        ws_live_html = f"""
+        <div style="background:#121721; border:1px solid #253042; border-radius:12px; padding:16px 20px; margin-bottom:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div>
-                    <span class="title">{data['target_code']} {data['target_name']}</span>
+                    <span style="font-size:1.5rem; font-weight:800; color:#FFFFFF;">{data['target_code']} {data['target_name']}</span>
+                    <span style="font-size:0.85rem; color:#8D99AE; margin-left:10px;">⚡ WebSocket 微秒級 Tick 直連監控</span>
                 </div>
                 <div style="text-align:right;">
-                    <span class="big-px {t_cls}">{curr_price:.2f}</span>
-                    <span style="font-size:1.2rem; margin-left:8px;" class="{t_cls}">{pct:+.2f}%</span>
+                    <span id="live-price" class="{t_cls}" style="font-size:2.8rem; font-weight:900; line-height:1;">{curr_price:.2f}</span>
+                    <span id="live-pct" class="{t_cls}" style="font-size:1.2rem; margin-left:8px;">{pct:+.2f}%</span>
                 </div>
             </div>
-            <div class="grid-info">
-                <div class="grid-cell"><span>最高</span><b class="text-red">{high_price:.2f}</b></div>
-                <div class="grid-cell"><span>最低</span><b class="text-green">{low_price:.2f}</b></div>
-                <div class="grid-cell"><span>漲停</span><b class="text-red">{limit_up:.2f}</b></div>
-                <div class="grid-cell"><span>跌停</span><b class="text-green">{limit_down:.2f}</b></div>
-                <div class="grid-cell"><span>均價</span><b style="color:var(--gold);">{avg_price:.2f}</b></div>
-                <div class="grid-cell"><span>總量</span><b>{data.get('volume', 0):,} 張</b></div>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:12px; background:#1A2130; border-radius:8px; padding:12px 16px; margin-top:12px; border:1px solid #253042;">
+                <div style="display:flex; justify-content:space-between;"><span>最高</span><b style="color:#F6465D;">{high_price:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span>最低</span><b style="color:#1FC98B;">{low_price:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span>漲停</span><b style="color:#F6465D;">{limit_up:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span>跌停</span><b style="color:#1FC98B;">{limit_down:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span>均價</span><b style="color:#FFD166;">{avg_price:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span>最新撮合時間</span><b id="live-time" style="color:#4C8DFF;">--:--:--.--</b></div>
             </div>
+            <div id="alarm-box" style="margin-top:8px; font-weight:700;"></div>
         </div>
-        """, unsafe_allow_html=True)
+
+        <script>
+            const host = window.location.hostname || "localhost";
+            const ws = new WebSocket("ws://" + host + ":8765");
+            const openPx = {open_price};
+
+            ws.onmessage = function(event) {{
+                const data = JSON.parse(event.data);
+                const px = data.price;
+                const pxElem = document.getElementById("live-price");
+                const pctElem = document.getElementById("live-pct");
+                const timeElem = document.getElementById("live-time");
+                const alarmElem = document.getElementById("alarm-box");
+
+                pxElem.innerText = px.toFixed(2);
+                timeElem.innerText = data.time;
+
+                if (openPx > 0) {{
+                    const diffPct = ((px - openPx) / openPx) * 100;
+                    pctElem.innerText = (diffPct >= 0 ? "+" : "") + diffPct.toFixed(2) + "%";
+                    if (diffPct > 0) {{
+                        pxElem.className = "up"; pctElem.className = "up";
+                    }} else if (diffPct < 0) {{
+                        pxElem.className = "down"; pctElem.className = "down";
+                    }}
+                }}
+
+                if (data.target_price > 0 && px >= data.target_price) {{
+                    alarmElem.innerHTML = "<span style='color:#F6465D;'>🎯【目標價觸發】最新 Tick " + px + " 元已達預設目標位！</span>";
+                }} else if (data.stop_price > 0 && px <= data.stop_price) {{
+                    alarmElem.innerHTML = "<span style='color:#1FC98B;'>🚨【停損價觸發】最新 Tick " + px + " 元已觸及預設停損位！</span>";
+                }} else {{
+                    alarmElem.innerHTML = "";
+                }}
+            }};
+        </script>
+        """
+        st.components.v1.html(ws_live_html, height=180)
 
         # 🎯 四大停損與停利參考試算卡片
         st.markdown("#### 2️⃣ 四大停損與停利參考設定 (多重停損綠色 / 多重停利紅色)")
@@ -953,15 +1018,3 @@ else:
         # 展開 Gemini AI 評估報告
         if f"monitor_ai_eval_{target_code}" in st.session_state:
             st.markdown(f"<div class='navy-card'>{st.session_state[f'monitor_ai_eval_{target_code}']}</div>", unsafe_allow_html=True)
-
-        # 警示音觸發
-        if custom_target_price > 0 and curr_price >= custom_target_price:
-            play_sound(freq=1000, duration=0.8, enable_sound=enable_sound)
-            st.success(f"🎯 **【目標價觸發】**：【{data['target_name']}】現價 `{curr_price}` 元已達預設目標價 `{custom_target_price}` 元！")
-        if custom_stop_price > 0 and curr_price <= custom_stop_price:
-            play_sound(freq=300, duration=0.8, enable_sound=enable_sound)
-            st.error(f"🚨 **【停損價觸發】**：【{data['target_name']}】現價 `{curr_price}` 元已觸及預設停損價 `{custom_stop_price}` 元！")
-
-    if auto_refresh:
-        time.sleep(refresh_interval)
-        st.rerun()
