@@ -130,19 +130,36 @@ def level_card_html(title, items, color_class):
     return f'<div class="lv"><h5 class="{color_class}">{title}</h5>{rows}</div>'
 
 
-# 🧮 計算買進總成本與損益兩平價（含 2 折手續費與 0.3% 證交稅）
-def calculate_breakeven_price(buy_price, qty_sheets=1, discount=0.2, tax_rate=0.003):
-    if buy_price <= 0 or qty_sheets <= 0:
-        return 0.0, 0.0, 0.0
+# 🧮 計算買進總成本與損益兩平價（支援多筆分批買進試算）
+def calculate_breakeven_price(trades_list, discount=0.2, tax_rate=0.003):
+    if not trades_list:
+        return 0.0, 0.0, 0.0, 0, 0.0
     
-    shares = qty_sheets * 1000
-    buy_amt = buy_price * shares
-    buy_fee = math.floor(buy_amt * 0.001425 * discount)
-    if buy_fee < 20: buy_fee = 20
-    total_buy_cost = buy_amt + buy_fee
+    total_shares = 0
+    total_buy_cost = 0.0
+    total_fee = 0.0
+    weighted_price_sum = 0.0
 
+    for t in trades_list:
+        p = safe_float(t.get("price", 0.0))
+        q = int(safe_float(t.get("sheets", 0)))
+        if p > 0 and q > 0:
+            shares = q * 1000
+            amt = p * shares
+            fee = math.floor(amt * 0.001425 * discount)
+            if fee < 20: fee = 20
+            
+            total_shares += shares
+            total_buy_cost += (amt + fee)
+            total_fee += fee
+            weighted_price_sum += (p * shares)
+
+    if total_shares == 0:
+        return 0.0, 0.0, 0.0, 0, 0.0
+
+    avg_price = weighted_price_sum / total_shares
     factor = 1.0 - (0.001425 * discount) - tax_rate
-    raw_breakeven = total_buy_cost / (shares * factor)
+    raw_breakeven = total_buy_cost / (total_shares * factor)
 
     def get_tick_size(price):
         if price < 10: return 0.01
@@ -155,20 +172,18 @@ def calculate_breakeven_price(buy_price, qty_sheets=1, discount=0.2, tax_rate=0.
     tick = get_tick_size(raw_breakeven)
     breakeven_price = math.ceil(raw_breakeven / tick) * tick
 
-    return breakeven_price, total_buy_cost, buy_fee
+    total_sheets = total_shares // 1000
+    return breakeven_price, total_buy_cost, total_fee, total_sheets, avg_price
 
 
 # 🧮 計算給定現價下的未實現損益與報酬率
-def calculate_pnl_and_roi(curr_price, buy_price, qty_sheets=1, discount=0.2, tax_rate=0.003):
-    if curr_price <= 0 or buy_price <= 0 or qty_sheets <= 0:
+def calculate_pnl_and_roi(curr_price, trades_list, discount=0.2, tax_rate=0.003):
+    breakeven_price, total_buy_cost, total_fee, total_sheets, avg_price = calculate_breakeven_price(trades_list, discount, tax_rate)
+    if curr_price <= 0 or total_buy_cost <= 0 or total_sheets <= 0:
         return 0.0, 0.0
-    shares = qty_sheets * 1000
-    buy_amt = buy_price * shares
-    buy_fee = math.floor(buy_amt * 0.001425 * discount)
-    if buy_fee < 20: buy_fee = 20
-    total_buy_cost = buy_amt + buy_fee
-
-    sell_amt = curr_price * shares
+    
+    total_shares = total_sheets * 1000
+    sell_amt = curr_price * total_shares
     sell_fee = math.floor(sell_amt * 0.001425 * discount)
     if sell_fee < 20: sell_fee = 20
     sell_tax = math.floor(sell_amt * tax_rate)
@@ -183,7 +198,7 @@ def calculate_pnl_and_roi(curr_price, buy_price, qty_sheets=1, discount=0.2, tax
 WATCHLIST_FILE = "watchlist.json"
 
 def load_saved_watchlist():
-    default_list = ["2360 致茂", "8111 立碁", "4971 IET-KY", "3624 光頡", "4991 環宇-KY", "2330 台積電"]
+    default_list = ["3624 光頡", "2360 致茂", "8111 立碁", "4971 IET-KY", "4991 環宇-KY", "2330 台積電"]
     if os.path.exists(WATCHLIST_FILE):
         try:
             with open(WATCHLIST_FILE, "r", encoding="utf-8") as f:
@@ -202,7 +217,7 @@ def save_watchlist_to_file(watchlist):
         st.error(f"寫入自選股設定檔失敗: {str(e)}")
 
 
-# 💾 2. 個人持股成本 (買進價 & 張數 & 停損目標價) 永久 JSON 儲存與讀取
+# 💾 2. 個人持股成本多筆交易明細永久 JSON 儲存與讀取
 HOLDINGS_FILE = "holdings.json"
 
 def load_saved_holdings():
@@ -216,11 +231,10 @@ def load_saved_holdings():
             pass
     return {}
 
-def save_stock_holding(code, buy_cost, buy_sheets, custom_stop, custom_target):
+def save_stock_holding_multi(code, trades_list, custom_stop, custom_target):
     holdings = load_saved_holdings()
     holdings[str(code)] = {
-        "buy_cost": float(buy_cost),
-        "buy_sheets": int(buy_sheets),
+        "trades": trades_list,
         "custom_stop": float(custom_stop),
         "custom_target": float(custom_target)
     }
@@ -471,7 +485,7 @@ def calculate_atr(df, period=14):
     df['ATR'] = df['TR'].rolling(period).mean()
     return df
 
-# 🤖 升級版：高盛機構級全方位 AI 診斷引擎 (完美解決 404 URL 錯誤與數據精準化)
+# 🤖 升級版：高盛機構級全方位 AI 診斷引擎
 def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     c_code = str(data_dict.get('股票代碼', data_dict.get('target_code', '')))
     c_name = str(data_dict.get('股票名稱', data_dict.get('target_name', '')))
@@ -525,7 +539,6 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
         }]
     }
 
-    # 動態查詢可用模型，若查詢受限則自動退回相容 Endpoint
     available_endpoints = []
     try:
         list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key_to_use}"
@@ -600,13 +613,13 @@ def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high,
         "strategy": strategy
     }
 
-# 精確基本面資料庫修正（包含 2360 致茂 2026 法說會最新數據）
+# 精確基本面資料庫修正（包含 3624 光頡、2360 致茂最新數據）
 def check_fundamental_6layer(code):
     fund_db = {
+        "3624": {"eps": 1.8, "yoy": 35.2, "roe": 14.5, "pe": 20.5, "peg": 0.58, "catalyst": "車用與工業被動元件急單拉貨"},
         "2360": {"eps": 12.15, "yoy": 110.2, "roe": 28.5, "pe": 41.2, "peg": 0.75, "catalyst": "AI 2500W+ SLT水冷溫控/CPO光測試/HVDC高壓架構"},
         "8111": {"eps": 1.5, "yoy": 38.5, "roe": 13.2, "pe": 22.0, "peg": 0.60, "catalyst": "光電模組與半導體封測成長"},
         "4971": {"eps": 1.3, "yoy": 42.0, "roe": 11.5, "pe": 24.0, "peg": 0.57, "catalyst": "高頻磊晶片訂單升溫"},
-        "3624": {"eps": 1.8, "yoy": 35.2, "roe": 14.5, "pe": 20.5, "peg": 0.58, "catalyst": "車用與工業被動元件急單拉貨"},
         "4991": {"eps": 1.2, "yoy": 120.5, "roe": 15.2, "pe": 28.5, "peg": 0.55, "catalyst": "化合物半導體/CPO光通訊急單"},
         "4908": {"eps": 2.5, "yoy": 85.0, "roe": 18.2, "pe": 22.0, "peg": 0.48, "catalyst": "CPO光收發模組強勁拉貨"},
         "2466": {"eps": 1.1, "yoy": 45.0, "roe": 12.5, "pe": 25.0, "peg": 0.62, "catalyst": "光電元件與繼電器需求復甦"},
@@ -677,7 +690,7 @@ if app_mode == "🔍 FinMind 全市場掃描器":
         else:
             with st.spinner("正在連線 FinMind 與永豐金 API，比對 11 檔完全符合條件之強勢股..."):
                 try:
-                    target_11_codes = ["2360", "8111", "4971", "3624", "4991", "4908", "2466", "3006", "2330", "2454", "2317"]
+                    target_11_codes = ["3624", "2360", "8111", "4971", "4991", "4908", "2466", "3006", "2330", "2454", "2317"]
                     contracts = [api.Contracts.Stocks.get(code) for code in target_11_codes if api.Contracts.Stocks.get(code)]
                     snaps = api.snapshots(contracts)
                     snap_dict = {s.code: s for s in snaps}
@@ -708,7 +721,7 @@ if app_mode == "🔍 FinMind 全市場掃描器":
                         yoy_val = safe_float(fund.get("yoy", 20.0))
 
                         foreign_buy = {
-                            "2360": 4250, "8111": 1120, "4971": 650, "3624": 1850, "4991": 3200, "4908": 1420,
+                            "3624": 1850, "2360": 4250, "8111": 1120, "4971": 650, "4991": 3200, "4908": 1420,
                             "2466": 890, "3006": 2100, "2330": 15400, "2454": 4150, "2317": 8900
                         }.get(code, 1000)
 
@@ -745,10 +758,10 @@ if app_mode == "🔍 FinMind 全市場掃描器":
         months = ["2023/10", "2023/11", "2023/12", "2024/01", "2024/02", "2024/03", "2024/04", "2024/05", "2024/06", "2024/07", "2024/08", "2024/09"]
         
         revenue_trends = {
+            "3624 光頡": ([4.2, 4.1, 4.0, 4.3, 4.2, 4.5, 4.8, 5.2, 5.6, 5.9, 6.2, 6.5], 7, "5月車用急單轉折"),
             "2360 致茂": ([18.2, 17.5, 19.0, 18.5, 21.0, 24.5, 29.8, 35.2, 42.1, 45.8, 48.2, 52.0], 6, "4月半導體SLT量測急單轉折"),
             "8111 立碁": ([1.2, 1.1, 1.3, 1.2, 1.4, 1.6, 1.9, 2.2, 2.5, 2.8, 3.1, 3.4], 7, "5月光電半導體封測轉折"),
             "4971 IET-KY": ([0.8, 0.7, 0.9, 0.8, 1.0, 1.2, 1.4, 1.8, 2.1, 2.4, 2.7, 3.0], 7, "5月高頻磊晶急單轉折"),
-            "3624 光頡": ([4.2, 4.1, 4.0, 4.3, 4.2, 4.5, 4.8, 5.2, 5.6, 5.9, 6.2, 6.5], 7, "5月車用急單轉折"),
             "2330 台積電": ([1600, 1580, 1620, 1650, 1610, 1720, 1850, 1980, 2080, 2150, 2220, 2300], 5, "3月CoWoS產能擴充轉折")
         }
 
@@ -793,7 +806,7 @@ elif app_mode == "🚀 6層量化戰略選股":
         else:
             with st.spinner("正在連線永豐金伺服器，抓取最新真實股票成交價與 K 線數據..."):
                 try:
-                    pool = ["2360", "8111", "4971", "4991", "4908", "2466", "4764", "3006", "2330", "2317", "2454"]
+                    pool = ["3624", "2360", "8111", "4971", "4991", "4908", "2466", "4764", "3006", "2330", "2317", "2454"]
                     contracts = [api.Contracts.Stocks.get(code) for code in pool if api.Contracts.Stocks.get(code)]
                     snaps = api.snapshots(contracts)
                     snap_dict = {s.code: s for s in snaps}
@@ -861,7 +874,7 @@ elif app_mode == "💡 大戶投 — 智慧選股":
         tab_rt, tab_pv, tab_chip, tab_fin = st.tabs(["⚡ 即時排行", "📊 價量指標", "💎 籌碼精選", "🏆 經營績效"])
         
         with tab_rt:
-            df_rt = fetch_real_stock_snapshots(["2360", "8111", "4971", "4991", "4908", "2330"], "🔥 大戶鎖單")
+            df_rt = fetch_real_stock_snapshots(["3624", "2360", "8111", "4971", "4991", "2330"], "🔥 大戶鎖單")
             render_smart_stock_table(df_rt, "smart_rt")
             
         with tab_pv:
@@ -882,7 +895,7 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
     if not api_hot: st.error("請先填寫永豐金 API Key！")
     else:
         try:
-            hot_list = ["2360", "8111", "4971", "4991", "4908", "2466", "4764", "3006", "2330", "2317", "2454", "3035"]
+            hot_list = ["3624", "2360", "8111", "4971", "4991", "4908", "2466", "4764", "3006", "2330", "2317", "2454"]
             contracts = [api_hot.Contracts.Stocks.get(code) for code in hot_list if api_hot.Contracts.Stocks.get(code)]
             snaps = api_hot.snapshots(contracts)
             snap_dict = {s.code: s for s in snaps}
@@ -935,7 +948,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
         else:
             with st.spinner("正在掃描成交額熱門股票並比對 5 大極限條件..."):
                 try:
-                    target_candidates = ["2360", "8111", "4971", "4991", "4908", "2466", "4764", "3006", "2330", "2317", "2454", "3035"]
+                    target_candidates = ["3624", "2360", "8111", "4971", "4991", "4908", "2466", "4764", "3006", "2330", "2317", "2454"]
                     filter_results = []
                     start_date = (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d")
                     end_date = datetime.now().strftime("%Y-%m-%d")
@@ -984,7 +997,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (標題附帶最近一個真實交易日收盤價)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (多筆買進紀錄加權平均成本版)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
@@ -1001,7 +1014,7 @@ else:
            * **風格定位**：短線當沖 (停損3~5%/停利5~8%)、波段 (停損5~10%/停利10~20%)、長線 (停損10~15%/停利20~50%)。
         """)
 
-    if "selected_stock" not in st.session_state: st.session_state["selected_stock"] = "2360"
+    if "selected_stock" not in st.session_state: st.session_state["selected_stock"] = "3624"
 
     st.subheader("⭐ 自選股快捷區")
     if st.session_state["watchlist"]:
@@ -1043,34 +1056,74 @@ else:
     with col_c3:
         chk_momentum = st.checkbox("監控大戶動能爆量 (買賣單比 > 1.3)", value=True)
 
-    # 💾 自動讀取該股於 holdings.json 中永久保存的歷史成本紀錄
+    # 💾 自動讀取持股交易紀錄
     holdings_db = load_saved_holdings()
     saved_info = holdings_db.get(str(target_code), {})
+    current_trades = saved_info.get("trades", [])
+
+    # 若歷史資料為單筆，自動轉換為陣列格式
+    if not current_trades and "buy_cost" in saved_info and saved_info["buy_cost"] > 0:
+        current_trades = [{
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "price": float(saved_info.get("buy_cost", 0.0)),
+            "sheets": int(saved_info.get("buy_sheets", 1))
+        }]
 
     if "last_stock" not in st.session_state or st.session_state["last_stock"] != target_code:
         st.session_state["last_stock"] = target_code
         if "analysis_data" in st.session_state: del st.session_state["analysis_data"]
 
-    # 💰 交易計劃與個人持股成本計算器 (含即時未實現損益 & 報酬率卡片)
-    st.markdown("##### ⚙️ 交易計劃與個人持股成本設定 (含 2折手續費 + 0.3% 證交稅損益兩平試算)")
-    col_p1, col_p2, col_p3, col_p4, col_stop, col_target = st.columns([1, 0.8, 1.1, 1.1, 1, 1])
+    # 💰 交易計劃與個人持股多筆買進成本紀錄區
+    st.markdown("##### ⚙️ 交易計劃與多筆買進建倉紀錄 (自動試算加權平均成本、投入本金與損益兩平價)")
     
+    with st.expander(f"📝【{current_stock_lbl}】分批買進明細管理", expanded=True):
+        updated_trades = []
+        for t_idx, trade in enumerate(current_trades):
+            c_d, c_p, c_s, c_del = st.columns([1.2, 1.2, 1, 0.8])
+            with c_d:
+                t_date = st.text_input(f"買進日期 #{t_idx+1}", value=trade.get("date", datetime.now().strftime("%Y-%m-%d")), key=f"t_date_{target_code}_{t_idx}")
+            with c_p:
+                t_price = st.number_input(f"買進單價 (元) #{t_idx+1}", value=float(trade.get("price", 0.0)), step=0.5, key=f"t_price_{target_code}_{t_idx}")
+            with c_s:
+                t_sheets = st.number_input(f"買進張數 #{t_idx+1}", value=int(trade.get("sheets", 1)), min_value=1, step=1, key=f"t_sheets_{target_code}_{t_idx}")
+            with c_del:
+                st.write(""); st.write("")
+                if st.button("🗑️ 刪除", key=f"btn_del_t_{target_code}_{t_idx}", use_container_width=True):
+                    continue
+            updated_trades.append({"date": t_date, "price": t_price, "sheets": t_sheets})
+
+        if st.button("➕ 新增一筆買進紀錄", key=f"btn_add_trade_{target_code}"):
+            updated_trades.append({"date": datetime.now().strftime("%Y-%m-%d"), "price": 0.0, "sheets": 1})
+            st.rerun()
+
+    # 計算加權平均成本與連動卡片
+    breakeven_p, total_cost, b_fee, total_sheets, avg_buy_price = calculate_breakeven_price(updated_trades, discount=0.2, tax_rate=0.003)
+
+    col_p1, col_p2, col_p3, col_p4, col_stop, col_target = st.columns([1.1, 0.9, 1.1, 1.1, 1, 1])
     with col_p1:
-        buy_cost_input = st.number_input("💵 買進成本價 (元)", value=float(saved_info.get("buy_cost", 0.0)), step=0.5, key=f"cost_input_{target_code}")
+        st.markdown(f"""
+        <div style="background:var(--panel2); border:1px solid var(--accent); border-radius:8px; padding:6px 12px; text-align:center;">
+            <div style="font-size:0.8rem; color:#D1D8E0; font-weight:600;">📊 加權平均買進成本</div>
+            <div style="font-size:1.2rem; font-weight:900; color:var(--gold);">{avg_buy_price:.2f} 元</div>
+        </div>
+        """, unsafe_allow_html=True)
     with col_p2:
-        buy_sheets_input = st.number_input("📦 買進張數", value=int(saved_info.get("buy_sheets", 1)), min_value=1, step=1, key=f"sheets_input_{target_code}")
-    
-    # 預先抓取或試算目前最新成交價
+        st.markdown(f"""
+        <div style="background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:6px 12px; text-align:center;">
+            <div style="font-size:0.8rem; color:#D1D8E0; font-weight:600;">📦 累計總持股</div>
+            <div style="font-size:1.2rem; font-weight:900; color:#FFFFFF;">{total_sheets} 張</div>
+        </div>
+        """, unsafe_allow_html=True)
+
     latest_price = 0.0
     if "analysis_data" in st.session_state and st.session_state["analysis_data"]["target_code"] == target_code:
         latest_price = safe_float(st.session_state["analysis_data"].get("curr_price", 0.0))
 
-    calc_pnl, calc_roi = calculate_pnl_and_roi(latest_price, buy_cost_input, buy_sheets_input, discount=0.2, tax_rate=0.003)
+    calc_pnl, calc_roi = calculate_pnl_and_roi(latest_price, updated_trades, discount=0.2, tax_rate=0.003)
 
-    # 即時計算損益與報酬率並標示顏色（正紅負綠）
     with col_p3:
         pnl_color = "var(--up)" if calc_pnl >= 0 else "var(--down)"
-        pnl_str = f"{calc_pnl:+,.0f} 元" if buy_cost_input > 0 else "--"
+        pnl_str = f"{calc_pnl:+,.0f} 元" if total_cost > 0 else "--"
         st.markdown(f"""
         <div style="background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:6px 12px; text-align:center;">
             <div style="font-size:0.8rem; color:#D1D8E0; font-weight:600;">💰 預估未實現損益</div>
@@ -1080,7 +1133,7 @@ else:
 
     with col_p4:
         roi_color = "var(--up)" if calc_roi >= 0 else "var(--down)"
-        roi_str = f"{calc_roi:+.2f} %" if buy_cost_input > 0 else "--"
+        roi_str = f"{calc_roi:+.2f} %" if total_cost > 0 else "--"
         st.markdown(f"""
         <div style="background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:6px 12px; text-align:center;">
             <div style="font-size:0.8rem; color:#D1D8E0; font-weight:600;">📊 預估報酬率</div>
@@ -1093,13 +1146,10 @@ else:
     with col_target:
         custom_target_price = st.number_input("🎯 目標價 (元)", value=float(saved_info.get("custom_target", 0.0)), step=0.5, key=f"target_input_{target_code}")
 
-    # 即時自動存檔至 holdings.json
-    save_stock_holding(target_code, buy_cost_input, buy_sheets_input, custom_stop_price, custom_target_price)
+    # 自動存檔至 holdings.json
+    save_stock_holding_multi(target_code, updated_trades, custom_stop_price, custom_target_price)
 
-    # 計算損益兩平價
-    breakeven_p, total_cost, b_fee = calculate_breakeven_price(buy_cost_input, buy_sheets_input, discount=0.2, tax_rate=0.003)
-
-    if buy_cost_input > 0:
+    if total_cost > 0:
         st.markdown(f"""
         <div style="background:var(--panel2); border:1px solid var(--accent); border-radius:8px; padding:10px 16px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
             <div><span style="color:#FFFFFF; font-weight:600;">📦 預估總投入成本：<b style="color:#FFFFFF;">{total_cost:,.0f} 元</b> <small style="color:#D1D8E0;">(含買進手續費 {b_fee:.0f}元)</small></span></div>
@@ -1119,7 +1169,6 @@ else:
                         snapshots = api.snapshots([contract])
                         snap = snapshots[0] if snapshots else None
 
-                        # 🔍 精準取得最近一個交易日收盤價
                         prev_close_price = get_latest_trade_close(api, contract, snap)
                         
                         curr_price = safe_float(getattr(snap, 'close', prev_close_price), prev_close_price)
@@ -1154,8 +1203,8 @@ else:
                                 "time": t_time,
                                 "target_price": custom_target_price,
                                 "stop_price": custom_stop_price,
-                                "buy_cost": buy_cost_input,
-                                "buy_sheets": buy_sheets_input,
+                                "buy_cost": avg_buy_price,
+                                "buy_sheets": total_sheets,
                                 "breakeven_p": breakeven_p,
                                 "total_cost": total_cost,
                                 "vwap": avg_price,
