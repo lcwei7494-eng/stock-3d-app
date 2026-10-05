@@ -471,7 +471,7 @@ def calculate_atr(df, period=14):
     df['ATR'] = df['TR'].rolling(period).mean()
     return df
 
-# 🤖 升級版：高盛機構級全方位 AI 診斷引擎 (修復 SyntaxError 且完全相容 API)
+# 🤖 升級版：高盛機構級全方位 AI 診斷引擎 (修復 404 URL 錯誤並實現動能匹配)
 def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     c_code = str(data_dict.get('股票代碼', data_dict.get('target_code', '')))
     c_name = str(data_dict.get('股票名稱', data_dict.get('target_name', '')))
@@ -525,15 +525,33 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
         }]
     }
 
+    # 1. 動態查詢該 Key 實質可用的 API 模組 Endpoint
+    list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key_to_use}"
+    available_endpoints = []
+    try:
+        res_list = requests.get(list_url, timeout=5)
+        if res_list.status_code == 200:
+            models_data = res_list.json().get("models", [])
+            for m in models_data:
+                m_name = m.get("name", "")
+                supported_methods = m.get("supportedGenerationMethods", [])
+                if "generateContent" in supported_methods:
+                    available_endpoints.append(f"https://generativelanguage.googleapis.com/v1beta/{m_name}:generateContent?key={key_to_use}")
+    except Exception:
+        pass
+
+    # 2. 靜態備用 Endpoint
     fallback_endpoints = [
         f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key_to_use}",
-        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={key_to_use}",
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={key_to_use}",
         f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={key_to_use}",
         f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={key_to_use}"
     ]
 
+    endpoints_to_try = available_endpoints + [ep for ep in fallback_endpoints if ep not in available_endpoints]
+
     err_msgs = []
-    for url in fallback_endpoints:
+    for url in endpoints_to_try:
         try:
             res = requests.post(url, headers=headers, json=payload, timeout=12)
             if res.status_code == 200:
@@ -960,7 +978,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                         st.success(f"🎉 篩選完成！共找出 `{len(filter_results)}` 檔精選標的：")
                         render_smart_stock_table(pd.DataFrame(filter_results), "daytrade_flt")
                     else:
-                        st.warning("ℹ️️ 當前熱門個股中，無個股同時滿足嚴格突破條件。")
+                        st.warning("ℹ️ 當前熱門個股中，無個股同時滿足嚴格突破條件。")
                 except Exception as e:
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
