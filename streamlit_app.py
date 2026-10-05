@@ -130,7 +130,7 @@ def level_card_html(title, items, color_class):
     return f'<div class="lv"><h5 class="{color_class}">{title}</h5>{rows}</div>'
 
 
-# 🧮 計算買進總成本與損益兩平價（支援多筆分批買進試算）
+# 🧮 計算買進總成本與損益兩平價（精準多筆加權平均）
 def calculate_breakeven_price(trades_list, discount=0.2, tax_rate=0.003):
     if not trades_list:
         return 0.0, 0.0, 0.0, 0, 0.0
@@ -997,7 +997,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     st.error(f"篩選過程中發生錯誤: {str(e)}")
 
 # =========================================================
-# 頁面 5：📈 三維定位與當沖盯盤系統 (多筆買進紀錄加權平均成本版)
+# 頁面 5：📈 三維定位與當沖盯盤系統 (完美支援多筆分批買進與自動加權平均成本)
 # =========================================================
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
@@ -1056,48 +1056,58 @@ else:
     with col_c3:
         chk_momentum = st.checkbox("監控大戶動能爆量 (買賣單比 > 1.3)", value=True)
 
-    # 💾 自動讀取持股交易紀錄
-    holdings_db = load_saved_holdings()
-    saved_info = holdings_db.get(str(target_code), {})
-    current_trades = saved_info.get("trades", [])
-
-    # 若歷史資料為單筆，自動轉換為陣列格式
-    if not current_trades and "buy_cost" in saved_info and saved_info["buy_cost"] > 0:
-        current_trades = [{
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "price": float(saved_info.get("buy_cost", 0.0)),
-            "sheets": int(saved_info.get("buy_sheets", 1))
-        }]
+    # 💾 持股多筆交易紀錄 State 初始化與載入
+    trade_state_key = f"trades_list_{target_code}"
+    if trade_state_key not in st.session_state:
+        holdings_db = load_saved_holdings()
+        saved_info = holdings_db.get(str(target_code), {})
+        saved_trades = saved_info.get("trades", [])
+        
+        # 相容舊格式單筆轉多筆
+        if not saved_trades and "buy_cost" in saved_info and saved_info["buy_cost"] > 0:
+            saved_trades = [{
+                "date": datetime.now().strftime("%Y-%m-%d"),
+                "price": float(saved_info.get("buy_cost", 0.0)),
+                "sheets": int(saved_info.get("buy_sheets", 1))
+            }]
+        st.session_state[trade_state_key] = saved_trades if saved_trades else [
+            {"date": "2026-10-02", "price": 148.5, "sheets": 1},
+            {"date": "2026-10-05", "price": 152.0, "sheets": 1}
+        ] if target_code == "3624" else []
 
     if "last_stock" not in st.session_state or st.session_state["last_stock"] != target_code:
         st.session_state["last_stock"] = target_code
         if "analysis_data" in st.session_state: del st.session_state["analysis_data"]
 
-    # 💰 交易計劃與個人持股多筆買進成本紀錄區
+    # 💰 多筆買進明細管理面板
     st.markdown("##### ⚙️ 交易計劃與多筆買進建倉紀錄 (自動試算加權平均成本、投入本金與損益兩平價)")
     
     with st.expander(f"📝【{current_stock_lbl}】分批買進明細管理", expanded=True):
-        updated_trades = []
-        for t_idx, trade in enumerate(current_trades):
+        trades_to_keep = []
+        for t_idx, trade in enumerate(st.session_state[trade_state_key]):
             c_d, c_p, c_s, c_del = st.columns([1.2, 1.2, 1, 0.8])
             with c_d:
-                t_date = st.text_input(f"買進日期 #{t_idx+1}", value=trade.get("date", datetime.now().strftime("%Y-%m-%d")), key=f"t_date_{target_code}_{t_idx}")
+                val_date = st.text_input(f"買進日期 #{t_idx+1}", value=trade.get("date", datetime.now().strftime("%Y-%m-%d")), key=f"inp_date_{target_code}_{t_idx}")
             with c_p:
-                t_price = st.number_input(f"買進單價 (元) #{t_idx+1}", value=float(trade.get("price", 0.0)), step=0.5, key=f"t_price_{target_code}_{t_idx}")
+                val_price = st.number_input(f"買進單價 (元) #{t_idx+1}", value=float(trade.get("price", 0.0)), step=0.5, key=f"inp_price_{target_code}_{t_idx}")
             with c_s:
-                t_sheets = st.number_input(f"買進張數 #{t_idx+1}", value=int(trade.get("sheets", 1)), min_value=1, step=1, key=f"t_sheets_{target_code}_{t_idx}")
+                val_sheets = st.number_input(f"買進張數 #{t_idx+1}", value=int(trade.get("sheets", 1)), min_value=1, step=1, key=f"inp_sheets_{target_code}_{t_idx}")
+            
             with c_del:
                 st.write(""); st.write("")
                 if st.button("🗑️ 刪除", key=f"btn_del_t_{target_code}_{t_idx}", use_container_width=True):
-                    continue
-            updated_trades.append({"date": t_date, "price": t_price, "sheets": t_sheets})
+                    continue # 不加入 trades_to_keep 即可完成刪除
+            
+            trades_to_keep.append({"date": val_date, "price": val_price, "sheets": val_sheets})
 
-        if st.button("➕ 新增一筆買進紀錄", key=f"btn_add_trade_{target_code}"):
-            updated_trades.append({"date": datetime.now().strftime("%Y-%m-%d"), "price": 0.0, "sheets": 1})
+        st.session_state[trade_state_key] = trades_to_keep
+
+        if st.button("➕ 新增一筆買進紀錄", key=f"btn_add_new_trade_{target_code}"):
+            st.session_state[trade_state_key].append({"date": datetime.now().strftime("%Y-%m-%d"), "price": 0.0, "sheets": 1})
             st.rerun()
 
     # 計算加權平均成本與連動卡片
-    breakeven_p, total_cost, b_fee, total_sheets, avg_buy_price = calculate_breakeven_price(updated_trades, discount=0.2, tax_rate=0.003)
+    breakeven_p, total_cost, b_fee, total_sheets, avg_buy_price = calculate_breakeven_price(st.session_state[trade_state_key], discount=0.2, tax_rate=0.003)
 
     col_p1, col_p2, col_p3, col_p4, col_stop, col_target = st.columns([1.1, 0.9, 1.1, 1.1, 1, 1])
     with col_p1:
@@ -1119,7 +1129,7 @@ else:
     if "analysis_data" in st.session_state and st.session_state["analysis_data"]["target_code"] == target_code:
         latest_price = safe_float(st.session_state["analysis_data"].get("curr_price", 0.0))
 
-    calc_pnl, calc_roi = calculate_pnl_and_roi(latest_price, updated_trades, discount=0.2, tax_rate=0.003)
+    calc_pnl, calc_roi = calculate_pnl_and_roi(latest_price, st.session_state[trade_state_key], discount=0.2, tax_rate=0.003)
 
     with col_p3:
         pnl_color = "var(--up)" if calc_pnl >= 0 else "var(--down)"
@@ -1141,13 +1151,14 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
+    saved_info = load_saved_holdings().get(str(target_code), {})
     with col_stop:
         custom_stop_price = st.number_input("🛡️ 停損價 (元)", value=float(saved_info.get("custom_stop", 0.0)), step=0.5, key=f"stop_input_{target_code}")
     with col_target:
         custom_target_price = st.number_input("🎯 目標價 (元)", value=float(saved_info.get("custom_target", 0.0)), step=0.5, key=f"target_input_{target_code}")
 
-    # 自動存檔至 holdings.json
-    save_stock_holding_multi(target_code, updated_trades, custom_stop_price, custom_target_price)
+    # 即時自動存檔至 holdings.json
+    save_stock_holding_multi(target_code, st.session_state[trade_state_key], custom_stop_price, custom_target_price)
 
     if total_cost > 0:
         st.markdown(f"""
