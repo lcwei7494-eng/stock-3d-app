@@ -17,7 +17,7 @@ _CSS = "<style>:root{--bg:#0B0E14;--panel:#121721;--panel2:#1E2638;--line:#2A364
 st.markdown(_CSS, unsafe_allow_html=True)
 
 # =========================================================
-# 💾 2. 自選股與持股資料安全無損讀寫模組
+# 💾 2. 自選股與持股資料安全無損讀寫模組 (Stockify 保留版)
 # =========================================================
 WATCHLIST_FILE = "watchlist.json"
 HOLDINGS_FILE = "holdings.json"
@@ -71,8 +71,10 @@ def load_saved_stockify_journal():
                 if isinstance(data, list): return data
         except Exception: pass
     return [
-        {"account": "主帳戶", "date": "2026-10-02", "code": "3624", "name": "光頡", "type": "買進", "price": 148.5, "sheets": 1, "fee_discount": 0.2, "note": "突破20MA試買"},
-        {"account": "主帳戶", "date": "2026-10-05", "code": "3624", "name": "光頡", "type": "買進", "price": 152.0, "sheets": 1, "fee_discount": 0.2, "note": "拉回季線加碼"}
+        {"account": "主帳戶", "date": "2025-05-28", "code": "3015", "name": "全漢", "type": "買進", "price": 61.9, "shares": 1000, "fee_discount": 0.2, "note": "存股建倉"},
+        {"account": "主帳戶", "date": "2026-06-04", "code": "3015", "name": "全漢", "type": "賣出", "price": 62.7, "shares": 1000, "fee_discount": 0.2, "note": "獲利平倉"},
+        {"account": "主帳戶", "date": "2026-10-02", "code": "3624", "name": "光頡", "type": "買進", "price": 148.5, "shares": 1000, "fee_discount": 0.2, "note": "突破買進"},
+        {"account": "主帳戶", "date": "2026-10-05", "code": "3624", "name": "光頡", "type": "買進", "price": 152.0, "shares": 1000, "fee_discount": 0.2, "note": "加碼進場"}
     ]
 
 def save_stockify_journal_to_file(journal_data):
@@ -116,11 +118,11 @@ def calculate_breakeven_price(trades_list, discount=0.2, tax_rate=0.003):
     if not trades_list: return 0.0, 0.0, 0.0, 0, 0.0
     total_shares, total_buy_cost, total_fee, weighted_price_sum = 0, 0.0, 0.0, 0.0
     for t in trades_list:
-        p = safe_float(t.get("price", 0.0)); q = int(safe_float(t.get("sheets", 0)))
+        p = safe_float(t.get("price", 0.0)); q = int(safe_float(t.get("shares", t.get("sheets", 0)*1000)))
         if p > 0 and q > 0:
-            shares = q * 1000; amt = p * shares
+            amt = p * q
             fee = math.floor(amt * 0.001425 * discount); fee = 20 if fee < 20 else fee
-            total_shares += shares; total_buy_cost += (amt + fee); total_fee += fee; weighted_price_sum += (p * shares)
+            total_shares += q; total_buy_cost += (amt + fee); total_fee += fee; weighted_price_sum += (p * q)
     if total_shares == 0: return 0.0, 0.0, 0.0, 0, 0.0
     avg_price = weighted_price_sum / total_shares
     factor = 1.0 - (0.001425 * discount) - tax_rate
@@ -134,12 +136,12 @@ def calculate_breakeven_price(trades_list, discount=0.2, tax_rate=0.003):
         else: return 5.0
     tick = get_tick_size(raw_breakeven)
     breakeven_price = math.ceil(raw_breakeven / tick) * tick
-    return breakeven_price, total_buy_cost, total_fee, total_shares // 1000, avg_price
+    return breakeven_price, total_buy_cost, total_fee, total_shares, avg_price
 
 def calculate_pnl_and_roi(curr_price, trades_list, discount=0.2, tax_rate=0.003):
-    breakeven_price, total_buy_cost, total_fee, total_sheets, avg_price = calculate_breakeven_price(trades_list, discount, tax_rate)
-    if curr_price <= 0 or total_buy_cost <= 0 or total_sheets <= 0: return 0.0, 0.0
-    total_shares = total_sheets * 1000; sell_amt = curr_price * total_shares
+    breakeven_price, total_buy_cost, total_fee, total_shares, avg_price = calculate_breakeven_price(trades_list, discount, tax_rate)
+    if curr_price <= 0 or total_buy_cost <= 0 or total_shares <= 0: return 0.0, 0.0
+    sell_amt = curr_price * total_shares
     sell_fee = math.floor(sell_amt * 0.001425 * discount); sell_fee = 20 if sell_fee < 20 else sell_fee
     sell_tax = math.floor(sell_amt * tax_rate); net_sell = sell_amt - sell_fee - sell_tax
     pnl = net_sell - total_buy_cost; roi = (pnl / total_buy_cost) * 100.0 if total_buy_cost > 0 else 0.0
@@ -606,63 +608,81 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     else: st.warning("ℹ 當前熱門個股中，無個股同時滿足嚴格突破條件。")
                 except Exception as e: st.error("篩選過程中發生錯誤: " + str(e))
 
-# 📊 復刻 Stockify 獨立頁面：簡單台股記帳
+# 📊 復刻 Stockify 獨立頁面 (完美對照原版 5 張截圖)
 elif app_mode == "📊 簡單台股記帳 (Stockify)":
-    st.title("📊 簡單台股記帳 (Stockify 精裝版)")
-    st.caption("簡單快速紀錄交易、自動試算成本均價、投資組合損益管理與買賣心法筆記。")
+    st.title("📊 Stockify 簡單台股記帳 (原版復刻)")
+    st.caption("自動試算庫存股成本均價、預扣賣出費用總損益、已結算零股數平倉專區與歷史交易明細。")
 
     journal_list = st.session_state["stockify_journal"]
 
-    # 1. Stockify 風格多帳戶切換
-    account_col, disc_col = st.columns([2, 2])
-    with account_col:
-        sel_account = st.selectbox("📂 選擇投資帳戶 (多帳戶管理)", ["主帳戶", "存股帳戶", "當沖戰略帳戶", "帳戶 4", "帳戶 5"])
-    with disc_col:
-        global_discount = st.selectbox("🏷️ 預設券商手續費折讓", [0.2, 0.28, 0.38, 0.5, 0.6, 1.0], index=0, format_func=lambda x: f"{x*10:.2f} 折 ({x*100:.0f}%)")
+    # 1. 頂部多帳戶選單與手續費折讓
+    acc_col, disc_col = st.columns([2, 2])
+    with acc_col: sel_account = st.selectbox("📂 選擇投資帳戶", ["主帳戶", "存股帳戶", "當沖戰略帳戶", "帳戶 4"])
+    with disc_col: global_discount = st.selectbox("🏷️ 券商手續費折讓", [0.2, 0.28, 0.38, 0.5, 0.6, 1.0], index=0, format_func=lambda x: f"{x*10:.2f} 折 ({x*100:.0f}%)")
 
-    # 2. 新增交易與決策筆記
-    with st.expander("➕ 快速新增股票買賣 / 股利 / 減資紀錄", expanded=False):
-        f1, f2, c3, f4, f5, f6 = st.columns([1.2, 1, 1, 1, 1, 1])
-        with f1: inp_date = st.date_input("交易日期", datetime.now()).strftime("%Y-%m-%d")
-        with f2: inp_code = st.text_input("股票代碼", "3624")
-        with c3: inp_name = st.text_input("股票名稱", "光頡")
-        with f4: inp_type = st.selectbox("交易類型", ["買進", "賣出", "現金股利", "股票股利(配股)", "減資/分割"])
-        with f5: inp_px = st.number_input("單價 / 股利金額", value=148.5, step=0.5)
-        with f6: inp_sh = st.number_input("張數 (1張=1000股)", value=1, min_value=1, step=1)
-        
-        inp_note = st.text_input("📝 投資決策筆記 / 買賣心法 (選填)", value="突破關鍵均線帶量試買")
+    # 2. 圖一：新增交易表單 1:1 復刻 (買進 / 賣出 / 配息 / 配股 膠囊選擇)
+    with st.expander("➕ 新增交易紀錄 (對照原版 Stockify 表單)", expanded=False):
+        c1, c2, c3 = st.columns([1.5, 1, 1])
+        with c1: stock_in = st.text_input("股票 (輸入股名或股號)", "3624 光頡")
+        with c2: date_in = st.date_input("日期", datetime.now()).strftime("%Y/%m/%d")
+        with c3: type_in = st.radio("交易", ["買進", "賣出", "配息", "配股"], horizontal=True)
 
-        if st.button("💾 儲存至 Stockify 記帳本", type="primary"):
+        c4, c5 = st.columns([1.5, 1.5])
+        with c4: price_in = st.number_input("股價 (元)", value=148.5, step=0.5)
+        with c5: shares_in = st.number_input("股數 (1張=1000股)", value=1000, step=100)
+
+        # 動態試算預估手續費與支出/收入金額
+        est_amt = price_in * shares_in
+        est_fee = math.floor(est_amt * 0.001425 * global_discount) if type_in in ["買進", "賣出"] else 0
+        if est_fee < 20 and type_in in ["買進", "賣出"]: est_fee = 20
+        est_tax = math.floor(est_amt * 0.003) if type_in == "賣出" else 0
+
+        net_exp = est_amt + est_fee if type_in == "買進" else (est_amt - est_fee - est_tax if type_in == "賣出" else est_amt)
+
+        st.markdown(f"""
+        <div style="background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:10px 14px; margin:8px 0;">
+            <span style="color:var(--muted);">預估手續費: <b>{est_fee} 元</b> | 預估證交稅: <b>{est_tax} 元</b></span><br>
+            <span style="font-size:1.1rem; color:#FFFFFF; font-weight:700;">預估{'支出' if type_in=='買進' else '收入'}金額: <b style="color:{'var(--up)' if type_in=='賣出' or type_in=='配息' else 'var(--down)'}; font-size:1.25rem;">{net_exp:,.0f} 元</b></span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        note_in = st.text_input("交易筆記", "-")
+
+        col_b1, col_b2 = st.columns([1, 1])
+        if col_b1.button("💾 完成並儲存", type="primary"):
+            c_code, c_name = get_stock_code_and_name(stock_in)
+            c_code = c_code if c_code else "3624"
+            c_name = c_name if c_name else stock_in
+
             journal_list.append({
-                "account": sel_account, "date": inp_date, "code": inp_code, "name": inp_name,
-                "type": inp_type, "price": inp_px, "sheets": inp_sh, "fee_discount": global_discount, "note": inp_note
+                "account": sel_account, "date": date_in, "code": c_code, "name": c_name,
+                "type": type_in, "price": price_in, "shares": shares_in, "fee": est_fee, "tax": est_tax, "net_amt": net_exp, "note": note_in
             })
             st.session_state["stockify_journal"] = journal_list
             save_stockify_journal_to_file(journal_list)
-            add_to_watchlist_safe(inp_code + " " + inp_name)
-            st.success("已成功寫入【" + sel_account + "】記帳本並同步至自選股！")
+            add_to_watchlist_safe(c_code + " " + c_name)
+            st.success("已成功寫入 Stockify 記帳本！")
             st.rerun()
 
-    # 3. 過濾目前帳戶數據
+    # 3. 處理與分類統計
     df_j = pd.DataFrame(journal_list) if journal_list else pd.DataFrame()
-    if not df_j.empty and "account" in df_j.columns:
-        df_acc = df_j[df_j["account"] == sel_account]
-    else:
-        df_acc = df_j
+    df_acc = df_j[df_j["account"] == sel_account] if (not df_j.empty and "account" in df_j.columns) else df_j
 
     if not df_acc.empty:
-        summary_rows = []
+        # 串接 API 最新即時價
+        api_stk = get_shioaji_api(api_key, secret_key)
         unique_codes = df_acc["code"].unique()
-
-        api_stockify = get_shioaji_api(api_key, secret_key)
-        snap_stockify_dict = {}
-        if api_stockify:
+        snap_prices = {}
+        if api_stk:
             try:
-                contracts = [api_stockify.Contracts.Stocks.get(c) for c in unique_codes if api_stockify.Contracts.Stocks.get(c)]
+                contracts = [api_stk.Contracts.Stocks.get(c) for c in unique_codes if api_stk.Contracts.Stocks.get(c)]
                 if contracts:
-                    snaps = api_stockify.snapshots(contracts)
-                    snap_stockify_dict = {s.code: getattr(s, 'close', getattr(s, 'reference_price', 0.0)) for s in snaps}
+                    snaps = api_stk.snapshots(contracts)
+                    snap_prices = {s.code: safe_float(getattr(s, 'close', getattr(s, 'reference_price', 0.0))) for s in snaps}
             except Exception: pass
+
+        holding_items = []
+        settled_items = []
 
         for c in unique_codes:
             sub_df = df_acc[df_acc["code"] == c]
@@ -670,59 +690,125 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
 
             buys = sub_df[sub_df["type"] == "買進"]
             sells = sub_df[sub_df["type"] == "賣出"]
-            divs = sub_df[sub_df["type"] == "現金股利"]
+            divs = sub_df[sub_df["type"] == "配息"]
 
-            buy_sheets = buys["sheets"].sum() if not buys.empty else 0
-            sell_sheets = sells["sheets"].sum() if not sells.empty else 0
-            holding_sheets = buy_sheets - sell_sheets
+            b_shares = buys["shares"].sum() if not buys.empty else 0
+            s_shares = sells["shares"].sum() if not sells.empty else 0
+            curr_shares = b_shares - s_shares
 
-            # 加權平均買進成本試算
-            _, total_buy_cost, _, _, weighted_buy_price = calculate_breakeven_price(buys.to_dict('records'), discount=global_discount)
-            breakeven_px, _, _, _, _ = calculate_breakeven_price(sub_df[sub_df["type"]=="買進"].to_dict('records'), discount=global_discount)
+            b_avg = (buys["price"] * buys["shares"]).sum() / b_shares if b_shares > 0 else 0.0
+            s_avg = (sells["price"] * sells["shares"]).sum() / s_shares if s_shares > 0 else 0.0
 
-            # 即時價與損益
-            curr_px = safe_float(snap_stockify_dict.get(c, weighted_buy_price), weighted_buy_price)
-            unrealized_pnl, roi = calculate_pnl_and_roi(curr_px, sub_df[sub_df["type"]=="買進"].to_dict('records'), discount=global_discount)
+            latest_p = snap_prices.get(c, b_avg if b_avg > 0 else s_avg)
+            div_total = divs["net_amt"].sum() if not divs.empty else 0.0
 
-            total_div_income = (divs["price"]).sum() if not divs.empty else 0.0
+            # 圖二：庫存股 (持股數 > 0)
+            if curr_shares > 0:
+                pnl, roi = calculate_pnl_and_roi(latest_p, buys.to_dict('records'), discount=global_discount)
+                holding_items.append({
+                    "股票/股數": f"{c_name}\n{curr_shares:,}股",
+                    "股票代碼": c, "股票名稱": c_name, "股數": curr_shares,
+                    "股價": latest_p, "成本均/買均": f"{b_avg:.2f}\n{b_avg:.2f}",
+                    "總損益": round(pnl), "損益率(%)": roi, "純價": latest_p, "純買均": b_avg
+                })
+            # 圖三：已結算 (持股數 == 0)
+            else:
+                realized_pnl = (s_avg - b_avg) * s_shares + div_total
+                realized_roi = (realized_pnl / (b_avg * s_shares)) * 100 if (b_avg * s_shares) > 0 else 0.0
+                settled_items.append({
+                    "股票/股數": f"{c_name}\n0股",
+                    "股票代碼": c, "股票名稱": c_name, "股數": 0,
+                    "股價": latest_p, "賣均/買均": f"{s_avg:.1f}\n{b_avg:.1f}",
+                    "總損益": round(realized_pnl), "損益率(%)": realized_roi, "賣均": s_avg, "買均": b_avg
+                })
 
-            summary_rows.append({
-                "股票代碼": c, "股票名稱": c_name, "持股(張)": holding_sheets,
-                "加權均價": round(weighted_buy_price, 2), "損益兩平賣價": round(breakeven_px, 2),
-                "最新市場價": round(curr_px, 2), "未實現損益": round(unrealized_pnl),
-                "報酬率(%)": round(roi, 2), "累積股利收入": total_div_income
-            })
+        df_hold = pd.DataFrame(holding_items)
+        df_sett = pd.DataFrame(settled_items)
 
-        df_sum = pd.DataFrame(summary_rows)
+        tab1, tab2, tab3 = st.tabs(["📦 庫存股與已結算看板", "📜 個股交易細節與圖卡", "📅 歷史交易流水帳紀錄"])
 
-        # 頂部三大 KPIs 看板
-        m1, m2, m3, m4 = st.columns(4)
-        with m1:
-            tot_unrealized = df_sum["未實現損益"].sum() if not df_sum.empty else 0
-            color_cls = "var(--up)" if tot_unrealized >= 0 else "var(--down)"
-            st.markdown('<div style="background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 16px; text-align:center;"><div style="color:var(--muted); font-size:.9rem;">帳戶總未實現損益</div><div style="font-size:1.6rem; font-weight:900; color:' + color_cls + ';">' + f"{tot_unrealized:+,.0f}" + ' 元</div></div>', unsafe_allow_html=True)
-        with m2:
-            st.markdown('<div style="background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 16px; text-align:center;"><div style="color:var(--muted); font-size:.9rem;">在庫存股票檔數</div><div style="font-size:1.6rem; font-weight:900; color:var(--gold);">' + str(len(df_sum[df_sum["持股(張)"] > 0])) + ' 檔</div></div>', unsafe_allow_html=True)
-        with m3:
-            total_div = df_sum["累積股利收入"].sum() if not df_sum.empty else 0
-            st.markdown('<div style="background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 16px; text-align:center;"><div style="color:var(--muted); font-size:.9rem;">累積現金股利領取</div><div style="font-size:1.6rem; font-weight:900; color:var(--up);">' + f"{total_div:,.0f}" + ' 元</div></div>', unsafe_allow_html=True)
-        with m4:
-            st.markdown('<div style="background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 16px; text-align:center;"><div style="color:var(--muted); font-size:.9rem;">目前切換帳戶</div><div style="font-size:1.5rem; font-weight:900; color:var(--accent);">' + str(sel_account) + '</div></div>', unsafe_allow_html=True)
+        with tab1:
+            st.markdown(f"### ▌ 庫存股 ({len(df_hold)}) <span style='float:right; font-size:1.1rem; color:var(--gold);'>合計市值: {df_hold['純價'].mul(df_hold['股數']).sum():,.0f} 元</span>", unsafe_allow_html=True)
+            if not df_hold.empty:
+                for _, r in df_hold.iterrows():
+                    pnl_cls = "up" if r["總損益"] >= 0 else "down"
+                    st.markdown(f"""
+                    <div style="background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:12px 16px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+                        <div><b style="font-size:1.1rem; color:#FFFFFF;">{r['股票名稱']} ({r['股票代碼']})</b><br><small style="color:var(--muted);">{r['股數']:,} 股</small></div>
+                        <div style="text-align:center;"><b style="color:#FFFFFF; font-size:1.1rem;">{r['純價']:.2f}</b></div>
+                        <div style="text-align:center;"><span style="color:var(--muted);">成本均: {r['純買均']:.2f}</span></div>
+                        <div style="text-align:right;"><b class="{pnl_cls}" style="font-size:1.2rem;">{r['總損益']:+,.0f}</b><br><small class="{pnl_cls}">{r['損益率(%)']:+.2f}%</small></div>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-        st.markdown("##### 📦【" + str(sel_account) + "】Stockify 庫存明細與即時未實現損益表")
-        st.dataframe(df_sum, use_container_width=True, hide_index=True)
+            st.write("")
+            st.markdown(f"### ▌ 已結算 ({len(df_sett)}) <span style='float:right; font-size:1.1rem; color:var(--accent);'>累積已實現損益: {df_sett['總損益'].sum():,.0f} 元</span>", unsafe_allow_html=True)
+            if not df_sett.empty:
+                for _, r in df_sett.iterrows():
+                    pnl_cls = "up" if r["總損益"] >= 0 else "down"
+                    st.markdown(f"""
+                    <div style="background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px 16px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+                        <div><b style="font-size:1.1rem; color:#FFFFFF;">{r['股票名稱']} ({r['股票代碼']})</b><br><small style="color:var(--muted);">0 股 (已平倉)</small></div>
+                        <div style="text-align:center;"><span style="color:var(--muted);">賣均: {r['賣均']:.1f}<br>買均: {r['買均']:.1f}</span></div>
+                        <div style="text-align:right;"><b class="{pnl_cls}" style="font-size:1.2rem;">{r['總損益']:+,.0f}</b><br><small class="{pnl_cls}">{r['損益率(%)']:+.2f}%</small></div>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-        st.markdown("##### 📜 帳戶歷史買賣交易筆記與明細")
-        st.dataframe(df_acc, use_container_width=True, hide_index=True)
+        # 圖四：個股詳細卡片頁
+        with tab2:
+            st.markdown("### 📊 個股歷史交易明細與持股卡片 (對照圖四)")
+            sel_stock_code = st.selectbox("請選擇欲檢視明細之個股：", unique_codes)
+            sub_df = df_acc[df_acc["code"] == sel_stock_code]
+            c_name = sub_df["name"].iloc[-1]
+            
+            buys = sub_df[sub_df["type"] == "買進"]
+            sells = sub_df[sub_df["type"] == "賣出"]
+            b_sh = buys["shares"].sum() if not buys.empty else 0
+            s_sh = sells["shares"].sum() if not sells.empty else 0
+            curr_sh = b_sh - s_sh
+            b_avg = (buys["price"] * buys["shares"]).sum() / b_sh if b_sh > 0 else 0.0
+            s_avg = (sells["price"] * sells["shares"]).sum() / s_sh if s_sh > 0 else 0.0
 
-        if st.button("🗑️ 清空目前帳戶之交易紀錄"):
-            new_journal = [item for item in journal_list if item.get("account") != sel_account]
-            st.session_state["stockify_journal"] = new_journal
-            save_stockify_journal_to_file(new_journal)
-            st.success("已重置【" + sel_account + "】紀錄！")
+            st.markdown(f"""
+            <div style="background:var(--panel); border:1.5px solid var(--accent); border-radius:12px; padding:16px 20px; margin-bottom:16px;">
+                <div style="font-size:1.4rem; font-weight:800; color:#FFFFFF;">{c_name} {sel_stock_code}</div>
+                <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; margin-top:12px; background:var(--panel2); padding:12px; border-radius:8px;">
+                    <div><span class="muted">賣均</span><br><b style="font-size:1.2rem; color:#FFFFFF;">{s_avg:.1f}</b></div>
+                    <div><span class="muted">買均</span><br><b style="font-size:1.2rem; color:#FFFFFF;">{b_avg:.1f}</b></div>
+                    <div><span class="muted">持股數</span><br><b style="font-size:1.2rem; color:#FFFFFF;">{curr_sh:,} 股</b></div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            st.dataframe(sub_df[["date", "type", "price", "shares", "net_amt", "note"]], use_container_width=True, hide_index=True)
+
+        # 圖五：歷史交易流水帳頁面
+        with tab3:
+            st.markdown("### 📅 歷史交易流水帳紀錄 (對照圖五)")
+            df_sorted = df_acc.sort_values(by="date", ascending=False)
+            for d, grp in df_sorted.groupby("date", sort=False):
+                inc = grp[grp["type"]=="賣出"]["net_amt"].sum()
+                exp = grp[grp["type"]=="買進"]["net_amt"].sum()
+                st.markdown(f"""
+                <div style="background:var(--panel2); border-left:4px solid var(--accent); padding:6px 12px; margin-top:12px; font-weight:700;">
+                    {d} <span style="float:right; font-size:.9rem; color:var(--muted);">收入: <b style="color:var(--up);">{inc:,.0f}</b> | 支出: <b style="color:var(--down);">{exp:,.0f}</b></span>
+                </div>
+                """, unsafe_allow_html=True)
+                for _, r in grp.iterrows():
+                    amt_cls = "up" if r["type"] == "賣出" or r["type"] == "配息" else "down"
+                    st.markdown(f"""
+                    <div style="display:flex; justify-content:space-between; padding:8px 12px; border-bottom:1px solid var(--line);">
+                        <div><b>{r['name']}</b> ({r['code']}) <span style="margin-left:8px; color:var(--muted);">{r['type']} {r['shares']:,}股</span></div>
+                        <div><span>單價: {r['price']}</span> <b class="{amt_cls}" style="margin-left:16px;">{r['net_amt']:,.0f} 元</b></div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+        if st.button("🗑️ 清空 Stockify 交易日記紀錄"):
+            st.session_state["stockify_journal"] = []
+            save_stockify_journal_to_file([])
+            st.success("已清空紀錄！")
             st.rerun()
     else:
-        st.info("ℹ️【" + str(sel_account) + "】目前無交易紀錄，請點擊上方選單進行第一次買賣或股利記帳。")
+        st.info("ℹ️【" + str(sel_account) + "】目前尚無交易紀錄，請展開上方『➕ 新增交易紀錄』填寫。")
 
 # 三維定位與當沖盯盤系統
 else:
@@ -803,7 +889,7 @@ else:
 
     col_p1, col_p2, col_p3, col_p4, col_stop, col_target = st.columns([1.1, 0.9, 1.1, 1.1, 1, 1])
     with col_p1: st.markdown('<div style="background:var(--panel2); border:1px solid var(--accent); border-radius:8px; padding:6px 12px; text-align:center;"><div style="font-size:0.8rem; color:#D1D8E0;">📊 加權平均買進成本</div><div style="font-size:1.2rem; font-weight:900; color:var(--gold);">' + f"{avg_buy_price:.2f}" + ' 元</div></div>', unsafe_allow_html=True)
-    with col_p2: st.markdown('<div style="background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:6px 12px; text-align:center;"><div style="font-size:0.8rem; color:#D1D8E0;">📦 累計總持股</div><div style="font-size:1.2rem; font-weight:900; color:#FFFFFF;">' + str(total_sheets) + ' 張</div></div>', unsafe_allow_html=True)
+    with col_p2: st.markdown('<div style="background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:6px 12px; text-align:center;"><div style="font-size:0.8rem; color:#D1D8E0;">📦 累計總持股</div><div style="font-size:1.2rem; font-weight:900; color:#FFFFFF;">' + str(total_sheets//1000) + ' 張 (' + str(total_sheets) + '股)</div></div>', unsafe_allow_html=True)
 
     latest_price = safe_float(st.session_state["analysis_data"].get("curr_price", 0.0)) if ("analysis_data" in st.session_state and st.session_state["analysis_data"]["target_code"] == target_code) else 0.0
     calc_pnl, calc_roi = calculate_pnl_and_roi(latest_price, st.session_state[trade_state_key], discount=0.2, tax_rate=0.003)
@@ -947,7 +1033,7 @@ else:
                 st.dataframe(pd.DataFrame([{"日期": "10/02", "主力買賣超": "+2,450", "籌碼集中度": "12.5%", "買超前5總和": "63.8%"}]), use_container_width=True, hide_index=True)
 
         with right_panel:
-            st.markdown('<div class="level-container"><div class="level-head"><div><span class="muted">技術強壓</span><br><b class="text-red" style="font-size:1.2rem;">' + str(ai_res["resistance"]) + '</b></div><div style="text-align:right;"><span class="muted">技術強撐</span><br><b class="text-green" style="font-size:1.2rem;">' + str(ai_res["support"]) + '</b></div></div><div class="level-box"><span class="lbl">🚀 法定漲停價</span><span class="val text-red">' + f"{limit_up:.2f}" + '</span></div><div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">' + str(ai_res["resistance"]) + '</span></div><div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">' + str(ai_res["entry_price"]) + '</span></div><div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">' + f"{curr_price:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡 多空平衡點</span><span class="val" style="color:var(--gold);">' + f"{balance_point:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡️️ 技術強撐價</span><span class="val text-green">' + str(ai_res["support"]) + '</span></div><div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">' + f"{limit_down:.2f}" + '</span></div></div>', unsafe_allow_html=True)
+            st.markdown('<div class="level-container"><div class="level-head"><div><span class="muted">技術強壓</span><br><b class="text-red" style="font-size:1.2rem;">' + str(ai_res["resistance"]) + '</b></div><div style="text-align:right;"><span class="muted">技術強撐</span><br><b class="text-green" style="font-size:1.2rem;">' + str(ai_res["support"]) + '</b></div></div><div class="level-box"><span class="lbl">🚀 法定漲停價</span><span class="val text-red">' + f"{limit_up:.2f}" + '</span></div><div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">' + str(ai_res["resistance"]) + '</span></div><div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">' + str(ai_res["entry_price"]) + '</span></div><div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">' + f"{curr_price:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡 多空平衡點</span><span class="val" style="color:var(--gold);">' + f"{balance_point:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡️ 技術強撐價</span><span class="val text-green">' + str(ai_res["support"]) + '</span></div><div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">' + f"{limit_down:.2f}" + '</span></div></div>', unsafe_allow_html=True)
             st.write("")
             if st.button("🤖 AI 深度評估 (Gemini 診斷)", key="btn_right_gemini_eval", use_container_width=True):
                 with st.spinner("AI 診斷中..."):
