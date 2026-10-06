@@ -24,7 +24,7 @@ HOLDINGS_FILE = "holdings.json"
 STOCKIFY_JOURNAL_FILE = "stockify_journal.json"
 
 def load_saved_watchlist():
-    default_list = ["3624 光頡", "2360 致茂", "8111 立碁", "4971 IET-KY", "4991 環宇-KY", "2330 台積電"]
+    default_list = ["3624 光頡", "2360 致茂", "8111 立碁", "4971 IET-KY", "4991 環宇-KY", "2330 台積電", "3374 精材"]
     if os.path.exists(WATCHLIST_FILE):
         try:
             with open(WATCHLIST_FILE, "r", encoding="utf-8") as f:
@@ -114,7 +114,6 @@ def level_card_html(title, items, color_class):
     rows = "".join('<div class="it"><span class="muted">' + str(k) + '</span><b class="' + str(color_class) + '">' + f"{safe_float(v):.2f}" + '</b></div>' for k, v in items)
     return '<div class="lv"><h5 class="' + str(color_class) + '">' + str(title) + '</h5>' + rows + '</div>'
 
-# 🌐 取得全台股上市櫃（1800+檔）完整股票代碼清單
 @st.cache_data(ttl=86400)
 def get_all_taiwan_stock_codes():
     all_codes = []
@@ -123,7 +122,7 @@ def get_all_taiwan_stock_codes():
             if info.type == '股票' and len(code) == 4 and code.isdigit():
                 all_codes.append(code)
     except Exception:
-        all_codes = ["2330", "2317", "2454", "2308", "2382", "3231", "2356", "6669", "3017", "2360", "3624", "8111", "4971", "4991", "4908"]
+        all_codes = ["2330", "2317", "2454", "3374", "2308", "2382", "3231", "2356", "6669", "3017", "2360", "3624", "8111", "4971", "4991", "4908"]
     return all_codes
 
 def calculate_breakeven_price(trades_list, discount=0.2, tax_rate=0.003):
@@ -243,7 +242,9 @@ def fetch_real_stock_snapshots(codes_list, tag_feature="精選"):
             curr_p = safe_float(getattr(s, 'close', real_close_p), real_close_p)
             open_p = safe_float(getattr(s, 'open', real_close_p), real_close_p)
             tot_vol = int(safe_float(getattr(s, 'total_volume', 0))) if s else 0
-            pct = round(((curr_p - open_p) / open_p) * 100, 2) if open_p > 0 else 0.0
+            
+            # 正確以最近日收盤價為基準計算漲跌幅 (%)
+            pct = round(((curr_p - real_close_p) / real_close_p) * 100, 2) if real_close_p > 0 else 0.0
             results.append({"股票代碼": c_code, "股票名稱": c_name, "最新真實價": curr_p, "最近日收盤價": real_close_p, "最新價": curr_p, "漲跌幅(%)": pct, "成交量(張)": tot_vol, "成交值(萬元)": round(curr_p * tot_vol / 1000), "篩選特徵": tag_feature, "狀態": "即時行情"})
         return pd.DataFrame(results)
     except Exception: return pd.DataFrame()
@@ -302,55 +303,21 @@ def fetch_finmind_chip_data(stock_code, token=""):
     except Exception: pass
     return pd.DataFrame()
 
-def check_fundamental_6layer(code):
-    fund_db = {
-        "3624": {"eps": 1.8, "yoy": 35.2, "roe": 14.5, "pe": 20.5, "peg": 0.58, "catalyst": "車用與工業被動元件急單拉貨"},
-        "2360": {"eps": 12.15, "yoy": 110.2, "roe": 28.5, "pe": 41.2, "peg": 0.75, "catalyst": "AI 2500W+ SLT水冷溫控/CPO光測試/HVDC高壓架構"},
-        "8111": {"eps": 1.5, "yoy": 38.5, "roe": 13.2, "pe": 22.0, "peg": 0.60, "catalyst": "光電模組與半導體封測成長"},
-        "4971": {"eps": 1.3, "yoy": 42.0, "roe": 11.5, "pe": 24.0, "peg": 0.57, "catalyst": "高頻磊晶片訂單升溫"},
-        "4991": {"eps": 1.2, "yoy": 120.5, "roe": 15.2, "pe": 28.5, "peg": 0.55, "catalyst": "化合物半導體/CPO光通訊急單"},
-        "4908": {"eps": 2.5, "yoy": 85.0, "roe": 18.2, "pe": 22.0, "peg": 0.48, "catalyst": "CPO光收發模組強勁拉貨"},
-        "2330": {"eps": 9.5, "yoy": 32.5, "roe": 26.5, "pe": 24.5, "peg": 0.70, "catalyst": "CoWoS產能擴充/AI晶片需求"}
-    }
-    return fund_db.get(code, {"eps": 1.2, "yoy": 25.0, "roe": 12.0, "pe": 18.0, "peg": 0.70, "catalyst": "產業復甦成長"})
+def get_stock_code_and_name(user_input):
+    target = user_input.strip()
+    if target.isdigit():
+        if target in twstock.codes: return target, twstock.codes[target].name
+        return target, target
+    for code, info in twstock.codes.items():
+        if info.type == '股票' and (target == info.name or target in info.name): return code, info.name
+    return None, None
 
-def render_smart_stock_table(df_display, key_prefix):
-    if df_display.empty:
-        st.info("ℹ️ 正在即時抓取最新成交價數據中，請稍候...")
-        return
-    st.dataframe(df_display, use_container_width=True, hide_index=True)
-    st.markdown("##### ⚡ 個股清單（一鍵帶入盯盤、AI評估或加自選）")
-    for idx, row in df_display.reset_index(drop=True).iterrows():
-        c_code = str(row['股票代碼']); c_name = str(row['股票名稱']); stock_lbl = c_code + " " + c_name
-        curr_p = row.get('最新真實價', row.get('最新價', 'N/A')); prev_close_p = row.get('最近日收盤價', row.get('前日收盤', 0.0))
-        feature_lbl = row.get('篩選理由', row.get('狀態', row.get('篩選特徵', '精選'))); change_pct = row.get('漲跌幅(%)', 0.0)
+def calculate_atr(df, period=14):
+    df['TR'] = pd.concat([df['High'] - df['Low'], abs(df['High'] - df['Close'].shift(1)), abs(df['Low'] - df['Close'].shift(1))], axis=1).max(axis=1)
+    df['ATR'] = df['TR'].rolling(period).mean()
+    return df
 
-        st.markdown(stock_row_html(c_code, c_name, curr_p, change_pct, "理由: " + str(feature_lbl), prev_close=safe_float(prev_close_p)), unsafe_allow_html=True)
-
-        col_b1, col_b2, col_b3 = st.columns([1, 1, 1])
-        btn_nav_key = f"btn_nav_{key_prefix}_{c_code}_{idx}"
-        btn_ai_key = f"btn_ai_{key_prefix}_{c_code}_{idx}"
-        btn_add_key = f"btn_add_{key_prefix}_{c_code}_{idx}"
-
-        if col_b1.button("🔍 帶入盯盤", key=btn_nav_key, use_container_width=True):
-            st.session_state["selected_stock"] = c_code; st.session_state["last_stock"] = c_code
-            if "analysis_data" in st.session_state: del st.session_state["analysis_data"]
-            st.success("已帶入【" + stock_lbl + "】，請切換至『📈 三維定位與當沖盯盤系統』！")
-
-        if col_b2.button("🤖 AI進行評估", key=btn_ai_key, use_container_width=True):
-            with st.spinner("正在連線 Gemini AI 分析【" + stock_lbl + "】..."):
-                st.session_state["ai_eval_" + c_code] = run_goldman_sachs_ai_evaluation(row.to_dict(), gemini_api_key)
-
-        if stock_lbl in st.session_state["watchlist"]:
-            col_b3.button("✅ 已在自選", key="disabled_" + btn_add_key, disabled=True, use_container_width=True)
-        else:
-            if col_b3.button("➕ 加自選", key=btn_add_key, use_container_width=True):
-                add_to_watchlist_safe(stock_lbl)
-                st.rerun()
-
-        if ("ai_eval_" + c_code) in st.session_state:
-            st.markdown("<div class='navy-card'>" + str(st.session_state["ai_eval_" + c_code]) + "</div>", unsafe_allow_html=True)
-
+# 高盛機構級 AI 診斷引擎
 def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     c_code = str(data_dict.get('股票代碼', data_dict.get('target_code', '')))
     c_name = str(data_dict.get('股票名稱', data_dict.get('target_name', '')))
@@ -417,6 +384,43 @@ def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high,
 
     return {"support": support_price, "resistance": resistance_price, "trend": trend, "entry_price": entry_price, "strategy": strategy}
 
+def render_smart_stock_table(df_display, key_prefix):
+    if df_display.empty:
+        st.info("ℹ️ 正在即時抓取最新成交價數據中，請稍候...")
+        return
+    st.dataframe(df_display, use_container_width=True, hide_index=True)
+    st.markdown("##### ⚡ 個股清單（一鍵帶入盯盤、AI評估或加自選）")
+    for idx, row in df_display.reset_index(drop=True).iterrows():
+        c_code = str(row['股票代碼']); c_name = str(row['股票名稱']); stock_lbl = c_code + " " + c_name
+        curr_p = row.get('最新真實價', row.get('最新價', 'N/A')); prev_close_p = row.get('最近日收盤價', row.get('前日收盤', 0.0))
+        feature_lbl = row.get('篩選理由', row.get('狀態', row.get('篩選特徵', '精選'))); change_pct = row.get('漲跌幅(%)', 0.0)
+
+        st.markdown(stock_row_html(c_code, c_name, curr_p, change_pct, "理由: " + str(feature_lbl), prev_close=safe_float(prev_close_p)), unsafe_allow_html=True)
+
+        col_b1, col_b2, col_b3 = st.columns([1, 1, 1])
+        btn_nav_key = f"btn_nav_{key_prefix}_{c_code}_{idx}"
+        btn_ai_key = f"btn_ai_{key_prefix}_{c_code}_{idx}"
+        btn_add_key = f"btn_add_{key_prefix}_{c_code}_{idx}"
+
+        if col_b1.button("🔍 帶入盯盤", key=btn_nav_key, use_container_width=True):
+            st.session_state["selected_stock"] = c_code; st.session_state["last_stock"] = c_code
+            if "analysis_data" in st.session_state: del st.session_state["analysis_data"]
+            st.success("已帶入【" + stock_lbl + "】，請切換至『📈 三維定位與當沖盯盤系統』！")
+
+        if col_b2.button("🤖 AI進行評估", key=btn_ai_key, use_container_width=True):
+            with st.spinner("正在連線 Gemini AI 分析【" + stock_lbl + "】..."):
+                st.session_state["ai_eval_" + c_code] = run_goldman_sachs_ai_evaluation(row.to_dict(), gemini_api_key)
+
+        if stock_lbl in st.session_state["watchlist"]:
+            col_b3.button("✅ 已在自選", key="disabled_" + btn_add_key, disabled=True, use_container_width=True)
+        else:
+            if col_b3.button("➕ 加自選", key=btn_add_key, use_container_width=True):
+                add_to_watchlist_safe(stock_lbl)
+                st.rerun()
+
+        if ("ai_eval_" + c_code) in st.session_state:
+            st.markdown("<div class='navy-card'>" + str(st.session_state["ai_eval_" + c_code]) + "</div>", unsafe_allow_html=True)
+
 # =========================================================
 # 5. 各頁面路由與戰情室
 # =========================================================
@@ -430,7 +434,7 @@ if app_mode == "🔍 FinMind 全市場掃描器":
         else:
             with st.spinner("正在連線 FinMind 與永豐金 API..."):
                 try:
-                    target_11_codes = ["3624", "2360", "8111", "4971", "4991", "4908", "2466", "3006", "2330", "2454", "2317"]
+                    target_11_codes = ["3624", "2360", "8111", "4971", "4991", "4908", "2466", "3006", "2330", "2454", "2317", "3374"]
                     contracts = [api.Contracts.Stocks.get(code) for code in target_11_codes if api.Contracts.Stocks.get(code)]
                     snaps = api.snapshots(contracts); snap_dict = {s.code: s for s in snaps}; scanned_results = []
                     start_d = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d"); end_d = datetime.now().strftime("%Y-%m-%d")
@@ -451,11 +455,14 @@ if app_mode == "🔍 FinMind 全市場掃描器":
                         fund = check_fundamental_6layer(code); yoy_val = safe_float(fund.get("yoy", 20.0))
                         foreign_buy = {"3624": 1850, "2360": 4250, "8111": 1120, "4971": 650, "4991": 3200, "4908": 1420}.get(code, 1000)
                         dist_ma60_pct = round(((real_p - ma60) / ma60) * 100, 2)
+                        
+                        # 正確漲跌幅算出 (以最近日收盤價為分母)
+                        pct_real = round(((real_p - real_close_p) / real_close_p) * 100, 2) if real_close_p > 0 else 0.0
 
                         scanned_results.append({
                             "股票代碼": code, "股票名稱": c_name, "最新真實價": real_p, "最近日收盤價": real_close_p, "最新價": real_p,
                             "月營收YoY": f"+{yoy_val}%", "連3月YoY": "🟢 連 3 月正成長", "外資近5日買超": f"+{foreign_buy:,} 張",
-                            "季線(60MA)": round(ma60, 2), "站上季線幅度": f"+{dist_ma60_pct}%", "漲跌幅(%)": +3.2,
+                            "季線(60MA)": round(ma60, 2), "站上季線幅度": f"+{dist_ma60_pct}%", "漲跌幅(%)": pct_real,
                             "篩選理由": fund.get("catalyst", "基本面強勁且外資鎖碼突破季線")
                         })
 
@@ -478,7 +485,7 @@ elif app_mode == "🚀 6層量化戰略選股":
         else:
             with st.spinner("正在連線永豐金伺服器..."):
                 try:
-                    pool = ["3624", "2360", "8111", "4971", "4991", "4908", "2330"]
+                    pool = ["3624", "2360", "8111", "4971", "4991", "4908", "2330", "3374"]
                     contracts = [api.Contracts.Stocks.get(code) for code in pool if api.Contracts.Stocks.get(code)]
                     snaps = api.snapshots(contracts); snap_dict = {s.code: s for s in snaps}
                     start_date = (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d"); end_date = datetime.now().strftime("%Y-%m-%d")
@@ -504,8 +511,10 @@ elif app_mode == "🚀 6層量化戰略選股":
                         if real_price >= df_k["High"].iloc[:-1].max(): score += 15
                         if fund["yoy"] > 20: score += 15
 
+                        pct_real = round(((real_price - real_close_p) / real_close_p) * 100, 2) if real_close_p > 0 else 0.0
+
                         item = {
-                            "股票代碼": c_code, "股票名稱": c_name, "最新真實價": real_price, "最近日收盤價": real_close_p, "漲跌幅(%)": +2.5,
+                            "股票代碼": c_code, "股票名稱": c_name, "最新真實價": real_price, "最近日收盤價": real_close_p, "漲跌幅(%)": pct_real,
                             "季EPS": fund["eps"], "營收YoY": f"+{fund['yoy']}%", "ROE": f"{fund['roe']}%",
                             "PEG": fund["peg"], "20日均線": round(ma20, 2), "60日均線": round(ma60, 2), "綜合評分": score, "催化劑": fund["catalyst"],
                             "狀態": "🟢 強勢突破" if score >= 80 else ("🔵 低基期轉折" if real_price <= ma60 * 1.15 else "🟡 轉強觀察")
@@ -534,7 +543,7 @@ elif app_mode == "💡 大戶投 — 智慧選股":
     if not api_key or not secret_key: st.error("請先在左側填寫永豐金 API Key！")
     else:
         tab_rt, tab_pv, tab_chip, tab_fin = st.tabs(["⚡ 即時排行", "📊 價量指標", "💎 籌碼精選", "🏆 經營績效"])
-        with tab_rt: render_smart_stock_table(fetch_real_stock_snapshots(["3624", "2360", "8111", "2330"], "🔥 大戶鎖單"), "smart_rt")
+        with tab_rt: render_smart_stock_table(fetch_real_stock_snapshots(["3624", "2360", "8111", "2330", "3374"], "🔥 大戶鎖單"), "smart_rt")
         with tab_pv: render_smart_stock_table(fetch_real_stock_snapshots(["2454", "2317", "3006"], "📈 多頭排列"), "smart_pv")
         with tab_chip: render_smart_stock_table(fetch_real_stock_snapshots(["3042", "2330", "4908"], "🏛 外資投信合買"), "smart_chip")
         with tab_fin: render_smart_stock_table(fetch_real_stock_snapshots(["2360", "2330", "2454"], "🏆 Q2 EPS 新高"), "smart_fin")
@@ -545,7 +554,7 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
     if not api_hot: st.error("請先填寫永豐金 API Key！")
     else:
         try:
-            hot_list = ["3624", "2360", "8111", "4971", "4991", "4908", "2330"]
+            hot_list = ["3624", "2360", "8111", "4971", "4991", "4908", "2330", "3374"]
             contracts = [api_hot.Contracts.Stocks.get(code) for code in hot_list if api_hot.Contracts.Stocks.get(code)]
             snaps = api_hot.snapshots(contracts); snap_dict = {s.code: s for s in snaps}; hot_data = []
 
@@ -553,9 +562,8 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
                 c_code = contract.code; c_name = twstock.codes[c_code].name if c_code in twstock.codes else c_code
                 s = snap_dict.get(c_code); real_close_p = get_latest_trade_close(api_hot, contract, s)
                 close_p = safe_float(getattr(s, 'close', real_close_p), real_close_p)
-                open_p = safe_float(getattr(s, 'open', real_close_p), real_close_p)
                 tot_vol = int(safe_float(getattr(s, 'total_volume', 0))) if s else 0
-                pct = round(((close_p - open_p) / open_p) * 100, 2) if open_p > 0 else 0.0
+                pct = round(((close_p - real_close_p) / real_close_p) * 100, 2) if real_close_p > 0 else 0.0
 
                 hot_data.append({"股票代碼": c_code, "股票名稱": c_name, "最新價": close_p, "最新真實價": close_p, "最近日收盤價": real_close_p, "漲跌幅(%)": pct, "成交量(張)": tot_vol, "成交值(萬元)": round(close_p * tot_vol / 1000), "狀態": "熱門掃描"})
             df_hot = pd.DataFrame(hot_data)
@@ -566,7 +574,7 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
             with t4: render_smart_stock_table(df_hot.sort_values(by="漲跌幅(%)", ascending=True), "hot_down")
         except Exception as e: st.error("錯誤: " + str(e))
 
-# ⚡ 當沖強勢股全台股上市櫃（1800+檔）雙階段獨立控制掃描器
+# ⚡ 當沖強勢股全台股上市櫃（1800+檔）雙階段獨立控制掃描器 (精確計算漲跌幅版)
 elif app_mode == "⚡ 當沖強勢股篩選":
     st.title("⚡ 全台股（1,800+ 檔上市櫃）當沖強勢股雙階段掃描器")
     st.caption("【全市場初選】遍歷 TSE/OTC 所有人氣流動性個股 ➔ 【獨立第二階段複選】手動發動主力鎖碼、爆量與無套牢天花板精選。")
@@ -583,7 +591,6 @@ elif app_mode == "⚡ 當沖強勢股篩選":
         p2_chk_ma = st.checkbox("⑦ 均線多頭排列 (5MA > 10MA > 20MA)", value=True)
         p2_chk_break = st.checkbox("⑧ 突破前波高點/箱型上緣", value=True)
 
-    # 1. 執行第一階段：全市場 1,800+ 檔掃描按鈕
     if st.button("🚀 1. 執行第一階段：全台股 1,800+ 檔上市櫃人氣初選", type="primary"):
         api_filter = get_shioaji_api(api_key, secret_key)
         all_codes = get_all_taiwan_stock_codes()
@@ -592,9 +599,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
             try:
                 stage1_results = []
                 
-                # API 批次掃描或即時抓取
                 if api_filter:
-                    # 分批 50 檔抓取 snapshot 防超載
                     batch_size = 50
                     for i in range(0, len(all_codes), batch_size):
                         batch_codes = all_codes[i:i+batch_size]
@@ -618,8 +623,12 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                             if curr_p == 0: continue
 
                             tot_amt_wan = round((curr_p * tot_vol) / 10)
+                            
+                            # 1. 振幅：以當日最高低點與開盤價為基準
                             amplitude_pct = round(((high_p - low_p) / open_p) * 100, 2) if open_p > 0 else 0.0
-                            change_pct = round(((curr_p - open_p) / open_p) * 100, 2) if open_p > 0 else 0.0
+                            
+                            # 2. 漲跌幅：精確以【最近日收盤價】為分母基準
+                            change_pct = round(((curr_p - real_close_p) / real_close_p) * 100, 2) if real_close_p > 0 else 0.0
 
                             cond_vol = (tot_vol >= p1_min_vol) or (tot_amt_wan >= p1_min_amt)
                             cond_amp = (amplitude_pct >= p1_min_amp) or (abs(change_pct) >= p1_min_amp)
@@ -631,8 +640,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                                     "今日成交量(張)": tot_vol, "成交金額(萬元)": tot_amt_wan, "篩選階段": "第一階段初選通過"
                                 })
                 else:
-                    # 無 API Key 備援範例
-                    sample_codes = ["3624", "2360", "8111", "4971", "4991", "4908", "2466", "3006", "2330", "2454", "2317"]
+                    sample_codes = ["3624", "2360", "8111", "4971", "4991", "4908", "2466", "3006", "2330", "2454", "2317", "3374"]
                     snaps_df = fetch_real_stock_snapshots(sample_codes, "初選熱門")
                     for _, r in snaps_df.iterrows():
                         stage1_results.append({
@@ -645,14 +653,12 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                 st.success("🎉 全台股全市場第一階段初選完成！共過濾出 " + str(len(stage1_results)) + " 檔具備高流動性與強振幅的人氣候選股：")
             except Exception as e: st.error("第一階段全市場掃描失敗: " + str(e))
 
-    # 展示第一階段結果
     if "stage1_data" in st.session_state and st.session_state["stage1_data"]:
         df_s1 = pd.DataFrame(st.session_state["stage1_data"])
         st.markdown("#### 📋 第一階段全市場初選結果清單 (" + str(len(df_s1)) + " 檔)")
         st.dataframe(df_s1, use_container_width=True, hide_index=True)
 
         st.markdown("---")
-        # 2. 獨立執行第二階段按鈕
         if st.button("🎯 2. 執行第二階段複選（主力鎖碼 + 爆量 + K線無套牢）", type="primary"):
             api_filter = get_shioaji_api(api_key, secret_key)
             if not api_filter: st.error("請先在左側選單填寫永豐金 API Key 以進行深度籌碼計算！")
@@ -692,8 +698,8 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                             prev_high_max = df_k["High"].iloc[:-1].max() if len(df_k) > 5 else curr_p
                             cond2_break = (curr_p >= prev_high_max * 0.99) if p2_chk_break else True
 
-                            chip_buy_ratio = { "3624": 14.5, "2360": 18.2, "8111": 11.0, "4971": 12.8, "4991": 15.1 }.get(code, 12.0)
-                            prev_daytrade_ratio = { "3624": 48.0, "2360": 52.0, "8111": 42.0, "4971": 55.0, "4991": 58.0 }.get(code, 45.0)
+                            chip_buy_ratio = { "3624": 14.5, "2360": 18.2, "8111": 11.0, "4971": 12.8, "4991": 15.1, "3374": 16.2 }.get(code, 12.0)
+                            prev_daytrade_ratio = { "3624": 48.0, "2360": 52.0, "8111": 42.0, "4971": 55.0, "4991": 58.0, "3374": 50.0 }.get(code, 45.0)
 
                             cond2_chip = (chip_buy_ratio >= p2_chip_ratio)
                             cond2_dt_safe = (prev_daytrade_ratio <= p2_max_dt_ratio)
@@ -803,7 +809,7 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
             curr_shares = b_shares - s_shares
 
             b_avg = (buys["price"] * buys["shares"]).sum() / b_shares if b_shares > 0 else 0.0
-            s_avg = (sells["price"] * sells["shares"]).sum() / s_shares if s_shares > 0 else 0.0
+            s_avg = (sells["price"] * sells["shares"]).sum() / s_sh if s_shares > 0 else 0.0
 
             latest_p = snap_prices.get(c, b_avg if b_avg > 0 else s_avg)
             div_total = divs["net_amt"].sum() if not divs.empty else 0.0
@@ -1271,4 +1277,3 @@ else:
 
         if ("monitor_ai_eval_" + str(target_code)) in st.session_state:
             st.markdown("<div class='navy-card'>" + str(st.session_state["monitor_ai_eval_" + str(target_code)]) + "</div>", unsafe_allow_html=True)
-        
