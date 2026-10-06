@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="三維定位法 & 6層量化選股與當沖盯盤全功能系統", layout="wide")
 
 # =========================================================
-# 🎨 1. 高對比亮色 UI 主題 (徹底解決黑底黑字/白底白字無法辨識問題)
+# 🎨 1. 高對比亮色 UI 主題 (修復白底白字、表格與日曆選擇器對比度)
 # =========================================================
 _CSS = "<style>:root{--bg:#0B0E14;--panel:#121721;--panel2:#1E2638;--line:#2A364F;--text:#FFFFFF;--muted:#CBD5E1;--up:#F6465D;--down:#1FC98B;--accent:#4C8DFF;--gold:#FFD166;}.stApp{background:var(--bg);color:var(--text);}html,body{font-family:'Noto Sans TC','Microsoft JhengHei',sans-serif;}h1,h2,h3,h4,h5,h6{color:#FFFFFF !important;font-weight:700 !important;}.block-container{padding-top:1.2rem;max-width:1400px;}#MainMenu,footer{visibility:hidden;}[data-testid='stSidebar']{background:var(--panel) !important;border-right:1px solid var(--line);}[data-testid='stSidebar'] *{color:#F0F4F8 !important;}.stTabs [data-baseweb='tab-list']{gap:6px;flex-wrap:wrap;}.stTabs [data-baseweb='tab']{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 16px;}.stTabs [aria-selected='true']{background:var(--accent);border-color:var(--accent);}.stTabs [aria-selected='true'] *{color:#FFFFFF !important;font-weight:700;}.stButton>button{min-height:38px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:#FFFFFF !important;font-weight:600;}.stButton>button:hover{border-color:var(--accent);background:var(--accent);color:#fff !important;}input,select,textarea,[data-baseweb='select'] > div{background:var(--panel2) !important;color:#FFFFFF !important;border-radius:8px !important;border:1.5px solid var(--line) !important;}[data-baseweb='popover'] *{background:#1E2638 !important;color:#FFFFFF !important;}[data-baseweb='calendar'] *{color:#FFFFFF !important;}[data-testid='stDataFrame']{background:var(--panel) !important;border-radius:8px;padding:4px;border:1px solid var(--line);}[data-testid='stDataFrame'] *{color:#FFFFFF !important;}.up,.text-red{color:var(--up) !important;font-weight:700;}.down,.text-green{color:var(--down) !important;font-weight:700;}.muted{color:var(--muted) !important;font-size:.9rem;}.navy-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin-bottom:10px;}.lv{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px;height:100%;}.lv h5{margin:0 0 8px;font-size:.95rem;}.lv .it{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed var(--line);}.level-container{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;}.level-head{display:flex;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--line);}.level-box{background:var(--panel2);border:1.5px solid var(--gold);border-radius:8px;padding:8px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;}.level-box.normal{border-color:var(--line);}.level-box .lbl{font-size:.9rem;color:#FFFFFF !important;font-weight:600;}.level-box .val{font-size:1.15rem;font-weight:800;}.row{display:flex;justify-content:space-between;align-items:center;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:10px;padding:10px 14px;margin:6px 0;}.row.up-bar{border-left-color:var(--up);}.row.down-bar{border-left-color:var(--down);}.row .name{font-size:1rem;font-weight:700;color:#FFFFFF;}.row .code{color:var(--muted);font-size:.82rem;margin-left:6px;}.row .px{font-size:1.15rem;font-weight:800;text-align:right;}</style>"
 st.markdown(_CSS, unsafe_allow_html=True)
@@ -21,7 +21,7 @@ st.markdown(_CSS, unsafe_allow_html=True)
 # =========================================================
 WATCHLIST_FILE = "watchlist.json"
 HOLDINGS_FILE = "holdings.json"
-JOURNAL_FILE = "journal.json"
+STOCKIFY_JOURNAL_FILE = "stockify_journal.json"
 
 def load_saved_watchlist():
     default_list = ["3624 光頡", "2360 致茂", "8111 立碁", "4971 IET-KY", "4991 環宇-KY", "2330 台積電"]
@@ -63,27 +63,27 @@ def save_stock_holding_multi(code, trades_list, custom_stop, custom_target):
             json.dump(holdings, f, ensure_ascii=False, indent=2)
     except Exception as e: st.error("儲存持股失敗: " + str(e))
 
-def load_saved_journal():
-    if os.path.exists(JOURNAL_FILE):
+def load_saved_stockify_journal():
+    if os.path.exists(STOCKIFY_JOURNAL_FILE):
         try:
-            with open(JOURNAL_FILE, "r", encoding="utf-8") as f:
+            with open(STOCKIFY_JOURNAL_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, list): return data
         except Exception: pass
     return [
-        {"date": "2026-10-02", "code": "3624", "name": "光頡", "type": "買進", "price": 148.5, "sheets": 1, "fee_discount": 0.2},
-        {"date": "2026-10-05", "code": "3624", "name": "光頡", "type": "買進", "price": 152.0, "sheets": 1, "fee_discount": 0.2}
+        {"account": "主帳戶", "date": "2026-10-02", "code": "3624", "name": "光頡", "type": "買進", "price": 148.5, "sheets": 1, "fee_discount": 0.2, "note": "突破20MA試買"},
+        {"account": "主帳戶", "date": "2026-10-05", "code": "3624", "name": "光頡", "type": "買進", "price": 152.0, "sheets": 1, "fee_discount": 0.2, "note": "拉回季線加碼"}
     ]
 
-def save_journal_to_file(journal_data):
+def save_stockify_journal_to_file(journal_data):
     try:
-        with open(JOURNAL_FILE, "w", encoding="utf-8") as f:
+        with open(STOCKIFY_JOURNAL_FILE, "w", encoding="utf-8") as f:
             json.dump(journal_data, f, ensure_ascii=False, indent=2)
-    except Exception as e: st.error("儲存交易日記失敗: " + str(e))
+    except Exception as e: st.error("儲存 Stockify 交易日記失敗: " + str(e))
 
 if "watchlist" not in st.session_state: st.session_state["watchlist"] = load_saved_watchlist()
 if "holdings" not in st.session_state: st.session_state["holdings"] = load_saved_holdings()
-if "journal" not in st.session_state: st.session_state["journal"] = load_saved_journal()
+if "stockify_journal" not in st.session_state: st.session_state["stockify_journal"] = load_saved_stockify_journal()
 
 def add_to_watchlist_safe(stock_lbl):
     if stock_lbl not in st.session_state["watchlist"]:
@@ -159,7 +159,7 @@ app_mode = st.sidebar.radio("請選擇功能頁面", [
     "🔥 大戶投 — 盤中熱門",
     "⚡ 當沖強勢股篩選",
     "📈 三維定位與當沖盯盤系統",
-    "📊 台股交易記帳本 (Stockify)"
+    "📊 簡單台股記帳 (Stockify)"
 ])
 
 if not api_key or not secret_key:
@@ -606,44 +606,68 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     else: st.warning("ℹ 當前熱門個股中，無個股同時滿足嚴格突破條件。")
                 except Exception as e: st.error("篩選過程中發生錯誤: " + str(e))
 
-# 📊 新增分頁：台股交易記帳本 (Stockify Style)
-elif app_mode == "📊 台股交易記帳本 (Stockify)":
-    st.title("📊 台股交易記帳本 (Stockify Style)")
-    st.caption("獨立投資組合管理，記錄真實買賣明細、試算個股加權平均成本、已實現/未實現損益與股利總覽。")
+# 📊 復刻 Stockify 獨立頁面：簡單台股記帳
+elif app_mode == "📊 簡單台股記帳 (Stockify)":
+    st.title("📊 簡單台股記帳 (Stockify 精裝版)")
+    st.caption("簡單快速紀錄交易、自動試算成本均價、投資組合損益管理與買賣心法筆記。")
 
-    journal_list = st.session_state["journal"]
+    journal_list = st.session_state["stockify_journal"]
 
-    # 1. 新增記帳表單
-    with st.expander("➕ 新增一筆交易日記", expanded=False):
-        c1, c2, c3, c4, c5, c6 = st.columns([1.2, 1, 1, 1, 1, 1])
-        with c1: inp_date = st.date_input("交易日期", datetime.now()).strftime("%Y-%m-%d")
-        with c2: inp_code = st.text_input("股票代碼", "3624")
+    # 1. Stockify 風格多帳戶切換
+    account_col, disc_col = st.columns([2, 2])
+    with account_col:
+        sel_account = st.selectbox("📂 選擇投資帳戶 (多帳戶管理)", ["主帳戶", "存股帳戶", "當沖戰略帳戶", "帳戶 4", "帳戶 5"])
+    with disc_col:
+        global_discount = st.selectbox("🏷️ 預設券商手續費折讓", [0.2, 0.28, 0.38, 0.5, 0.6, 1.0], index=0, format_func=lambda x: f"{x*10:.2f} 折 ({x*100:.0f}%)")
+
+    # 2. 新增交易與決策筆記
+    with st.expander("➕ 快速新增股票買賣 / 股利 / 減資紀錄", expanded=False):
+        f1, f2, c3, f4, f5, f6 = st.columns([1.2, 1, 1, 1, 1, 1])
+        with f1: inp_date = st.date_input("交易日期", datetime.now()).strftime("%Y-%m-%d")
+        with f2: inp_code = st.text_input("股票代碼", "3624")
         with c3: inp_name = st.text_input("股票名稱", "光頡")
-        with c4: inp_type = st.selectbox("交易類型", ["買進", "賣出", "現金股利"])
-        with c5: inp_px = st.number_input("單價 / 股利金額", value=148.5, step=0.5)
-        with c6: inp_sh = st.number_input("張數", value=1, min_value=1, step=1)
+        with f4: inp_type = st.selectbox("交易類型", ["買進", "賣出", "現金股利", "股票股利(配股)", "減資/分割"])
+        with f5: inp_px = st.number_input("單價 / 股利金額", value=148.5, step=0.5)
+        with f6: inp_sh = st.number_input("張數 (1張=1000股)", value=1, min_value=1, step=1)
+        
+        inp_note = st.text_input("📝 投資決策筆記 / 買賣心法 (選填)", value="突破關鍵均線帶量試買")
 
-        if st.button("💾 儲存至交易日記", type="primary"):
+        if st.button("💾 儲存至 Stockify 記帳本", type="primary"):
             journal_list.append({
-                "date": inp_date, "code": inp_code, "name": inp_name,
-                "type": inp_type, "price": inp_px, "sheets": inp_sh, "fee_discount": 0.2
+                "account": sel_account, "date": inp_date, "code": inp_code, "name": inp_name,
+                "type": inp_type, "price": inp_px, "sheets": inp_sh, "fee_discount": global_discount, "note": inp_note
             })
-            st.session_state["journal"] = journal_list
-            save_journal_to_file(journal_list)
+            st.session_state["stockify_journal"] = journal_list
+            save_stockify_journal_to_file(journal_list)
             add_to_watchlist_safe(inp_code + " " + inp_name)
-            st.success("已成功寫入交易日記並自動備份至自選清單！")
+            st.success("已成功寫入【" + sel_account + "】記帳本並同步至自選股！")
             st.rerun()
 
-    # 2. 彙整數據計算
+    # 3. 過濾目前帳戶數據
     df_j = pd.DataFrame(journal_list) if journal_list else pd.DataFrame()
-    if not df_j.empty:
+    if not df_j.empty and "account" in df_j.columns:
+        df_acc = df_j[df_j["account"] == sel_account]
+    else:
+        df_acc = df_j
+
+    if not df_acc.empty:
         summary_rows = []
-        unique_codes = df_j["code"].unique()
+        unique_codes = df_acc["code"].unique()
+
+        api_stockify = get_shioaji_api(api_key, secret_key)
+        snap_stockify_dict = {}
+        if api_stockify:
+            try:
+                contracts = [api_stockify.Contracts.Stocks.get(c) for c in unique_codes if api_stockify.Contracts.Stocks.get(c)]
+                if contracts:
+                    snaps = api_stockify.snapshots(contracts)
+                    snap_stockify_dict = {s.code: getattr(s, 'close', getattr(s, 'reference_price', 0.0)) for s in snaps}
+            except Exception: pass
 
         for c in unique_codes:
-            sub_df = df_j[df_j["code"] == c]
+            sub_df = df_acc[df_acc["code"] == c]
             c_name = sub_df["name"].iloc[-1]
-            
+
             buys = sub_df[sub_df["type"] == "買進"]
             sells = sub_df[sub_df["type"] == "賣出"]
             divs = sub_df[sub_df["type"] == "現金股利"]
@@ -652,41 +676,53 @@ elif app_mode == "📊 台股交易記帳本 (Stockify)":
             sell_sheets = sells["sheets"].sum() if not sells.empty else 0
             holding_sheets = buy_sheets - sell_sheets
 
-            weighted_buy_price = (buys["price"] * buys["sheets"]).sum() / buy_sheets if buy_sheets > 0 else 0.0
-            total_buy_cost = (buys["price"] * buys["sheets"] * 1000).sum() if buy_sheets > 0 else 0.0
+            # 加權平均買進成本試算
+            _, total_buy_cost, _, _, weighted_buy_price = calculate_breakeven_price(buys.to_dict('records'), discount=global_discount)
+            breakeven_px, _, _, _, _ = calculate_breakeven_price(sub_df[sub_df["type"]=="買進"].to_dict('records'), discount=global_discount)
+
+            # 即時價與損益
+            curr_px = safe_float(snap_stockify_dict.get(c, weighted_buy_price), weighted_buy_price)
+            unrealized_pnl, roi = calculate_pnl_and_roi(curr_px, sub_df[sub_df["type"]=="買進"].to_dict('records'), discount=global_discount)
+
             total_div_income = (divs["price"]).sum() if not divs.empty else 0.0
 
             summary_rows.append({
-                "股票代碼": c, "股票名稱": c_name, "當前持股(張)": holding_sheets,
-                "加權買進均價": round(weighted_buy_price, 2),
-                "累計買進張數": buy_sheets, "累計賣出張數": sell_sheets,
-                "累積獲得股利": total_div_income
+                "股票代碼": c, "股票名稱": c_name, "持股(張)": holding_sheets,
+                "加權均價": round(weighted_buy_price, 2), "損益兩平賣價": round(breakeven_px, 2),
+                "最新市場價": round(curr_px, 2), "未實現損益": round(unrealized_pnl),
+                "報酬率(%)": round(roi, 2), "累積股利收入": total_div_income
             })
 
         df_sum = pd.DataFrame(summary_rows)
 
-        col_m1, col_m2, col_m3 = st.columns(3)
-        with col_m1:
-            st.markdown('<div style="background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 16px; text-align:center;"><div style="color:var(--muted); font-size:.9rem;">總記錄交易筆數</div><div style="font-size:1.8rem; font-weight:900; color:var(--accent);">' + str(len(df_j)) + ' 筆</div></div>', unsafe_allow_html=True)
-        with col_m2:
-            st.markdown('<div style="background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 16px; text-align:center;"><div style="color:var(--muted); font-size:.9rem;">在庫存股票檔數</div><div style="font-size:1.8rem; font-weight:900; color:var(--gold);">' + str(len(df_sum[df_sum["當前持股(張)"] > 0])) + ' 檔</div></div>', unsafe_allow_html=True)
-        with col_m3:
-            total_div = df_sum["累積獲得股利"].sum() if not df_sum.empty else 0
-            st.markdown('<div style="background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 16px; text-align:center;"><div style="color:var(--muted); font-size:.9rem;">累積現金股利收入</div><div style="font-size:1.8rem; font-weight:900; color:var(--up);">' + f"{total_div:,.0f}" + ' 元</div></div>', unsafe_allow_html=True)
+        # 頂部三大 KPIs 看板
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            tot_unrealized = df_sum["未實現損益"].sum() if not df_sum.empty else 0
+            color_cls = "var(--up)" if tot_unrealized >= 0 else "var(--down)"
+            st.markdown('<div style="background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 16px; text-align:center;"><div style="color:var(--muted); font-size:.9rem;">帳戶總未實現損益</div><div style="font-size:1.6rem; font-weight:900; color:' + color_cls + ';">' + f"{tot_unrealized:+,.0f}" + ' 元</div></div>', unsafe_allow_html=True)
+        with m2:
+            st.markdown('<div style="background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 16px; text-align:center;"><div style="color:var(--muted); font-size:.9rem;">在庫存股票檔數</div><div style="font-size:1.6rem; font-weight:900; color:var(--gold);">' + str(len(df_sum[df_sum["持股(張)"] > 0])) + ' 檔</div></div>', unsafe_allow_html=True)
+        with m3:
+            total_div = df_sum["累積股利收入"].sum() if not df_sum.empty else 0
+            st.markdown('<div style="background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 16px; text-align:center;"><div style="color:var(--muted); font-size:.9rem;">累積現金股利領取</div><div style="font-size:1.6rem; font-weight:900; color:var(--up);">' + f"{total_div:,.0f}" + ' 元</div></div>', unsafe_allow_html=True)
+        with m4:
+            st.markdown('<div style="background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 16px; text-align:center;"><div style="color:var(--muted); font-size:.9rem;">目前切換帳戶</div><div style="font-size:1.5rem; font-weight:900; color:var(--accent);">' + str(sel_account) + '</div></div>', unsafe_allow_html=True)
 
-        st.markdown("##### 📦 帳戶個股庫存與加權成本彙整表")
+        st.markdown("##### 📦【" + str(sel_account) + "】Stockify 庫存明細與即時未實現損益表")
         st.dataframe(df_sum, use_container_width=True, hide_index=True)
 
-        st.markdown("##### 📜 歷史交易明細紀錄")
-        st.dataframe(df_j, use_container_width=True, hide_index=True)
+        st.markdown("##### 📜 帳戶歷史買賣交易筆記與明細")
+        st.dataframe(df_acc, use_container_width=True, hide_index=True)
 
-        if st.button("🗑️ 清空所有交易日記歷史紀錄"):
-            st.session_state["journal"] = []
-            save_journal_to_file([])
-            st.success("已重置記帳本！")
+        if st.button("🗑️ 清空目前帳戶之交易紀錄"):
+            new_journal = [item for item in journal_list if item.get("account") != sel_account]
+            st.session_state["stockify_journal"] = new_journal
+            save_stockify_journal_to_file(new_journal)
+            st.success("已重置【" + sel_account + "】紀錄！")
             st.rerun()
     else:
-        st.info("ℹ️ 目前尚無任何交易記帳紀錄，請展開上方選單新增您的第一筆買賣或股利資料。")
+        st.info("ℹ️【" + str(sel_account) + "】目前無交易紀錄，請點擊上方選單進行第一次買賣或股利記帳。")
 
 # 三維定位與當沖盯盤系統
 else:
@@ -911,7 +947,7 @@ else:
                 st.dataframe(pd.DataFrame([{"日期": "10/02", "主力買賣超": "+2,450", "籌碼集中度": "12.5%", "買超前5總和": "63.8%"}]), use_container_width=True, hide_index=True)
 
         with right_panel:
-            st.markdown('<div class="level-container"><div class="level-head"><div><span class="muted">技術強壓</span><br><b class="text-red" style="font-size:1.2rem;">' + str(ai_res["resistance"]) + '</b></div><div style="text-align:right;"><span class="muted">技術強撐</span><br><b class="text-green" style="font-size:1.2rem;">' + str(ai_res["support"]) + '</b></div></div><div class="level-box"><span class="lbl">🚀 法定漲停價</span><span class="val text-red">' + f"{limit_up:.2f}" + '</span></div><div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">' + str(ai_res["resistance"]) + '</span></div><div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">' + str(ai_res["entry_price"]) + '</span></div><div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">' + f"{curr_price:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡 多空平衡點</span><span class="val" style="color:var(--gold);">' + f"{balance_point:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡️ 技術強撐價</span><span class="val text-green">' + str(ai_res["support"]) + '</span></div><div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">' + f"{limit_down:.2f}" + '</span></div></div>', unsafe_allow_html=True)
+            st.markdown('<div class="level-container"><div class="level-head"><div><span class="muted">技術強壓</span><br><b class="text-red" style="font-size:1.2rem;">' + str(ai_res["resistance"]) + '</b></div><div style="text-align:right;"><span class="muted">技術強撐</span><br><b class="text-green" style="font-size:1.2rem;">' + str(ai_res["support"]) + '</b></div></div><div class="level-box"><span class="lbl">🚀 法定漲停價</span><span class="val text-red">' + f"{limit_up:.2f}" + '</span></div><div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">' + str(ai_res["resistance"]) + '</span></div><div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">' + str(ai_res["entry_price"]) + '</span></div><div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">' + f"{curr_price:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡 多空平衡點</span><span class="val" style="color:var(--gold);">' + f"{balance_point:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡️️ 技術強撐價</span><span class="val text-green">' + str(ai_res["support"]) + '</span></div><div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">' + f"{limit_down:.2f}" + '</span></div></div>', unsafe_allow_html=True)
             st.write("")
             if st.button("🤖 AI 深度評估 (Gemini 診斷)", key="btn_right_gemini_eval", use_container_width=True):
                 with st.spinner("AI 診斷中..."):
