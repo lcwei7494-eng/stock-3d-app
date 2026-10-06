@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="三維定位法 & 6層量化選股與當沖盯盤全功能系統", layout="wide")
 
 # =========================================================
-# 🎨 1. 高對比亮色 UI 主題 (修復白底白字、表格與日曆選擇器對比度)
+# 🎨 1. 高對比亮色 UI 主題
 # =========================================================
 _CSS = "<style>:root{--bg:#0B0E14;--panel:#121721;--panel2:#1E2638;--line:#2A364F;--text:#FFFFFF;--muted:#CBD5E1;--up:#F6465D;--down:#1FC98B;--accent:#4C8DFF;--gold:#FFD166;}.stApp{background:var(--bg);color:var(--text);}html,body{font-family:'Noto Sans TC','Microsoft JhengHei',sans-serif;}h1,h2,h3,h4,h5,h6{color:#FFFFFF !important;font-weight:700 !important;}.block-container{padding-top:1.2rem;max-width:1400px;}#MainMenu,footer{visibility:hidden;}[data-testid='stSidebar']{background:var(--panel) !important;border-right:1px solid var(--line);}[data-testid='stSidebar'] *{color:#F0F4F8 !important;}.stTabs [data-baseweb='tab-list']{gap:6px;flex-wrap:wrap;}.stTabs [data-baseweb='tab']{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 16px;}.stTabs [aria-selected='true']{background:var(--accent);border-color:var(--accent);}.stTabs [aria-selected='true'] *{color:#FFFFFF !important;font-weight:700;}.stButton>button{min-height:38px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:#FFFFFF !important;font-weight:600;}.stButton>button:hover{border-color:var(--accent);background:var(--accent);color:#fff !important;}input,select,textarea,[data-baseweb='select'] > div{background:var(--panel2) !important;color:#FFFFFF !important;border-radius:8px !important;border:1.5px solid var(--line) !important;}[data-baseweb='popover'] *{background:#1E2638 !important;color:#FFFFFF !important;}[data-baseweb='calendar'] *{color:#FFFFFF !important;}[data-testid='stDataFrame']{background:var(--panel) !important;border-radius:8px;padding:4px;border:1px solid var(--line);}[data-testid='stDataFrame'] *{color:#FFFFFF !important;}.up,.text-red{color:var(--up) !important;font-weight:700;}.down,.text-green{color:var(--down) !important;font-weight:700;}.muted{color:var(--muted) !important;font-size:.9rem;}.navy-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin-bottom:10px;}.lv{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px;height:100%;}.lv h5{margin:0 0 8px;font-size:.95rem;}.lv .it{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed var(--line);}.level-container{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;}.level-head{display:flex;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--line);}.level-box{background:var(--panel2);border:1.5px solid var(--gold);border-radius:8px;padding:8px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;}.level-box.normal{border-color:var(--line);}.level-box .lbl{font-size:.9rem;color:#FFFFFF !important;font-weight:600;}.level-box .val{font-size:1.15rem;font-weight:800;}.row{display:flex;justify-content:space-between;align-items:center;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:10px;padding:10px 14px;margin:6px 0;}.row.up-bar{border-left-color:var(--up);}.row.down-bar{border-left-color:var(--down);}.row .name{font-size:1rem;font-weight:700;color:#FFFFFF;}.row .code{color:var(--muted);font-size:.82rem;margin-left:6px;}.row .px{font-size:1.15rem;font-weight:800;text-align:right;}</style>"
 st.markdown(_CSS, unsafe_allow_html=True)
@@ -608,19 +608,17 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     else: st.warning("ℹ 當前熱門個股中，無個股同時滿足嚴格突破條件。")
                 except Exception as e: st.error("篩選過程中發生錯誤: " + str(e))
 
-# 📊 復刻 Stockify 獨立頁面 (完美對照原版 5 張截圖)
+# 📊 復刻 Stockify 獨立頁面 (防 KeyError 安全保護版)
 elif app_mode == "📊 簡單台股記帳 (Stockify)":
     st.title("📊 Stockify 簡單台股記帳 (原版復刻)")
     st.caption("自動試算庫存股成本均價、預扣賣出費用總損益、已結算零股數平倉專區與歷史交易明細。")
 
     journal_list = st.session_state["stockify_journal"]
 
-    # 1. 頂部多帳戶選單與手續費折讓
     acc_col, disc_col = st.columns([2, 2])
     with acc_col: sel_account = st.selectbox("📂 選擇投資帳戶", ["主帳戶", "存股帳戶", "當沖戰略帳戶", "帳戶 4"])
     with disc_col: global_discount = st.selectbox("🏷️ 券商手續費折讓", [0.2, 0.28, 0.38, 0.5, 0.6, 1.0], index=0, format_func=lambda x: f"{x*10:.2f} 折 ({x*100:.0f}%)")
 
-    # 2. 圖一：新增交易表單 1:1 復刻 (買進 / 賣出 / 配息 / 配股 膠囊選擇)
     with st.expander("➕ 新增交易紀錄 (對照原版 Stockify 表單)", expanded=False):
         c1, c2, c3 = st.columns([1.5, 1, 1])
         with c1: stock_in = st.text_input("股票 (輸入股名或股號)", "3624 光頡")
@@ -631,7 +629,6 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
         with c4: price_in = st.number_input("股價 (元)", value=148.5, step=0.5)
         with c5: shares_in = st.number_input("股數 (1張=1000股)", value=1000, step=100)
 
-        # 動態試算預估手續費與支出/收入金額
         est_amt = price_in * shares_in
         est_fee = math.floor(est_amt * 0.001425 * global_discount) if type_in in ["買進", "賣出"] else 0
         if est_fee < 20 and type_in in ["買進", "賣出"]: est_fee = 20
@@ -664,12 +661,10 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
             st.success("已成功寫入 Stockify 記帳本！")
             st.rerun()
 
-    # 3. 處理與分類統計
     df_j = pd.DataFrame(journal_list) if journal_list else pd.DataFrame()
     df_acc = df_j[df_j["account"] == sel_account] if (not df_j.empty and "account" in df_j.columns) else df_j
 
     if not df_acc.empty:
-        # 串接 API 最新即時價
         api_stk = get_shioaji_api(api_key, secret_key)
         unique_codes = df_acc["code"].unique()
         snap_prices = {}
@@ -702,7 +697,6 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
             latest_p = snap_prices.get(c, b_avg if b_avg > 0 else s_avg)
             div_total = divs["net_amt"].sum() if not divs.empty else 0.0
 
-            # 圖二：庫存股 (持股數 > 0)
             if curr_shares > 0:
                 pnl, roi = calculate_pnl_and_roi(latest_p, buys.to_dict('records'), discount=global_discount)
                 holding_items.append({
@@ -711,7 +705,6 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
                     "股價": latest_p, "成本均/買均": f"{b_avg:.2f}\n{b_avg:.2f}",
                     "總損益": round(pnl), "損益率(%)": roi, "純價": latest_p, "純買均": b_avg
                 })
-            # 圖三：已結算 (持股數 == 0)
             else:
                 realized_pnl = (s_avg - b_avg) * s_shares + div_total
                 realized_roi = (realized_pnl / (b_avg * s_shares)) * 100 if (b_avg * s_shares) > 0 else 0.0
@@ -722,14 +715,20 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
                     "總損益": round(realized_pnl), "損益率(%)": realized_roi, "賣均": s_avg, "買均": b_avg
                 })
 
-        df_hold = pd.DataFrame(holding_items)
-        df_sett = pd.DataFrame(settled_items)
+        # 預防性預設欄位 (避免 KeyError)
+        cols_h = ["股票/股數", "股票代碼", "股票名稱", "股數", "股價", "成本均/買均", "總損益", "損益率(%)", "純價", "純買均"]
+        cols_s = ["股票/股數", "股票代碼", "股票名稱", "股數", "股價", "賣均/買均", "總損益", "損益率(%)", "賣均", "買均"]
+
+        df_hold = pd.DataFrame(holding_items, columns=cols_h) if holding_items else pd.DataFrame(columns=cols_h).assign(總損益=0, 純價=0.0, 股數=0)
+        df_sett = pd.DataFrame(settled_items, columns=cols_s) if settled_items else pd.DataFrame(columns=cols_s).assign(總損益=0)
 
         tab1, tab2, tab3 = st.tabs(["📦 庫存股與已結算看板", "📜 個股交易細節與圖卡", "📅 歷史交易流水帳紀錄"])
 
         with tab1:
-            st.markdown(f"### ▌ 庫存股 ({len(df_hold)}) <span style='float:right; font-size:1.1rem; color:var(--gold);'>合計市值: {df_hold['純價'].mul(df_hold['股數']).sum():,.0f} 元</span>", unsafe_allow_html=True)
-            if not df_hold.empty:
+            tot_hold_val = (df_hold['純價'] * df_hold['股數']).sum() if (not df_hold.empty and '純價' in df_hold.columns) else 0.0
+            st.markdown(f"### ▌ 庫存股 ({len(holding_items)}) <span style='float:right; font-size:1.1rem; color:var(--gold);'>合計市值: {tot_hold_val:,.0f} 元</span>", unsafe_allow_html=True)
+            
+            if holding_items:
                 for _, r in df_hold.iterrows():
                     pnl_cls = "up" if r["總損益"] >= 0 else "down"
                     st.markdown(f"""
@@ -742,8 +741,10 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
                     """, unsafe_allow_html=True)
 
             st.write("")
-            st.markdown(f"### ▌ 已結算 ({len(df_sett)}) <span style='float:right; font-size:1.1rem; color:var(--accent);'>累積已實現損益: {df_sett['總損益'].sum():,.0f} 元</span>", unsafe_allow_html=True)
-            if not df_sett.empty:
+            tot_settled_pnl = df_sett['總損益'].sum() if (not df_sett.empty and '總損益' in df_sett.columns) else 0.0
+            st.markdown(f"### ▌ 已結算 ({len(settled_items)}) <span style='float:right; font-size:1.1rem; color:var(--accent);'>累積已實現損益: {tot_settled_pnl:,.0f} 元</span>", unsafe_allow_html=True)
+            
+            if settled_items:
                 for _, r in df_sett.iterrows():
                     pnl_cls = "up" if r["總損益"] >= 0 else "down"
                     st.markdown(f"""
@@ -754,9 +755,8 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
                     </div>
                     """, unsafe_allow_html=True)
 
-        # 圖四：個股詳細卡片頁
         with tab2:
-            st.markdown("### 📊 個股歷史交易明細與持股卡片 (對照圖四)")
+            st.markdown("### 📊 個股歷史交易明細與持股卡片")
             sel_stock_code = st.selectbox("請選擇欲檢視明細之個股：", unique_codes)
             sub_df = df_acc[df_acc["code"] == sel_stock_code]
             c_name = sub_df["name"].iloc[-1]
@@ -781,9 +781,8 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
             """, unsafe_allow_html=True)
             st.dataframe(sub_df[["date", "type", "price", "shares", "net_amt", "note"]], use_container_width=True, hide_index=True)
 
-        # 圖五：歷史交易流水帳頁面
         with tab3:
-            st.markdown("### 📅 歷史交易流水帳紀錄 (對照圖五)")
+            st.markdown("### 📅 歷史交易流水帳紀錄")
             df_sorted = df_acc.sort_values(by="date", ascending=False)
             for d, grp in df_sorted.groupby("date", sort=False):
                 inc = grp[grp["type"]=="賣出"]["net_amt"].sum()
@@ -810,7 +809,7 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
     else:
         st.info("ℹ️【" + str(sel_account) + "】目前尚無交易紀錄，請展開上方『➕ 新增交易紀錄』填寫。")
 
-# 三維定位與當沖盯盤系統
+# 三維定位與當沖盯盤系統 (含成交明細大單與語音警示)
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
     if "selected_stock" not in st.session_state: st.session_state["selected_stock"] = "3624"
@@ -839,12 +838,16 @@ else:
 
     with col_style: trade_style = st.selectbox("🎯 交易風格", ["短線/當沖 (1~3天)", "波段操作 (幾天~幾週)", "長線投資"])
 
-    st.markdown("##### ⚡ 盤中當沖動態監控條件 (微秒級 Tick 自動比對與 2倍外內盤失衡警示)")
+    st.markdown("##### ⚡ 盤中當沖動態監控條件 (成交明細特大單與語音警示)")
     col_c1, col_c2, col_c3, col_c4 = st.columns([1.2, 1.2, 1.2, 1])
     with col_c1: chk_vwap = st.checkbox("監控當日均線 (VWAP) 支撐/跌破", value=True)
     with col_c2: chk_pivot = st.checkbox("監控多空平衡點 站上/跌破", value=True)
     with col_c3: chk_momentum = st.checkbox("監控外內盤量極端失衡 (2倍門檻)", value=True)
     with col_c4: param_imbalance_ratio = st.number_input("⚡ 外內盤失衡門檻 (倍)", value=2.0, min_value=1.1, step=0.1)
+
+    c_c5, c_c6 = st.columns([1.5, 1.5])
+    with c_c5: chk_big_tick = st.checkbox("🔥 監控成交明細主力特大單 (單筆/連擊)", value=True)
+    with c_c6: param_big_tick_shares = st.number_input("💥 單筆特大單門檻 (張)", value=30, min_value=5, step=5)
 
     trade_state_key = "trades_list_" + str(target_code)
     if trade_state_key not in st.session_state:
@@ -950,7 +953,8 @@ else:
                                 "stop_price": custom_stop_price, "buy_cost": avg_buy_price, "buy_sheets": total_sheets,
                                 "breakeven_p": breakeven_p, "total_cost": total_cost, "vwap": avg_price, "pivot": bal_p,
                                 "outer_vol": outer_vol, "inner_vol": inner_vol, "chk_vwap": chk_vwap, "chk_pivot": chk_pivot,
-                                "chk_momentum": chk_momentum, "imbalance_ratio": param_imbalance_ratio
+                                "chk_momentum": chk_momentum, "imbalance_ratio": param_imbalance_ratio,
+                                "chk_big_tick": chk_big_tick, "big_tick_shares": param_big_tick_shares
                             }
                             broadcast_tick_microsecond(tick_payload)
 
@@ -990,7 +994,126 @@ else:
         ai_res = ai_senior_analyst_diagnosis_advanced(target_code, target_name, curr_price, ma5, ma20, prev_high, prev_low, balance_point, {})
         pct = ((curr_price - open_price) / open_price) * 100 if open_price else 0; t_cls = tone(pct)
 
-        ws_live_html = '<div style="background:#121721; border:1px solid #253042; border-radius:12px; padding:16px 20px; margin-bottom:12px;"><div style="display:flex; justify-content:space-between; align-items:center;"><div><span style="font-size:1.6rem; font-weight:900; color:#FFFFFF;">' + str(data['target_code']) + ' ' + str(data['target_name']) + '</span><span style="font-size:1.05rem; font-weight:700; color:#FFD166; margin-left:12px; background:#1A2130; padding:4px 10px; border-radius:6px; border:1px solid #FFD166;">📌 最近日收盤價: ' + f"{prev_close_price:.2f}" + ' 元</span><span style="font-size:0.85rem; color:#4C8DFF; font-weight:600; margin-left:10px;">⚡ WebSocket 微秒級當沖條件即時監控</span></div><div style="text-align:right;"><span id="live-price" class="' + t_cls + '" style="font-size:2.8rem; font-weight:900; line-height:1;">' + f"{curr_price:.2f}" + '</span><span id="live-pct" class="' + t_cls + '" style="font-size:1.2rem; margin-left:8px;">' + f"{pct:+.2f}" + '%</span></div></div><div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:12px; background:#1A2130; border-radius:8px; padding:12px 16px; margin-top:12px; border:1px solid #253042;"><div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">最高</span><b style="color:#F6465D;">' + f"{high_price:.2f}" + '</b></div><div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">最低</span><b style="color:#1FC98B;">' + f"{low_price:.2f}" + '</b></div><div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">最近日收盤</span><b style="color:#FFD166;">' + f"{prev_close_price:.2f}" + '</b></div><div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">漲停</span><b style="color:#F6465D;">' + f"{limit_up:.2f}" + '</b></div><div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">跌停</span><b style="color:#1FC98B;">' + f"{limit_down:.2f}" + '</b></div><div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">均價 (VWAP)</span><b style="color:#FFD166;">' + f"{avg_price:.2f}" + '</b></div></div><div id="pnl-box" style="margin-top:10px; padding:8px 12px; background:#1A2130; border-radius:6px; font-weight:700; display:none; border:1px solid #4C8DFF;"></div><div id="alarm-box" style="margin-top:10px; font-size:1.05rem; font-weight:700;"></div></div>'
+        # ⚡ Web Speech 語音警示與成交明細提醒 HTML/JS
+        ws_live_html = f"""
+        <div style="background:#121721; border:1px solid #253042; border-radius:12px; padding:16px 20px; margin-bottom:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <span style="font-size:1.6rem; font-weight:900; color:#FFFFFF;">{data['target_code']} {data['target_name']}</span>
+                    <span style="font-size:1.05rem; font-weight:700; color:#FFD166; margin-left:12px; background:#1A2130; padding:4px 10px; border-radius:6px; border:1px solid #FFD166;">📌 最近日收盤價: {prev_close_price:.2f} 元</span>
+                    <span style="font-size:0.85rem; color:#4C8DFF; font-weight:600; margin-left:10px;">⚡ WebSocket 微秒級當沖條件即時監控</span>
+                </div>
+                <div style="text-align:right;">
+                    <span id="live-price" class="{t_cls}" style="font-size:2.8rem; font-weight:900; line-height:1;">{curr_price:.2f}</span>
+                    <span id="live-pct" class="{t_cls}" style="font-size:1.2rem; margin-left:8px;">{pct:+.2f}%</span>
+                </div>
+            </div>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:12px; background:#1A2130; border-radius:8px; padding:12px 16px; margin-top:12px; border:1px solid #253042;">
+                <div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">最高</span><b style="color:#F6465D;">{high_price:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">最低</span><b style="color:#1FC98B;">{low_price:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">最近日收盤</span><b style="color:#FFD166;">{prev_close_price:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">漲停</span><b style="color:#F6465D;">{limit_up:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">跌停</span><b style="color:#1FC98B;">{limit_down:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">均價 (VWAP)</span><b style="color:#FFD166;">{avg_price:.2f}</b></div>
+            </div>
+            <div id="pnl-box" style="margin-top:10px; padding:8px 12px; background:#1A2130; border-radius:6px; font-weight:700; display:none; border:1px solid #4C8DFF;"></div>
+            <div id="alarm-box" style="margin-top:10px; font-size:1.15rem; font-weight:700;"></div>
+        </div>
+
+        <script>
+            const host = window.location.hostname || "localhost";
+            const ws = new WebSocket("ws://" + host + ":8765");
+            const openPx = {open_price};
+            let lastSpeechTime = 0;
+
+            function speakAlert(text) {{
+                const now = Date.now();
+                if (now - lastSpeechTime > 3000) {{ // 3秒語音防刷
+                    lastSpeechTime = now;
+                    if ('speechSynthesis' in window) {{
+                        const msg = new SpeechSynthesisUtterance(text);
+                        msg.lang = 'zh-TW';
+                        window.speechSynthesis.speak(msg);
+                    }}
+                }}
+            }}
+
+            ws.onmessage = function(event) {{
+                const data = JSON.parse(event.data);
+                const px = data.price;
+                const vol = data.volume;
+                const pxElem = document.getElementById("live-price");
+                const pctElem = document.getElementById("live-pct");
+                const alarmElem = document.getElementById("alarm-box");
+                const pnlElem = document.getElementById("pnl-box");
+
+                pxElem.innerText = px.toFixed(2);
+
+                if (openPx > 0) {{
+                    const diffPct = ((px - openPx) / openPx) * 100;
+                    pctElem.innerText = (diffPct >= 0 ? "+" : "") + diffPct.toFixed(2) + "%";
+                    if (diffPct > 0) {{ pxElem.className = "up"; pctElem.className = "up"; }}
+                    else if (diffPct < 0) {{ pxElem.className = "down"; pctElem.className = "down"; }}
+                }}
+
+                if (data.buy_cost > 0 && data.total_cost > 0) {{
+                    const shares = data.buy_sheets;
+                    const sellVal = px * shares;
+                    let sellFee = Math.floor(sellVal * 0.001425 * 0.2);
+                    if (sellFee < 20) sellFee = 20;
+                    const sellTax = Math.floor(sellVal * 0.003);
+                    const netIncome = sellVal - sellFee - sellTax;
+                    const pnl = netIncome - data.total_cost;
+                    const pnlRate = (pnl / data.total_cost) * 100;
+
+                    pnlElem.style.display = "block";
+                    const colorCls = pnl >= 0 ? "#F6465D" : "#1FC98B";
+                    pnlElem.innerHTML = "<span style='color:#FFFFFF;'>💰 微秒級即時預估損益：</span><span style='color:" + colorCls + "; font-size:1.2rem;'>" + (pnl >= 0 ? "+" : "") + Math.round(pnl).toLocaleString() + " 元 (" + (pnlRate >= 0 ? "+" : "") + pnlRate.toFixed(2) + "%)</span>";
+                }} else {{ pnlElem.style.display = "none"; }}
+
+                let msgs = [];
+                // 1. 特大單明細監控 (單筆張數門檻)
+                if (data.chk_big_tick && vol >= (data.big_tick_shares || 30)) {{
+                    msgs.push("<span style='color:#F6465D;'>🔥【成交明細特大單】爆發單筆 " + vol + " 張市價敲進，主力強勢吃盤！</span>");
+                    speakAlert("主力特大買單進場");
+                }}
+
+                // 2. 目標價與停損價觸發
+                if (data.target_price > 0 && px >= data.target_price) {{
+                    msgs.push("<span style='color:#F6465D;'>🎯【目標價觸發】最新 Tick " + px + " 元已達目標位！</span>");
+                    speakAlert("已達目標價");
+                }}
+                if (data.stop_price > 0 && px <= data.stop_price) {{
+                    msgs.push("<span style='color:#1FC98B;'>🚨【停損價觸發】最新 Tick " + px + " 元已觸及停損位！</span>");
+                    speakAlert("觸及停損價注意");
+                }}
+
+                // 3. VWAP 均線監控
+                if (data.chk_vwap && data.vwap > 0) {{
+                    if (px > data.vwap && px <= data.vwap * 1.003) {{
+                        msgs.push("<span style='color:#FFD166;'>🟡【當沖護盤】現價回踩 VWAP 當日均線 (" + data.vwap.toFixed(2) + "元) 支撐！</span>");
+                    }} else if (px < data.vwap) {{
+                        msgs.push("<span style='color:#1FC98B;'>⚠️【當沖轉弱】現價已跌破 VWAP 當日均線 (" + data.vwap.toFixed(2) + "元)！</span>");
+                    }}
+                }}
+
+                // 4. 外/內盤極端失衡監控
+                if (data.chk_momentum) {{
+                    const threshold = data.imbalance_ratio || 2.0;
+                    if (data.outer_vol > 0 && data.inner_vol > 0) {{
+                        const ratio = data.outer_vol / data.inner_vol;
+                        if (ratio >= threshold) {{
+                            msgs.push("<span style='color:#F6465D;'>🔥【買盤極強失衡】外盤遠大於內盤 (" + ratio.toFixed(1) + "倍 > " + threshold + "倍)，具強推升動能！</span>");
+                        }} else if (data.inner_vol / data.outer_vol >= threshold) {{
+                            msgs.push("<span style='color:#1FC98B;'>⚠【賣盤極強失衡】內盤遠大於外盤 (" + (data.inner_vol / data.outer_vol).toFixed(1) + "倍 > " + threshold + "倍)，注意砍單風險！</span>");
+                        }}
+                    }}
+                }}
+
+                alarmElem.innerHTML = msgs.join("<br>");
+            }};
+        </script>
+        """
         st.components.v1.html(ws_live_html, height=250)
 
         st.markdown("#### 2️⃣ 四大停損與停利參考設定 (多重停損綠色 / 多重停利紅色)")
@@ -1033,7 +1156,7 @@ else:
                 st.dataframe(pd.DataFrame([{"日期": "10/02", "主力買賣超": "+2,450", "籌碼集中度": "12.5%", "買超前5總和": "63.8%"}]), use_container_width=True, hide_index=True)
 
         with right_panel:
-            st.markdown('<div class="level-container"><div class="level-head"><div><span class="muted">技術強壓</span><br><b class="text-red" style="font-size:1.2rem;">' + str(ai_res["resistance"]) + '</b></div><div style="text-align:right;"><span class="muted">技術強撐</span><br><b class="text-green" style="font-size:1.2rem;">' + str(ai_res["support"]) + '</b></div></div><div class="level-box"><span class="lbl">🚀 法定漲停價</span><span class="val text-red">' + f"{limit_up:.2f}" + '</span></div><div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">' + str(ai_res["resistance"]) + '</span></div><div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">' + str(ai_res["entry_price"]) + '</span></div><div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">' + f"{curr_price:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡 多空平衡點</span><span class="val" style="color:var(--gold);">' + f"{balance_point:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡️ 技術強撐價</span><span class="val text-green">' + str(ai_res["support"]) + '</span></div><div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">' + f"{limit_down:.2f}" + '</span></div></div>', unsafe_allow_html=True)
+            st.markdown('<div class="level-container"><div class="level-head"><div><span class="muted">技術強壓</span><br><b class="text-red" style="font-size:1.2rem;">' + str(ai_res["resistance"]) + '</b></div><div style="text-align:right;"><span class="muted">技術強撐</span><br><b class="text-green" style="font-size:1.2rem;">' + str(ai_res["support"]) + '</b></div></div><div class="level-box"><span class="lbl">🚀 法定漲停價</span><span class="val text-red">' + f"{limit_up:.2f}" + '</span></div><div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">' + str(ai_res["resistance"]) + '</span></div><div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">' + str(ai_res["entry_price"]) + '</span></div><div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">' + f"{curr_price:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡 多空平衡點</span><span class="val" style="color:var(--gold);">' + f"{balance_point:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡️️ 技術強撐價</span><span class="val text-green">' + str(ai_res["support"]) + '</span></div><div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">' + f"{limit_down:.2f}" + '</span></div></div>', unsafe_allow_html=True)
             st.write("")
             if st.button("🤖 AI 深度評估 (Gemini 診斷)", key="btn_right_gemini_eval", use_container_width=True):
                 with st.spinner("AI 診斷中..."):
