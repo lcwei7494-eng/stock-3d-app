@@ -21,6 +21,7 @@ st.markdown(_CSS, unsafe_allow_html=True)
 # =========================================================
 WATCHLIST_FILE = "watchlist.json"
 HOLDINGS_FILE = "holdings.json"
+JOURNAL_FILE = "journal.json"
 
 def load_saved_watchlist():
     default_list = ["3624 光頡", "2360 致茂", "8111 立碁", "4971 IET-KY", "4991 環宇-KY", "2330 台積電"]
@@ -29,26 +30,21 @@ def load_saved_watchlist():
             with open(WATCHLIST_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, list) and len(data) > 0:
-                    # 與預設合併扣重，確保不遺漏任何歷史自選
                     combined = list(data)
                     for item in default_list:
-                        if item not in combined:
-                            combined.append(item)
+                        if item not in combined: combined.append(item)
                     return combined
         except Exception: pass
     return default_list
 
 def save_watchlist_to_file(watchlist):
     try:
-        # 去除重複項保持順序
         unique_list = []
         for item in watchlist:
-            if item not in unique_list:
-                unique_list.append(item)
+            if item not in unique_list: unique_list.append(item)
         with open(WATCHLIST_FILE, "w", encoding="utf-8") as f:
             json.dump(unique_list, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        st.error("寫入自選股失敗: " + str(e))
+    except Exception as e: st.error("寫入自選股失敗: " + str(e))
 
 def load_saved_holdings():
     if os.path.exists(HOLDINGS_FILE):
@@ -65,16 +61,30 @@ def save_stock_holding_multi(code, trades_list, custom_stop, custom_target):
     try:
         with open(HOLDINGS_FILE, "w", encoding="utf-8") as f:
             json.dump(holdings, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        st.error("儲存持股失敗: " + str(e))
+    except Exception as e: st.error("儲存持股失敗: " + str(e))
 
-# Session State 初始化 (確保不被清空)
-if "watchlist" not in st.session_state:
-    st.session_state["watchlist"] = load_saved_watchlist()
-if "holdings" not in st.session_state:
-    st.session_state["holdings"] = load_saved_holdings()
+def load_saved_journal():
+    if os.path.exists(JOURNAL_FILE):
+        try:
+            with open(JOURNAL_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list): return data
+        except Exception: pass
+    return [
+        {"date": "2026-10-02", "code": "3624", "name": "光頡", "type": "買進", "price": 148.5, "sheets": 1, "fee_discount": 0.2},
+        {"date": "2026-10-05", "code": "3624", "name": "光頡", "type": "買進", "price": 152.0, "sheets": 1, "fee_discount": 0.2}
+    ]
 
-# 增強版：新增自選股輔助函式
+def save_journal_to_file(journal_data):
+    try:
+        with open(JOURNAL_FILE, "w", encoding="utf-8") as f:
+            json.dump(journal_data, f, ensure_ascii=False, indent=2)
+    except Exception as e: st.error("儲存交易日記失敗: " + str(e))
+
+if "watchlist" not in st.session_state: st.session_state["watchlist"] = load_saved_watchlist()
+if "holdings" not in st.session_state: st.session_state["holdings"] = load_saved_holdings()
+if "journal" not in st.session_state: st.session_state["journal"] = load_saved_journal()
+
 def add_to_watchlist_safe(stock_lbl):
     if stock_lbl not in st.session_state["watchlist"]:
         st.session_state["watchlist"].append(stock_lbl)
@@ -142,7 +152,15 @@ gemini_api_key = st.secrets.get("GEMINI_API_KEY", "")
 finmind_token = st.secrets.get("FINMIND_API_TOKEN", "")
 
 st.sidebar.title("📌 全功能頁面選單")
-app_mode = st.sidebar.radio("請選擇功能頁面", ["🔍 FinMind 全市場掃描器", "🚀 6層量化戰略選股", "💡 大戶投 — 智慧選股", "🔥 大戶投 — 盤中熱門", "⚡ 當沖強勢股篩選", "📈 三維定位與當沖盯盤系統"])
+app_mode = st.sidebar.radio("請選擇功能頁面", [
+    "🔍 FinMind 全市場掃描器",
+    "🚀 6層量化戰略選股",
+    "💡 大戶投 — 智慧選股",
+    "🔥 大戶投 — 盤中熱門",
+    "⚡ 當沖強勢股篩選",
+    "📈 三維定位與當沖盯盤系統",
+    "📊 台股交易記帳本 (Stockify)"
+])
 
 if not api_key or not secret_key:
     st.sidebar.header("🔑 永豐金 API 設定")
@@ -587,6 +605,93 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                     if filter_results: render_smart_stock_table(pd.DataFrame(filter_results), "daytrade_flt")
                     else: st.warning("ℹ 當前熱門個股中，無個股同時滿足嚴格突破條件。")
                 except Exception as e: st.error("篩選過程中發生錯誤: " + str(e))
+
+# 📊 新增分頁：台股交易記帳本 (Stockify Style)
+elif app_mode == "📊 台股交易記帳本 (Stockify)":
+    st.title("📊 台股交易記帳本 (Stockify Style)")
+    st.caption("獨立投資組合管理，記錄真實買賣明細、試算個股加權平均成本、已實現/未實現損益與股利總覽。")
+
+    journal_list = st.session_state["journal"]
+
+    # 1. 新增記帳表單
+    with st.expander("➕ 新增一筆交易日記", expanded=False):
+        c1, c2, c3, c4, c5, c6 = st.columns([1.2, 1, 1, 1, 1, 1])
+        with c1: inp_date = st.date_input("交易日期", datetime.now()).strftime("%Y-%m-%d")
+        with c2: inp_code = st.text_input("股票代碼", "3624")
+        with c3: inp_name = st.text_input("股票名稱", "光頡")
+        with c4: inp_type = st.selectbox("交易類型", ["買進", "賣出", "現金股利"])
+        with c5: inp_px = st.number_input("單價 / 股利金額", value=148.5, step=0.5)
+        with c6: inp_sh = st.number_input("張數", value=1, min_value=1, step=1)
+
+        if st.button("💾 儲存至交易日記", type="primary"):
+            journal_list.append({
+                "date": inp_date, "code": inp_code, "name": inp_name,
+                "type": inp_type, "price": inp_px, "sheets": inp_sh, "fee_discount": 0.2
+            })
+            st.session_state["journal"] = journal_list
+            save_journal_to_file(journal_list)
+            # 自動同步新增至自選股清單 (確保備份)
+            add_to_watchlist_safe(inp_code + " " + inp_name)
+            st.success("已成功寫入交易日記並自動備份至自選清單！")
+            st.rerun()
+
+    # 2. 彙整數據計算
+    df_j = pd.DataFrame(journal_list) if journal_list else pd.DataFrame()
+    if not df_j.empty:
+        # 計算各股票持股彙整
+        summary_rows = []
+        unique_codes = df_j["code"].unique()
+
+        for c in unique_codes:
+            sub_df = df_j[df_j["code"] == c]
+            c_name = sub_df["name"].iloc[-1]
+            
+            buys = sub_df[sub_df["type"] == "買進"]
+            sells = sub_df[sub_df["type"] == "賣出"]
+            divs = sub_df[sub_df["type"] == "現金股利"]
+
+            buy_sheets = buys["sheets"].sum() if not buys.empty else 0
+            sell_sheets = sells["sheets"].sum() if not sells.empty else 0
+            holding_sheets = buy_sheets - sell_sheets
+
+            # 加權平均買進單價
+            weighted_buy_price = (buys["price"] * buys["sheets"]).sum() / buy_sheets if buy_sheets > 0 else 0.0
+            total_buy_cost = (buys["price"] * buys["sheets"] * 1000).sum() if buy_sheets > 0 else 0.0
+            
+            # 股利發放
+            total_div_income = (divs["price"]).sum() if not divs.empty else 0.0
+
+            summary_rows.append({
+                "股票代碼": c, "股票名稱": c_name, "當前持股(張)": holding_sheets,
+                "加權買進均價": round(weighted_buy_price, 2),
+                "累計買進張數": buy_sheets, "累計賣出張數": sell_sheets,
+                "累積獲得股利": total_div_income
+            })
+
+        df_sum = pd.DataFrame(summary_rows)
+
+        col_m1, col_m2, col_m3 = st.columns(3)
+        with col_m1:
+            st.markdown('<div style="background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 16px; text-align:center;"><div style="color:var(--muted); font-size:.9rem;">總記錄交易筆數</div><div style="font-size:1.8rem; font-weight:900; color:var(--accent);">' + str(len(df_j)) + ' 筆</div></div>', unsafe_allow_html=True)
+        with col_m2:
+            st.markdown('<div style="background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 16px; text-align:center;"><div style="color:var(--muted); font-size:.9rem;">在庫存股票檔數</div><div style="font-size:1.8rem; font-weight:900; color:var(--gold);">' + str(len(df_sum[df_sum["當前持股(張)"] > 0])) + ' 檔</div></div>', unsafe_allow_html=True)
+        with col_m3:
+            total_div = df_sum["累積獲得股利"].sum() if not df_sum.empty else 0
+            st.markdown('<div style="background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 16px; text-align:center;"><div style="color:var(--muted); font-size:.9rem;">累積現金股利收入</div><div style="font-size:1.8rem; font-weight:900; color:var(--up);">' + f"{total_div:,.0f}" + ' 元</div></div>', unsafe_allow_html=True)
+
+        st.markdown("##### 📦 帳戶個股庫存與加權成本彙整表")
+        st.dataframe(df_sum, use_container_width=True, hide_index=True)
+
+        st.markdown("##### 📜 歷史交易明細紀錄")
+        st.dataframe(df_j, use_container_width=True, hide_index=True)
+
+        if st.button("🗑️ 清空所有交易日記歷史紀錄"):
+            st.session_state["journal"] = []
+            save_journal_to_file([])
+            st.success("已重置記帳本！")
+            st.rerun()
+    else:
+        st.info("ℹ️ 目前尚無任何交易記帳紀錄，請展開上方選單新增您的第一筆買賣或股利資料。")
 
 # 三維定位與當沖盯盤系統
 else:
