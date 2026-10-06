@@ -11,9 +11,9 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="三維定位法 & 6層量化選股與當沖盯盤全功能系統", layout="wide")
 
 # =========================================================
-# 🎨 1. UI 主題 (採用單行轉義，徹底杜絕多行字串截斷語法錯誤)
+# 🎨 1. 精準對比 UI 主題 (修復白底白字、表格與日曆選擇器對比度)
 # =========================================================
-_CSS = "<style>:root{--bg:#0B0E14;--panel:#121721;--panel2:#1A2130;--line:#253042;--text:#FFFFFF;--muted:#D1D8E0;--up:#F6465D;--down:#1FC98B;--accent:#4C8DFF;--gold:#FFD166;}.stApp{background:var(--bg);color:var(--text);}html,body,[class*='css']{font-family:'Noto Sans TC','Microsoft JhengHei',sans-serif;}p,label,span,div,.stMarkdown{color:#F0F4F8 !important;}h1,h2,h3,h4{font-weight:700 !important;color:#FFFFFF !important;}.block-container{padding-top:1.2rem;max-width:1400px;}#MainMenu,footer{visibility:hidden;}[data-testid='stSidebar']{background:var(--panel) !important;border-right:1px solid var(--line);}[data-testid='stSidebar'] *{color:#F0F4F8 !important;}.stTabs [data-baseweb='tab-list']{gap:6px;flex-wrap:wrap;}.stTabs [data-baseweb='tab']{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 16px;}.stTabs [aria-selected='true']{background:var(--accent);border-color:var(--accent);}.stTabs [aria-selected='true'] *{color:#FFFFFF !important;font-weight:700;}.stButton>button{min-height:38px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:#FFFFFF !important;font-weight:600;}.stButton>button:hover{border-color:var(--accent);background:var(--accent);color:#fff !important;}input,[data-baseweb='select'] > div{background:var(--panel2) !important;color:#FFFFFF !important;border-radius:8px !important;}.up,.text-red{color:var(--up) !important;font-weight:700;}.down,.text-green{color:var(--down) !important;font-weight:700;}.muted{color:#D1D8E0 !important;font-size:.9rem;}.navy-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin-bottom:10px;}.lv{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px;height:100%;}.lv h5{margin:0 0 8px;font-size:.95rem;}.lv .it{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed var(--line);}.level-container{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;}.level-head{display:flex;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--line);}.level-box{background:var(--panel2);border:1.5px solid var(--gold);border-radius:8px;padding:8px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;}.level-box.normal{border-color:var(--line);}.level-box .lbl{font-size:.9rem;color:#FFFFFF !important;font-weight:600;}.level-box .val{font-size:1.15rem;font-weight:800;}.row{display:flex;justify-content:space-between;align-items:center;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:10px;padding:10px 14px;margin:6px 0;}.row.up-bar{border-left-color:var(--up);}.row.down-bar{border-left-color:var(--down);}.row .name{font-size:1rem;font-weight:700;color:#FFFFFF;}.row .code{color:var(--muted);font-size:.82rem;margin-left:6px;}.row .px{font-size:1.15rem;font-weight:800;text-align:right;}</style>"
+_CSS = "<style>:root{--bg:#0B0E14;--panel:#121721;--panel2:#1A2130;--line:#253042;--text:#FFFFFF;--muted:#A0AEC0;--up:#F6465D;--down:#1FC98B;--accent:#4C8DFF;--gold:#FFD166;}.stApp{background:var(--bg);color:var(--text);}html,body{font-family:'Noto Sans TC','Microsoft JhengHei',sans-serif;}h1,h2,h3,h4{font-weight:700 !important;color:#FFFFFF !important;}.block-container{padding-top:1.2rem;max-width:1400px;}#MainMenu,footer{visibility:hidden;}[data-testid='stSidebar']{background:var(--panel) !important;border-right:1px solid var(--line);}[data-testid='stSidebar'] *{color:#F0F4F8 !important;}.stTabs [data-baseweb='tab-list']{gap:6px;flex-wrap:wrap;}.stTabs [data-baseweb='tab']{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 16px;}.stTabs [aria-selected='true']{background:var(--accent);border-color:var(--accent);}.stTabs [aria-selected='true'] *{color:#FFFFFF !important;font-weight:700;}.stButton>button{min-height:38px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:#FFFFFF !important;font-weight:600;}.stButton>button:hover{border-color:var(--accent);background:var(--accent);color:#fff !important;}input,[data-baseweb='select'] > div{background:var(--panel2) !important;color:#FFFFFF !important;border-radius:8px !important;border:1px solid var(--line) !important;}[data-baseweb='popover'] *{color:#1A2130 !important;}[data-testid='stDataFrame']{background:var(--panel) !important;border-radius:8px;padding:4px;border:1px solid var(--line);}[data-testid='stDataFrame'] *{color:#FFFFFF !important;}.up,.text-red{color:var(--up) !important;font-weight:700;}.down,.text-green{color:var(--down) !important;font-weight:700;}.muted{color:var(--muted) !important;font-size:.9rem;}.navy-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin-bottom:10px;}.lv{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px;height:100%;}.lv h5{margin:0 0 8px;font-size:.95rem;}.lv .it{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed var(--line);}.level-container{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;}.level-head{display:flex;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--line);}.level-box{background:var(--panel2);border:1.5px solid var(--gold);border-radius:8px;padding:8px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;}.level-box.normal{border-color:var(--line);}.level-box .lbl{font-size:.9rem;color:#FFFFFF !important;font-weight:600;}.level-box .val{font-size:1.15rem;font-weight:800;}.row{display:flex;justify-content:space-between;align-items:center;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:10px;padding:10px 14px;margin:6px 0;}.row.up-bar{border-left-color:var(--up);}.row.down-bar{border-left-color:var(--down);}.row .name{font-size:1rem;font-weight:700;color:#FFFFFF;}.row .code{color:var(--muted);font-size:.82rem;margin-left:6px;}.row .px{font-size:1.15rem;font-weight:800;text-align:right;}</style>"
 st.markdown(_CSS, unsafe_allow_html=True)
 
 # =========================================================
@@ -312,7 +312,7 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     catalyst = data_dict.get('催化劑', '產業復甦/AI檢測需求'); status = data_dict.get('狀態', '盤中監控')
 
     key_to_use = user_gemini_key.strip() if user_gemini_key else gemini_api_key.strip()
-    if not key_to_use: return "⚠️ 請先在左側選單輸入 **Gemini API Key**！"
+    if not key_to_use: return "⚠️️ 請先在左側選單輸入 **Gemini API Key**！"
 
     prompt = "你是高盛亞太區台股首席策略分析師。針對台股【" + c_code + " " + c_name + "】進場評估：\n現價:" + str(price) + "元 (漲跌:" + f"{pct:+.2f}" + "%)\n基本面:EPS " + str(eps) + " | YoY " + str(yoy) + " | ROE " + str(roe) + " | PEG " + str(peg) + "\n催化劑:" + str(catalyst) + " (" + str(status) + ")\n\n請依4大維度評估：\n1. 產業趨勢與獲利實質檢視\n2. 投資人類型建議與分戰略操作策略 (空手與持股者)\n3. 買進勝率與結構剖析\n4. 風險提示與精確停損位"
 
@@ -630,7 +630,6 @@ elif app_mode == "📊 台股交易記帳本 (Stockify)":
             })
             st.session_state["journal"] = journal_list
             save_journal_to_file(journal_list)
-            # 自動同步新增至自選股清單 (確保備份)
             add_to_watchlist_safe(inp_code + " " + inp_name)
             st.success("已成功寫入交易日記並自動備份至自選清單！")
             st.rerun()
@@ -638,7 +637,6 @@ elif app_mode == "📊 台股交易記帳本 (Stockify)":
     # 2. 彙整數據計算
     df_j = pd.DataFrame(journal_list) if journal_list else pd.DataFrame()
     if not df_j.empty:
-        # 計算各股票持股彙整
         summary_rows = []
         unique_codes = df_j["code"].unique()
 
@@ -654,11 +652,8 @@ elif app_mode == "📊 台股交易記帳本 (Stockify)":
             sell_sheets = sells["sheets"].sum() if not sells.empty else 0
             holding_sheets = buy_sheets - sell_sheets
 
-            # 加權平均買進單價
             weighted_buy_price = (buys["price"] * buys["sheets"]).sum() / buy_sheets if buy_sheets > 0 else 0.0
             total_buy_cost = (buys["price"] * buys["sheets"] * 1000).sum() if buy_sheets > 0 else 0.0
-            
-            # 股利發放
             total_div_income = (divs["price"]).sum() if not divs.empty else 0.0
 
             summary_rows.append({
@@ -921,7 +916,7 @@ else:
             if st.button("🤖 AI 深度評估 (Gemini 診斷)", key="btn_right_gemini_eval", use_container_width=True):
                 with st.spinner("AI 診斷中..."):
                     fund_info = check_fundamental_6layer(target_code)
-                    combined_dict = {'target_code': target_code, 'target_name': target_name, 'curr_price': curr_price, 'bias_rate': bias_rate, 'momentum_coef': data.get('momentum_coef', 1.0), 'balance_point': balance_point, '季EPS': fund_info.get('eps', 1.5), '營收YoY': f"+{fund_info.get('yoy', 20.0)}%", 'ROE': f"{fund_info.get('roe', 15.0)}%", 'PEG': fund_info.get('peg', 0.8), '綜合評分': 80, '催化劑': fund_info.get('catalyst', '當沖多空轉折監控'), '狀態': ai_res['trend']}
+                    combined_dict = {'target_code': target_code, 'target_name': target_name, 'curr_price': curr_price, 'bias_rate': bias_rate, 'momentum_coef': data.get('momentum_coef', 1.0), 'balance_point': balance_point, '季EPS': fund_info.get('eps', 1.5), '營收YoY': f"+{fund_info.get('yoy', 20.0)}%", 'ROE': f"{fund_info.get('roe', 15.0)}%", 'PEG': fund_info.get('peg', 0.8), '綜合評分': 80, '催化劑': fund_info.get('catalyst', '當沖多空转折監控'), '狀態': ai_res['trend']}
                     st.session_state["monitor_ai_eval_" + str(target_code)] = run_goldman_sachs_ai_evaluation(combined_dict, gemini_api_key)
 
         if ("monitor_ai_eval_" + str(target_code)) in st.session_state:
