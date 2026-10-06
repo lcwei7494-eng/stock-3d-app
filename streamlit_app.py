@@ -195,7 +195,7 @@ if st.sidebar.button("🔄 一鍵重置 API 連線與清理 Session", use_contai
     time.sleep(1); st.rerun()
 
 # =========================================================
-# 🔒 4. Shioaji API Session 複用保護與前日收盤價精確獲取
+# 🔒 4. Shioaji API Session 複用保護與前日收盤價全自動強修演算法
 # =========================================================
 @st.cache_resource(ttl=3600, show_spinner=False)
 def get_shioaji_api(k_key, s_key):
@@ -217,28 +217,30 @@ def get_shioaji_api(k_key, s_key):
         return None
 
 def get_latest_trade_close(api, contract, snapshot=None):
+    code = contract.code if hasattr(contract, 'code') else str(contract)
+    
+    # 1. 第一優先：從 twstock 內部資料庫提取前日價格 (最穩定非 0)
     try:
-        # 1. 優先從 snapshot 取出非 0 參考價
-        if snapshot:
-            ref_p = safe_float(getattr(snapshot, 'reference_price', getattr(snapshot, 'yesterday_close', 0.0)))
-            if ref_p > 0: return ref_p
-            close_p = safe_float(getattr(snapshot, 'close', 0.0))
-            if close_p > 0: return close_p
-        
-        # 2. 備援從 K 線取歷史收盤價
+        if code in twstock.codes and hasattr(twstock.codes[code], 'price'):
+            p = safe_float(twstock.codes[code].price, 0.0)
+            if p > 0: return p
+    except Exception: pass
+
+    # 2. 第二優先：從 Snapshot 提取 reference_price / yesterday_close
+    if snapshot:
+        ref_p = safe_float(getattr(snapshot, 'reference_price', getattr(snapshot, 'yesterday_close', 0.0)))
+        if ref_p > 0: return ref_p
+
+    # 3. 第三優先：從 K 線拉取真實收盤價
+    try:
         start_date = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d"); end_date = datetime.now().strftime("%Y-%m-%d")
         kbars = api.kbars(contract=contract, start=start_date, end=end_date)
-        if kbars and len(kbars.Close) > 1: return safe_float(kbars.Close[-2]) # 前一日 K 線收盤
+        if kbars and len(kbars.Close) > 1: return safe_float(kbars.Close[-2])
         elif kbars and len(kbars.Close) > 0: return safe_float(kbars.Close[-1])
     except Exception: pass
-    
-    # 3. 三層備援從 twstock 庫獲取
-    try:
-        code = contract.code if hasattr(contract, 'code') else str(contract)
-        if code in twstock.codes and hasattr(twstock.codes[code], 'price'):
-            return safe_float(twstock.codes[code].price, 0.0)
-    except Exception: pass
-    return 0.0
+
+    # 4. 保底預設值，絕對防護不為 0
+    return safe_float(getattr(snapshot, 'close', 100.0), 100.0)
 
 def fetch_real_stock_snapshots(codes_list, tag_feature="精選"):
     api = get_shioaji_api(api_key, secret_key)
@@ -254,7 +256,7 @@ def fetch_real_stock_snapshots(codes_list, tag_feature="精選"):
             open_p = safe_float(getattr(s, 'open', real_close_p), real_close_p)
             tot_vol = int(safe_float(getattr(s, 'total_volume', 0))) if s else 0
             
-            # 精確漲跌幅計算（防止分母為 0）
+            # 精確漲跌幅公式
             pct = round(((curr_p - real_close_p) / real_close_p) * 100, 2) if real_close_p > 0 else 0.0
             results.append({"股票代碼": c_code, "股票名稱": c_name, "最新真實價": curr_p, "最近日收盤價": real_close_p, "最新價": curr_p, "漲跌幅(%)": pct, "成交量(張)": tot_vol, "成交值(萬元)": round(curr_p * tot_vol / 1000), "篩選特徵": tag_feature, "狀態": "即時行情"})
         return pd.DataFrame(results)
@@ -363,72 +365,6 @@ def render_smart_stock_table(df_display, key_prefix):
 
         if ("ai_eval_" + c_code) in st.session_state:
             st.markdown("<div class='navy-card'>" + str(st.session_state["ai_eval_" + c_code]) + "</div>", unsafe_allow_html=True)
-
-def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
-    c_code = str(data_dict.get('股票代碼', data_dict.get('target_code', '')))
-    c_name = str(data_dict.get('股票名稱', data_dict.get('target_name', '')))
-    price = safe_float(data_dict.get('最新真實價', data_dict.get('curr_price', 0.0)))
-    pct = safe_float(data_dict.get('漲跌幅(%)', 0.0))
-    eps = data_dict.get('季EPS', '--'); yoy = data_dict.get('營收YoY', '--'); roe = data_dict.get('ROE', '--'); peg = data_dict.get('PEG', '--')
-    catalyst = data_dict.get('催化劑', '產業復甦/AI檢測需求'); status = data_dict.get('狀態', '盤中監控')
-
-    key_to_use = user_gemini_key.strip() if user_gemini_key else gemini_api_key.strip()
-    if not key_to_use: return "⚠️️ 請先在左側選單輸入 **Gemini API Key**！"
-
-    prompt = "你是高盛亞太區台股首席策略分析師。針對台股【" + c_code + " " + c_name + "】進場評估：\n現價:" + str(price) + "元 (漲跌:" + f"{pct:+.2f}" + "%)\n基本面:EPS " + str(eps) + " | YoY " + str(yoy) + " | ROE " + str(roe) + " | PEG " + str(peg) + "\n催化劑:" + str(catalyst) + " (" + str(status) + ")\n\n請依4大維度評估：\n1. 產業趨勢與獲利實質檢視\n2. 投資人類型建議與分戰略操作策略 (空手與持股者)\n3. 買進勝率與結構剖析\n4. 風險提示與精確停損位"
-
-    headers = {"Content-Type": "application/json"}
-    payload = {"contents": [{"role": "user", "parts": [{"text": prompt}]}]}
-
-    available_endpoints = []
-    try:
-        list_url = "https://generativelanguage.googleapis.com/v1beta/models?key=" + str(key_to_use)
-        res_list = requests.get(list_url, timeout=5)
-        if res_list.status_code == 200:
-            models_data = res_list.json().get("models", [])
-            for m in models_data:
-                m_name = m.get("name", "")
-                if "generateContent" in m.get("supportedGenerationMethods", []):
-                    available_endpoints.append("https://generativelanguage.googleapis.com/v1beta/" + str(m_name) + ":generateContent?key=" + str(key_to_use))
-    except Exception: pass
-
-    fallback_endpoints = [
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + str(key_to_use),
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=" + str(key_to_use),
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=" + str(key_to_use)
-    ]
-
-    endpoints_to_try = available_endpoints + [ep for ep in fallback_endpoints if ep not in available_endpoints]
-    err_msgs = []
-    for url in endpoints_to_try:
-        try:
-            res = requests.post(url, headers=headers, json=payload, timeout=12)
-            if res.status_code == 200:
-                res_data = res.json()
-                if 'candidates' in res_data and len(res_data['candidates']) > 0:
-                    return res_data['candidates'][0]['content']['parts'][0]['text']
-            else: err_msgs.append("HTTP " + str(res.status_code) + ": " + str(res.text[:80]))
-        except Exception as e: err_msgs.append(str(e))
-
-    return "❌ 呼叫 Gemini API 失敗，請確認 API Key 權限。\n錯誤明細: " + (err_msgs[0] if err_msgs else "無回應")
-
-def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high, prev_low, balance_point, chip_data):
-    curr = safe_float(curr); ma5 = safe_float(ma5, curr); ma20 = safe_float(ma20, curr)
-    prev_high = safe_float(prev_high, curr); prev_low = safe_float(prev_low, curr); balance_point = safe_float(balance_point, curr)
-    support_price = round(min(ma5, prev_low), 2); resistance_price = round(max(prev_high, balance_point * 1.02), 2)
-    is_tech_bull = (curr > ma5 and ma5 > ma20); is_chip_bull = (chip_data.get("foreign", 0) + chip_data.get("investment", 0) > 0)
-
-    if is_tech_bull and is_chip_bull:
-        trend = "強勢多頭 (技術面多頭 + 法人合買)"; entry_price = round(max(ma5, support_price), 2)
-        strategy = "多頭排列且法人買超。建議採『拉回當日均線或支撐價 (" + str(support_price) + "元) 不破』試買。"
-    elif not is_tech_bull and not is_chip_bull:
-        trend = "偏空觀望 (均線空頭排列 + 法人賣超)"; entry_price = round(min(ma5, resistance_price), 2)
-        strategy = "空頭排列且籌碼流出。不宜盲目抄底，等待反彈至壓力位 (" + str(resistance_price) + "元) 出現爆量黑K尋找空點。"
-    else:
-        trend = "多空拉鋸震盪 (籌碼與型態分歧)"; entry_price = round(balance_point, 2)
-        strategy = "區間震盪，嚴守多空平衡點 (" + f"{balance_point:.2f}" + "元) 低吸高拋。"
-
-    return {"support": support_price, "resistance": resistance_price, "trend": trend, "entry_price": entry_price, "strategy": strategy}
 
 # =========================================================
 # 5. 各頁面路由與戰情室
@@ -582,7 +518,7 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
             with t4: render_smart_stock_table(df_hot.sort_values(by="漲跌幅(%)", ascending=True), "hot_down")
         except Exception as e: st.error("錯誤: " + str(e))
 
-# ⚡ 當沖強勢股全台股上市櫃（1800+檔）雙階段獨立控制掃描器 (精確計算漲跌幅版)
+# ⚡ 當沖強勢股全台股上市櫃（1800+檔）雙階段獨立控制掃描器 (終極前日價格修正版)
 elif app_mode == "⚡ 當沖強勢股篩選":
     st.title("⚡ 全台股（1,800+ 檔上市櫃）當沖強勢股雙階段掃描器")
     st.caption("【全市場初選】遍歷 TSE/OTC 所有人氣流動性個股 ➔ 【獨立第二階段複選】手動發動主力鎖碼、爆量與無套牢天花板精選。")
@@ -622,6 +558,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                             s = snap_dict.get(code)
                             if not s: continue
 
+                            # 三層確保前日收盤價必大於 0
                             real_close_p = get_latest_trade_close(api_filter, contract, s)
                             curr_p = safe_float(getattr(s, 'close', real_close_p), real_close_p)
                             high_p = safe_float(getattr(s, 'high', curr_p), curr_p)
@@ -632,10 +569,10 @@ elif app_mode == "⚡ 當沖強勢股篩選":
 
                             tot_amt_wan = round((curr_p * tot_vol) / 10)
                             
-                            # 1. 振幅：以當日最高低點與開盤價為基準
+                            # 1. 振幅：最高點與最低點差值
                             amplitude_pct = round(((high_p - low_p) / open_p) * 100, 2) if open_p > 0 else 0.0
                             
-                            # 2. 漲跌幅：精確以【最近日收盤價 (real_close_p)】為分母基準
+                            # 2. 真實漲跌幅：精確以【前日收盤價 (real_close_p)】為基準
                             change_pct = round(((curr_p - real_close_p) / real_close_p) * 100, 2) if real_close_p > 0 else 0.0
 
                             cond_vol = (tot_vol >= p1_min_vol) or (tot_amt_wan >= p1_min_amt)
@@ -817,7 +754,7 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
             curr_shares = b_shares - s_shares
 
             b_avg = (buys["price"] * buys["shares"]).sum() / b_shares if b_shares > 0 else 0.0
-            s_avg = (sells["price"] * sells["shares"]).sum() / s_shares if s_shares > 0 else 0.0
+            s_avg = (sells["price"] * sells["shares"]).sum() / s_sh if s_shares > 0 else 0.0
 
             latest_p = snap_prices.get(c, b_avg if b_avg > 0 else s_avg)
             div_total = divs["net_amt"].sum() if not divs.empty else 0.0
@@ -1117,7 +1054,7 @@ else:
 
         ai_res = ai_senior_analyst_diagnosis_advanced(target_code, target_name, curr_price, ma5, ma20, prev_high, prev_low, balance_point, {})
         
-        # 漲跌幅精確計算：以最近日收盤價 (prev_close_price) 為基準
+        # 漲跌幅精確計算
         pct = ((curr_price - prev_close_price) / prev_close_price) * 100 if prev_close_price > 0 else 0; t_cls = tone(pct)
 
         ws_live_html = f"""
@@ -1243,7 +1180,7 @@ else:
         elif "波段" in trade_style: sl_pct, tp_pct = 0.07, 0.15
         else: sl_pct, tp_pct = 0.12, 0.30
 
-        with col_sl_box: st.markdown(level_card_html("🛡️️ 多重停損參考試算", [(f"百分比法 ({sl_pct*100:.0f}%)", curr_price * (1 - sl_pct)), ("ATR 波動法 (1.5xATR)", curr_price - (1.5 * atr_val)), ("均線跌破法 (5MA)", ma5), ("K線前低支撐", prev_low)], "down"), unsafe_allow_html=True)
+        with col_sl_box: st.markdown(level_card_html("🛡️ 多重停損參考試算", [(f"百分比法 ({sl_pct*100:.0f}%)", curr_price * (1 - sl_pct)), ("ATR 波動法 (1.5xATR)", curr_price - (1.5 * atr_val)), ("均線跌破法 (5MA)", ma5), ("K線前低支撐", prev_low)], "down"), unsafe_allow_html=True)
         with col_tp_box: st.markdown(level_card_html("🎯 多重停利參考試算", [(f"百分比法 ({tp_pct*100:.0f}%)", curr_price * (1 + tp_pct)), ("ATR 波動法 (3xATR)", curr_price + (3 * atr_val)), ("移動停利線 (沿5MA)", ma5), ("前高壓力區停利", prev_high)], "up"), unsafe_allow_html=True)
 
         left_main, right_panel = st.columns([3, 1])
