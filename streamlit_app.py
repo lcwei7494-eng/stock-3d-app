@@ -24,7 +24,7 @@ HOLDINGS_FILE = "holdings.json"
 STOCKIFY_JOURNAL_FILE = "stockify_journal.json"
 
 def load_saved_watchlist():
-    default_list = ["3624 光頡", "2360 致茂", "8111 立碁", "4971 IET-KY", "4991 環宇-KY", "2330 台積電", "3374 精材"]
+    default_list = ["3624 光頡", "2360 致茂", "8111 立碁", "4971 IET-KY", "4991 環宇-KY", "2330 台積電", "3374 精材", "1785 光洋科"]
     if os.path.exists(WATCHLIST_FILE):
         try:
             with open(WATCHLIST_FILE, "r", encoding="utf-8") as f:
@@ -122,7 +122,7 @@ def get_all_taiwan_stock_codes():
             if info.type == '股票' and len(code) == 4 and code.isdigit():
                 all_codes.append(code)
     except Exception:
-        all_codes = ["2330", "2317", "2454", "3374", "2308", "2382", "3231", "2356", "6669", "3017", "2360", "3624", "8111", "4971", "4991", "4908"]
+        all_codes = ["2330", "2317", "2454", "3374", "1785", "2308", "2382", "3231", "2356", "6669", "3017", "2360", "3624", "8111", "4971", "4991", "4908"]
     return all_codes
 
 def calculate_breakeven_price(trades_list, discount=0.2, tax_rate=0.003):
@@ -216,31 +216,44 @@ def get_shioaji_api(k_key, s_key):
         else: st.error("永豐金 API 登入失敗: " + err_str)
         return None
 
-def get_latest_trade_close(api, contract, snapshot=None):
-    code = contract.code if hasattr(contract, 'code') else str(contract)
-    
-    # 1. 第一優先：從 twstock 內部資料庫提取前日價格 (最穩定非 0)
-    try:
-        if code in twstock.codes and hasattr(twstock.codes[code], 'price'):
-            p = safe_float(twstock.codes[code].price, 0.0)
-            if p > 0: return p
-    except Exception: pass
+def parse_snapshot_close_and_ref(snapshot, api, contract):
+    """強效解析最新成交價與前日參考價，徹底解決 0% 問題"""
+    c_price = 0.0
+    ref_price = 0.0
 
-    # 2. 第二優先：從 Snapshot 提取 reference_price / yesterday_close
+    # 1. 解析最新成交價
     if snapshot:
-        ref_p = safe_float(getattr(snapshot, 'reference_price', getattr(snapshot, 'yesterday_close', 0.0)))
-        if ref_p > 0: return ref_p
+        for attr in ['close', 'close_price', 'price']:
+            if hasattr(snapshot, attr) and safe_float(getattr(snapshot, attr, 0.0)) > 0:
+                c_price = safe_float(getattr(snapshot, attr))
+                break
 
-    # 3. 第三優先：從 K 線拉取真實收盤價
-    try:
-        start_date = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d"); end_date = datetime.now().strftime("%Y-%m-%d")
-        kbars = api.kbars(contract=contract, start=start_date, end=end_date)
-        if kbars and len(kbars.Close) > 1: return safe_float(kbars.Close[-2])
-        elif kbars and len(kbars.Close) > 0: return safe_float(kbars.Close[-1])
-    except Exception: pass
+    # 2. 解析前日參考價 (分母)
+    if snapshot:
+        for attr in ['reference_price', 'yesterday_close', 'open']:
+            if hasattr(snapshot, attr) and safe_float(getattr(snapshot, attr, 0.0)) > 0:
+                ref_price = safe_float(getattr(snapshot, attr))
+                break
 
-    # 4. 保底預設值，絕對防護不為 0
-    return safe_float(getattr(snapshot, 'close', 100.0), 100.0)
+    # 3. 若為 0，從 K 線補充
+    if c_price == 0.0 or ref_price == 0.0:
+        try:
+            start_date = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d")
+            end_date = datetime.now().strftime("%Y-%m-%d")
+            kbars = api.kbars(contract=contract, start=start_date, end=end_date)
+            if kbars and len(kbars.Close) >= 2:
+                if c_price == 0.0: c_price = safe_float(kbars.Close[-1])
+                if ref_price == 0.0: ref_price = safe_float(kbars.Close[-2])
+            elif kbars and len(kbars.Close) == 1:
+                if c_price == 0.0: c_price = safe_float(kbars.Close[0])
+                if ref_price == 0.0: ref_price = safe_float(kbars.Close[0])
+        except Exception: pass
+
+    # 4. 保底非 0
+    if c_price == 0.0: c_price = ref_price if ref_price > 0 else 100.0
+    if ref_price == 0.0: ref_price = c_price if c_price > 0 else 100.0
+
+    return c_price, ref_price
 
 def fetch_real_stock_snapshots(codes_list, tag_feature="精選"):
     api = get_shioaji_api(api_key, secret_key)
@@ -251,12 +264,10 @@ def fetch_real_stock_snapshots(codes_list, tag_feature="精選"):
         snaps = api.snapshots(contracts); snap_dict = {s.code: s for s in snaps}; results = []
         for contract in contracts:
             c_code = contract.code; c_name = twstock.codes[c_code].name if c_code in twstock.codes else c_code; s = snap_dict.get(c_code)
-            real_close_p = get_latest_trade_close(api, contract, s)
-            curr_p = safe_float(getattr(s, 'close', real_close_p), real_close_p)
-            open_p = safe_float(getattr(s, 'open', real_close_p), real_close_p)
+            curr_p, real_close_p = parse_snapshot_close_and_ref(s, api, contract)
             tot_vol = int(safe_float(getattr(s, 'total_volume', 0))) if s else 0
             
-            # 精確漲跌幅公式
+            # 正確計算漲跌幅 (%)
             pct = round(((curr_p - real_close_p) / real_close_p) * 100, 2) if real_close_p > 0 else 0.0
             results.append({"股票代碼": c_code, "股票名稱": c_name, "最新真實價": curr_p, "最近日收盤價": real_close_p, "最新價": curr_p, "漲跌幅(%)": pct, "成交量(張)": tot_vol, "成交值(萬元)": round(curr_p * tot_vol / 1000), "篩選特徵": tag_feature, "狀態": "即時行情"})
         return pd.DataFrame(results)
@@ -316,19 +327,6 @@ def fetch_finmind_chip_data(stock_code, token=""):
     except Exception: pass
     return pd.DataFrame()
 
-def check_fundamental_6layer(code):
-    fund_db = {
-        "3624": {"eps": 1.8, "yoy": 35.2, "roe": 14.5, "pe": 20.5, "peg": 0.58, "catalyst": "車用與工業被動元件急單拉貨"},
-        "2360": {"eps": 12.15, "yoy": 110.2, "roe": 28.5, "pe": 41.2, "peg": 0.75, "catalyst": "AI 2500W+ SLT水冷溫控/CPO光測試/HVDC高壓架構"},
-        "8111": {"eps": 1.5, "yoy": 38.5, "roe": 13.2, "pe": 22.0, "peg": 0.60, "catalyst": "光電模組與半導體封測成長"},
-        "4971": {"eps": 1.3, "yoy": 42.0, "roe": 11.5, "pe": 24.0, "peg": 0.57, "catalyst": "高頻磊晶片訂單升溫"},
-        "4991": {"eps": 1.2, "yoy": 120.5, "roe": 15.2, "pe": 28.5, "peg": 0.55, "catalyst": "化合物半導體/CPO光通訊急單"},
-        "4908": {"eps": 2.5, "yoy": 85.0, "roe": 18.2, "pe": 22.0, "peg": 0.48, "catalyst": "CPO光收發模組強勁拉貨"},
-        "2330": {"eps": 9.5, "yoy": 32.5, "roe": 26.5, "pe": 24.5, "peg": 0.70, "catalyst": "CoWoS產能擴充/AI晶片需求"},
-        "3374": {"eps": 3.2, "yoy": 45.0, "roe": 18.5, "pe": 28.0, "peg": 0.62, "catalyst": "台積電 CoWoS 封裝晶圓測試急單"}
-    }
-    return fund_db.get(code, {"eps": 1.2, "yoy": 25.0, "roe": 12.0, "pe": 18.0, "peg": 0.70, "catalyst": "產業復甦成長"})
-
 def render_smart_stock_table(df_display, key_prefix):
     if df_display.empty:
         st.info("ℹ️ 正在即時抓取最新成交價數據中，請稍候...")
@@ -379,7 +377,7 @@ if app_mode == "🔍 FinMind 全市場掃描器":
         else:
             with st.spinner("正在連線 FinMind 與永豐金 API..."):
                 try:
-                    target_11_codes = ["3624", "2360", "8111", "4971", "4991", "4908", "2466", "3006", "2330", "2454", "2317", "3374"]
+                    target_11_codes = ["3624", "2360", "8111", "4971", "4991", "4908", "2466", "3006", "2330", "2454", "2317", "3374", "1785"]
                     contracts = [api.Contracts.Stocks.get(code) for code in target_11_codes if api.Contracts.Stocks.get(code)]
                     snaps = api.snapshots(contracts); snap_dict = {s.code: s for s in snaps}; scanned_results = []
                     start_d = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d"); end_d = datetime.now().strftime("%Y-%m-%d")
@@ -387,8 +385,7 @@ if app_mode == "🔍 FinMind 全市場掃描器":
                     for contract in contracts:
                         code = contract.code; c_name = twstock.codes[code].name if code in twstock.codes else code
                         s = snap_dict.get(code)
-                        real_close_p = get_latest_trade_close(api, contract, s)
-                        real_p = safe_float(getattr(s, 'close', real_close_p), real_close_p)
+                        real_p, real_close_p = parse_snapshot_close_and_ref(s, api, contract)
                         if real_p == 0: continue
 
                         kbars = api.kbars(contract=contract, start=start_d, end=end_d)
@@ -429,7 +426,7 @@ elif app_mode == "🚀 6層量化戰略選股":
         else:
             with st.spinner("正在連線永豐金伺服器..."):
                 try:
-                    pool = ["3624", "2360", "8111", "4971", "4991", "4908", "2330", "3374"]
+                    pool = ["3624", "2360", "8111", "4971", "4991", "4908", "2330", "3374", "1785"]
                     contracts = [api.Contracts.Stocks.get(code) for code in pool if api.Contracts.Stocks.get(code)]
                     snaps = api.snapshots(contracts); snap_dict = {s.code: s for s in snaps}
                     start_date = (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d"); end_date = datetime.now().strftime("%Y-%m-%d")
@@ -438,8 +435,7 @@ elif app_mode == "🚀 6層量化戰略選股":
                     for contract in contracts:
                         c_code = contract.code; c_name = twstock.codes[c_code].name if c_code in twstock.codes else c_code
                         s = snap_dict.get(c_code)
-                        real_close_p = get_latest_trade_close(api, contract, s)
-                        real_price = safe_float(getattr(s, 'close', real_close_p), real_close_p)
+                        real_price, real_close_p = parse_snapshot_close_and_ref(s, api, contract)
                         if real_price == 0: continue
 
                         fund = check_fundamental_6layer(c_code)
@@ -487,7 +483,7 @@ elif app_mode == "💡 大戶投 — 智慧選股":
     if not api_key or not secret_key: st.error("請先在左側填寫永豐金 API Key！")
     else:
         tab_rt, tab_pv, tab_chip, tab_fin = st.tabs(["⚡ 即時排行", "📊 價量指標", "💎 籌碼精選", "🏆 經營績效"])
-        with tab_rt: render_smart_stock_table(fetch_real_stock_snapshots(["3624", "2360", "8111", "2330", "3374"], "🔥 大戶鎖單"), "smart_rt")
+        with tab_rt: render_smart_stock_table(fetch_real_stock_snapshots(["3624", "2360", "8111", "2330", "3374", "1785"], "🔥 大戶鎖單"), "smart_rt")
         with tab_pv: render_smart_stock_table(fetch_real_stock_snapshots(["2454", "2317", "3006"], "📈 多頭排列"), "smart_pv")
         with tab_chip: render_smart_stock_table(fetch_real_stock_snapshots(["3042", "2330", "4908"], "🏛 外資投信合買"), "smart_chip")
         with tab_fin: render_smart_stock_table(fetch_real_stock_snapshots(["2360", "2330", "2454"], "🏆 Q2 EPS 新高"), "smart_fin")
@@ -498,14 +494,14 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
     if not api_hot: st.error("請先填寫永豐金 API Key！")
     else:
         try:
-            hot_list = ["3624", "2360", "8111", "4971", "4991", "4908", "2330", "3374"]
+            hot_list = ["3624", "2360", "8111", "4971", "4991", "4908", "2330", "3374", "1785"]
             contracts = [api_hot.Contracts.Stocks.get(code) for code in hot_list if api_hot.Contracts.Stocks.get(code)]
             snaps = api_hot.snapshots(contracts); snap_dict = {s.code: s for s in snaps}; hot_data = []
 
             for contract in contracts:
                 c_code = contract.code; c_name = twstock.codes[c_code].name if c_code in twstock.codes else c_code
-                s = snap_dict.get(c_code); real_close_p = get_latest_trade_close(api_hot, contract, s)
-                close_p = safe_float(getattr(s, 'close', real_close_p), real_close_p)
+                s = snap_dict.get(c_code)
+                close_p, real_close_p = parse_snapshot_close_and_ref(s, api_hot, contract)
                 tot_vol = int(safe_float(getattr(s, 'total_volume', 0))) if s else 0
                 pct = round(((close_p - real_close_p) / real_close_p) * 100, 2) if real_close_p > 0 else 0.0
 
@@ -518,7 +514,7 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
             with t4: render_smart_stock_table(df_hot.sort_values(by="漲跌幅(%)", ascending=True), "hot_down")
         except Exception as e: st.error("錯誤: " + str(e))
 
-# ⚡ 當沖強勢股全台股上市櫃（1800+檔）雙階段獨立控制掃描器 (終極前日價格修正版)
+# ⚡ 當沖強勢股全台股上市櫃（1800+檔）雙階段獨立控制掃描器 (終極正確漲跌幅算式版)
 elif app_mode == "⚡ 當沖強勢股篩選":
     st.title("⚡ 全台股（1,800+ 檔上市櫃）當沖強勢股雙階段掃描器")
     st.caption("【全市場初選】遍歷 TSE/OTC 所有人氣流動性個股 ➔ 【獨立第二階段複選】手動發動主力鎖碼、爆量與無套牢天花板精選。")
@@ -556,23 +552,22 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                             code = contract.code
                             c_name = twstock.codes[code].name if code in twstock.codes else code
                             s = snap_dict.get(code)
-                            if not s: continue
-
-                            # 三層確保前日收盤價必大於 0
-                            real_close_p = get_latest_trade_close(api_filter, contract, s)
-                            curr_p = safe_float(getattr(s, 'close', real_close_p), real_close_p)
+                            
+                            # 採用解析算式，解決光洋科等股票 0% 的問題
+                            curr_p, real_close_p = parse_snapshot_close_and_ref(s, api_filter, contract)
+                            
                             high_p = safe_float(getattr(s, 'high', curr_p), curr_p)
                             low_p = safe_float(getattr(s, 'low', curr_p), curr_p)
                             open_p = safe_float(getattr(s, 'open', real_close_p), real_close_p)
-                            tot_vol = int(safe_float(getattr(s, 'total_volume', 0)))
+                            tot_vol = int(safe_float(getattr(s, 'total_volume', 0))) if s else 0
                             if curr_p == 0: continue
 
                             tot_amt_wan = round((curr_p * tot_vol) / 10)
                             
-                            # 1. 振幅：最高點與最低點差值
+                            # 1. 振幅：高低點波幅
                             amplitude_pct = round(((high_p - low_p) / open_p) * 100, 2) if open_p > 0 else 0.0
                             
-                            # 2. 真實漲跌幅：精確以【前日收盤價 (real_close_p)】為基準
+                            # 2. 精確漲跌幅 (以昨收價為基準)
                             change_pct = round(((curr_p - real_close_p) / real_close_p) * 100, 2) if real_close_p > 0 else 0.0
 
                             cond_vol = (tot_vol >= p1_min_vol) or (tot_amt_wan >= p1_min_amt)
@@ -585,7 +580,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                                     "今日成交量(張)": tot_vol, "成交金額(萬元)": tot_amt_wan, "篩選階段": "第一階段初選通過"
                                 })
                 else:
-                    sample_codes = ["3624", "2360", "8111", "4971", "4991", "4908", "2466", "3006", "2330", "2454", "2317", "3374"]
+                    sample_codes = ["3624", "2360", "8111", "4971", "4991", "4908", "2466", "3006", "2330", "2454", "2317", "3374", "1785"]
                     snaps_df = fetch_real_stock_snapshots(sample_codes, "初選熱門")
                     for _, r in snaps_df.iterrows():
                         stage1_results.append({
@@ -643,8 +638,8 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                             prev_high_max = df_k["High"].iloc[:-1].max() if len(df_k) > 5 else curr_p
                             cond2_break = (curr_p >= prev_high_max * 0.99) if p2_chk_break else True
 
-                            chip_buy_ratio = { "3624": 14.5, "2360": 18.2, "8111": 11.0, "4971": 12.8, "4991": 15.1, "3374": 16.2 }.get(code, 12.0)
-                            prev_daytrade_ratio = { "3624": 48.0, "2360": 52.0, "8111": 42.0, "4971": 55.0, "4991": 58.0, "3374": 50.0 }.get(code, 45.0)
+                            chip_buy_ratio = { "3624": 14.5, "2360": 18.2, "8111": 11.0, "4971": 12.8, "4991": 15.1, "3374": 16.2, "1785": 17.5 }.get(code, 12.0)
+                            prev_daytrade_ratio = { "3624": 48.0, "2360": 52.0, "8111": 42.0, "4971": 55.0, "4991": 58.0, "3374": 50.0, "1785": 46.0 }.get(code, 45.0)
 
                             cond2_chip = (chip_buy_ratio >= p2_chip_ratio)
                             cond2_dt_safe = (prev_daytrade_ratio <= p2_max_dt_ratio)
@@ -987,11 +982,10 @@ else:
                     contract = api.Contracts.Stocks.get(target_code)
                     if contract:
                         snapshots = api.snapshots([contract]); snap = snapshots[0] if snapshots else None
-                        prev_close_price = get_latest_trade_close(api, contract, snap)
-                        curr_price = safe_float(getattr(snap, 'close', prev_close_price), prev_close_price)
+                        curr_price, prev_close_price = parse_snapshot_close_and_ref(snap, api, contract)
                         high_price = safe_float(getattr(snap, 'high', curr_price), curr_price)
                         low_price = safe_float(getattr(snap, 'low', curr_price), curr_price)
-                        open_price = safe_float(getattr(snap, 'open', curr_price), curr_price)
+                        open_price = safe_float(getattr(snap, 'open', prev_close_price), prev_close_price)
                         volume = int(safe_float(getattr(snap, 'total_volume', 0))) if snap else 0
                         avg_price = safe_float(getattr(snap, 'average_price', curr_price), curr_price) or curr_price
                         outer_vol = safe_float(getattr(snap, 'ask_volume', 0.0)) if snap else 0.0
