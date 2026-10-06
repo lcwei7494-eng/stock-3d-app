@@ -569,70 +569,76 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
             with t4: render_smart_stock_table(df_hot.sort_values(by="漲跌幅(%)", ascending=True), "hot_down")
         except Exception as e: st.error("錯誤: " + str(e))
 
-# ⚡ 當沖強勢股篩選 (依據指定關鍵條件完全重構)
+# ⚡ 當沖強勢股雷達 (真正全台股上市櫃分批快照掃描引擎)
 elif app_mode == "⚡ 當沖強勢股篩選":
-    st.title("⚡ 當沖強勢股雷達 — 關鍵流動性與高波動選股")
-    st.caption("【四大核心過濾網】：成交量>1,000張 或 成交金額>5,000萬 ➔ 振幅/漲跌幅>3%~5% ➔ 當日焦點熱門題材 ➔ 開放現股當沖標的。")
+    st.title("⚡ 全台股當沖強勢股雷達 — 即時分批快照過濾")
+    st.caption("【全台股動態掃描】：從台股全市場 2,000+ 檔標的中分批抓取即時快照 ➔ 篩選成交量>1,000張或成交金額>5,000萬 ➔ 振幅/漲跌幅>3%。")
 
-    with st.sidebar.expander("⚙️ 當沖篩選條件設定 (使用者自訂門檻)", expanded=True):
+    with st.sidebar.expander("⚙️ 全市場當沖自訂門檻", expanded=True):
         param_min_vol = st.number_input("① 最低成交量門檻 (張)", value=1000, step=100)
         param_min_amt_val = st.number_input("② 最低成交金額門檻 (萬元)", value=5000, step=500)
         param_min_amplitude = st.number_input("③ 最低股價振幅/漲跌幅門檻 (%)", value=3.0, step=0.5)
-        chk_only_daytrade = st.checkbox("④ 排除處置股與全額交割股 (僅開放現沖標的)", value=True)
 
-    if st.button("🚀 啟動即時全市場當沖強勢股雷達掃描", type="primary"):
+    if st.button("🚀 啟動【全台股 2,000+ 檔】即時當沖強勢雷達掃描", type="primary"):
         api_filter = get_shioaji_api(api_key, secret_key)
         if not api_filter: st.error("請先在左側選單填寫永豐金 API Key！")
         else:
-            with st.spinner("正在掃描全市場成交量與振幅熱門股並過濾當沖資格..."):
+            with st.spinner("正在連線全台股資料庫並分批獲取永豐金即時行情快照中... (約需 5~10 秒)"):
                 try:
-                    target_candidates = ["3624", "2360", "8111", "4971", "4991", "4908", "2466", "3006", "2330", "2454", "2317"]
+                    # 1. 自動抓取 twstock 中所有上市櫃普通股清單
+                    all_stock_codes = [c for c, info in twstock.codes.items() if info.type == '股票']
+                    
+                    # 2. 為避免 API 單次 500 檔限制，進行 300 檔分批批次處理
+                    batch_size = 300
                     filter_results = []
-                    start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d"); end_date = datetime.now().strftime("%Y-%m-%d")
+                    progress_bar = st.progress(0)
 
-                    contracts = [api_filter.Contracts.Stocks.get(code) for code in target_candidates if api_filter.Contracts.Stocks.get(code)]
-                    snaps = api_filter.snapshots(contracts); snap_dict = {s.code: s for s in snaps}
+                    total_batches = math.ceil(len(all_stock_codes) / batch_size)
 
-                    for contract in contracts:
-                        code = contract.code
-                        c_name = twstock.codes[code].name if code in twstock.codes else code
-                        s = snap_dict.get(code)
-                        if not s: continue
+                    for b_idx in range(total_batches):
+                        batch_codes = all_stock_codes[b_idx*batch_size : (b_idx+1)*batch_size]
+                        contracts = [api_filter.Contracts.Stocks.get(code) for code in batch_codes if api_filter.Contracts.Stocks.get(code)]
+                        if not contracts: continue
 
-                        real_close_p = get_latest_trade_close(api_filter, contract, s)
-                        curr_p = safe_float(getattr(s, 'close', real_close_p), real_close_p)
-                        high_p = safe_float(getattr(s, 'high', curr_p), curr_p)
-                        low_p = safe_float(getattr(s, 'low', curr_p), curr_p)
-                        open_p = safe_float(getattr(s, 'open', curr_p), curr_p)
-                        tot_vol = int(safe_float(getattr(s, 'total_volume', 0)))
+                        snaps = api_filter.snapshots(contracts)
+                        snap_dict = {s.code: s for s in snaps}
 
-                        if curr_p == 0: continue
+                        for contract in contracts:
+                            code = contract.code
+                            c_name = twstock.codes[code].name if code in twstock.codes else code
+                            s = snap_dict.get(code)
+                            if not s: continue
 
-                        # 1. 計算成交值 (萬元)
-                        tot_amt_wan = round((curr_p * tot_vol) / 10) # 每張1000股 -> 萬元
-                        
-                        # 2. 計算振幅與漲跌幅
-                        amplitude_pct = round(((high_p - low_p) / open_p) * 100, 2) if open_p > 0 else 0.0
-                        change_pct = round(((curr_p - open_p) / open_p) * 100, 2) if open_p > 0 else 0.0
+                            curr_p = safe_float(getattr(s, 'close', 0.0))
+                            high_p = safe_float(getattr(s, 'high', curr_p), curr_p)
+                            low_p = safe_float(getattr(s, 'low', curr_p), curr_p)
+                            open_p = safe_float(getattr(s, 'open', curr_p), curr_p)
+                            tot_vol = int(safe_float(getattr(s, 'total_volume', 0)))
 
-                        # 條件比對
-                        cond_vol = (tot_vol >= param_min_vol) or (tot_amt_wan >= param_min_amt_val)
-                        cond_amp = (amplitude_pct >= param_min_amplitude) or (abs(change_pct) >= param_min_amplitude)
+                            if curr_p == 0 or open_p == 0: continue
 
-                        if cond_vol and cond_amp:
-                            filter_results.append({
-                                "股票代碼": code, "股票名稱": c_name, "最新價": curr_p, "最新真實價": curr_p,
-                                "最近日收盤價": real_close_p, "漲跌幅(%)": change_pct, "當日振幅(%)": amplitude_pct,
-                                "今日成交量(張)": tot_vol, "成交金額(萬元)": tot_amt_wan,
-                                "現股當沖資格": "🟢 允許當沖" if chk_only_daytrade else "🟡 一般",
-                                "篩選理由": "高流動性+振幅衝破 " + str(param_min_amplitude) + "% (熱門題材股)"
-                            })
+                            tot_amt_wan = round((curr_p * tot_vol) / 10) # 萬元
+                            amplitude_pct = round(((high_p - low_p) / open_p) * 100, 2)
+                            change_pct = round(((curr_p - open_p) / open_p) * 100, 2)
+
+                            cond_vol = (tot_vol >= param_min_vol) or (tot_amt_wan >= param_min_amt_val)
+                            cond_amp = (amplitude_pct >= param_min_amplitude) or (abs(change_pct) >= param_min_amplitude)
+
+                            if cond_vol and cond_amp:
+                                filter_results.append({
+                                    "股票代碼": code, "股票名稱": c_name, "最新價": curr_p, "最新真實價": curr_p,
+                                    "最近日收盤價": curr_p, "漲跌幅(%)": change_pct, "當日振幅(%)": amplitude_pct,
+                                    "今日成交量(張)": tot_vol, "成交金額(萬元)": tot_amt_wan,
+                                    "篩選特徵": "全市場強勢人氣股 (振幅 " + str(amplitude_pct) + "%)"
+                                })
+
+                        progress_bar.progress((b_idx + 1) / total_batches)
 
                     if filter_results:
-                        st.success("🎉 成功篩選出符合當沖條件之精選強勢股！")
-                        render_smart_stock_table(pd.DataFrame(filter_results).sort_values(by="當日振幅(%)", ascending=False), "daytrade_flt")
-                    else: st.warning("ℹ 當前熱門個股中，無個股同時滿足高流動性與高振幅條件。")
-                except Exception as e: st.error("當沖篩選過程中發生錯誤: " + str(e))
+                        st.success(f"🎉 成功掃描全市場！共找到 `{len(filter_results)}` 檔當沖高人氣爆量強勢股！")
+                        render_smart_stock_table(pd.DataFrame(filter_results).sort_values(by="當日振幅(%)", ascending=False), "daytrade_full_scan")
+                    else: st.warning("ℹ 今日全市場中，尚無個股同時滿足設定之流動性與振幅門檻。")
+                except Exception as e: st.error("全市場當沖掃描失敗: " + str(e))
 
 # 📊 復刻 Stockify 獨立頁面
 elif app_mode == "📊 簡單台股記帳 (Stockify)":
