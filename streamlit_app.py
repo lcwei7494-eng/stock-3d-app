@@ -780,4 +780,107 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
 
         st.markdown(f"""
         <div style="background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:10px 14px; margin:8px 0;">
-            <span style="color:var(--muted);">預估手續費: <b>{est_fee} 元</b> | 預估證交稅:
+            <span style="color:var(--muted);">預估手續費: <b>{est_fee} 元</b> | 預估證交稅: <b>{est_tax} 元</b></span><br>
+            <span style="font-size:1.1rem; color:#FFFFFF; font-weight:700;">預估{'支出' if type_in=='買進' else '收入'}金額: <b style="color:{'var(--up)' if type_in=='賣出' or type_in=='配息' else 'var(--down)'}; font-size:1.25rem;">{net_exp:,.0f} 元</b></span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        note_in = st.text_input("交易筆記", "-")
+
+        col_b1, col_b2 = st.columns([1, 1])
+        if col_b1.button("💾 完成並儲存", type="primary"):
+            c_code, c_name = get_stock_code_and_name(stock_in)
+            c_code = c_code if c_code else "3624"
+            c_name = c_name if c_name else stock_in
+
+            journal_list.append({
+                "account": sel_account, "date": date_in, "code": c_code, "name": c_name,
+                "type": type_in, "price": price_in, "shares": shares_in, "fee": est_fee, "tax": est_tax, "net_amt": net_exp, "note": note_in
+            })
+            st.session_state["stockify_journal"] = journal_list
+            save_stockify_journal_to_file(journal_list)
+            add_to_watchlist_safe(c_code + " " + c_name)
+            st.success("已成功寫入 Stockify 記帳本！")
+            st.rerun()
+
+    df_j = pd.DataFrame(journal_list) if journal_list else pd.DataFrame()
+    df_acc = df_j[df_j["account"] == sel_account] if (not df_j.empty and "account" in df_j.columns) else df_j
+
+    if not df_acc.empty:
+        api_stk = get_shioaji_api(api_key, secret_key)
+        unique_codes = df_acc["code"].unique()
+        snap_prices = {}
+        if api_stk:
+            try:
+                contracts = [api_stk.Contracts.Stocks.get(c) for c in unique_codes if api_stk.Contracts.Stocks.get(c)]
+                if contracts:
+                    snaps = api_stk.snapshots(contracts)
+                    snap_prices = {s.code: safe_float(getattr(s, 'close', getattr(s, 'reference_price', 0.0))) for s in snaps}
+            except Exception: pass
+
+        holding_items = []
+        settled_items = []
+
+        for c in unique_codes:
+            sub_df = df_acc[df_acc["code"] == c]
+            c_name = sub_df["name"].iloc[-1]
+
+            buys = sub_df[sub_df["type"] == "買進"]
+            sells = sub_df[sub_df["type"] == "賣出"]
+            divs = sub_df[sub_df["type"] == "配息"]
+
+            b_shares = buys["shares"].sum() if not buys.empty else 0
+            s_shares = sells["shares"].sum() if not sells.empty else 0
+            curr_shares = b_shares - s_shares
+
+            b_avg = (buys["price"] * buys["shares"]).sum() / b_shares if b_shares > 0 else 0.0
+            s_avg = (sells["price"] * sells["shares"]).sum() / s_sh if s_shares > 0 else 0.0
+
+            latest_p = snap_prices.get(c, b_avg if b_avg > 0 else s_avg)
+            div_total = divs["net_amt"].sum() if not divs.empty else 0.0
+
+            if curr_shares > 0:
+                pnl, roi = calculate_pnl_and_roi(latest_p, buys.to_dict('records'), discount=global_discount)
+                holding_items.append({
+                    "股票/股數": f"{c_name}\n{curr_shares:,}股",
+                    "股票代碼": c, "股票名稱": c_name, "股數": curr_shares,
+                    "股價": latest_p, "成本均/買均": f"{b_avg:.2f}\n{b_avg:.2f}",
+                    "總損益": round(pnl), "損益率(%)": roi, "純價": latest_p, "純買均": b_avg
+                })
+            else:
+                realized_pnl = (s_avg - b_avg) * s_shares + div_total
+                realized_roi = (realized_pnl / (b_avg * s_shares)) * 100 if (b_avg * s_shares) > 0 else 0.0
+                settled_items.append({
+                    "股票/股數": f"{c_name}\n0股",
+                    "股票代碼": c, "股票名稱": c_name, "股數": 0,
+                    "股價": latest_p, "賣均/買均": f"{s_avg:.1f}\n{b_avg:.1f}",
+                    "總損益": round(realized_pnl), "損益率(%)": realized_roi, "賣均": s_avg, "買均": b_avg
+                })
+
+        cols_h = ["股票/股數", "股票代碼", "股票名稱", "股數", "股價", "成本均/買均", "總損益", "損益率(%)", "純價", "純買均"]
+        cols_s = ["股票/股數", "股票代碼", "股票名稱", "股數", "股價", "賣均/買均", "總損益", "損益率(%)", "賣均", "買均"]
+
+        df_hold = pd.DataFrame(holding_items, columns=cols_h) if holding_items else pd.DataFrame(columns=cols_h).assign(總損益=0, 純價=0.0, 股數=0)
+        df_sett = pd.DataFrame(settled_items, columns=cols_s) if settled_items else pd.DataFrame(columns=cols_s).assign(總損益=0)
+
+        tab1, tab2, tab3 = st.tabs(["📦 庫存股與已結算看板", "📜 個股交易細節與圖卡", "📅 歷史交易流水帳紀錄"])
+
+        with tab1:
+            tot_hold_val = (df_hold['純價'] * df_hold['股數']).sum() if (not df_hold.empty and '純價' in df_hold.columns) else 0.0
+            st.markdown(f"### ▌ 庫存股 ({len(holding_items)}) <span style='float:right; font-size:1.1rem; color:var(--gold);'>合計市值: {tot_hold_val:,.0f} 元</span>", unsafe_allow_html=True)
+            
+            if holding_items:
+                for _, r in df_hold.iterrows():
+                    pnl_cls = "up" if r["總損益"] >= 0 else "down"
+                    st.markdown(f"""
+                    <div style="background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:12px 16px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+                        <div><b style="font-size:1.1rem; color:#FFFFFF;">{r['股票名稱']} ({r['股票代碼']})</b><br><small style="color:var(--muted);">{r['股數']:,} 股</small></div>
+                        <div style="text-align:center;"><b style="color:#FFFFFF; font-size:1.1rem;">{r['純價']:.2f}</b></div>
+                        <div style="text-align:center;"><span style="color:var(--muted);">成本均: {r['純買均']:.2f}</span></div>
+                        <div style="text-align:right;"><b class="{pnl_cls}" style="font-size:1.2rem;">{r['總損益']:+,.0f}</b><br><small class="{pnl_cls}">{r['損益率(%)']:+.2f}%</small></div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            st.write("")
+            tot_settled_pnl = df_sett['總損益'].sum() if (not df_sett.empty and '總損益' in df_sett.columns) else 0.0
+            st.markdown(f"### ▌ 已結算 ({len(settled_items)}) <span style='float:right; font-size:1.1rem; color:var(--accent);'>累積已實現損益: {
