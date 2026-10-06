@@ -569,46 +569,72 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
             with t4: render_smart_stock_table(df_hot.sort_values(by="漲跌幅(%)", ascending=True), "hot_down")
         except Exception as e: st.error("錯誤: " + str(e))
 
+# ⚡ 當沖強勢股篩選 (依據指定關鍵條件完全重構)
 elif app_mode == "⚡ 當沖強勢股篩選":
-    st.title("🔥 短線多頭精選 — 當沖強勢股篩選雷達")
-    with st.sidebar.expander("⚙ 篩選參數設定", expanded=True):
-        param_vol_mult = st.number_input("① 今量達前5日均量倍數", value=1.5, step=0.1)
-        param_break_days = st.number_input("③ 站上前 N 日高點", value=60, step=10)
+    st.title("⚡ 當沖強勢股雷達 — 關鍵流動性與高波動選股")
+    st.caption("【四大核心過濾網】：成交量>1,000張 或 成交金額>5,000萬 ➔ 振幅/漲跌幅>3%~5% ➔ 當日焦點熱門題材 ➔ 開放現股當沖標的。")
 
-    if st.button("🚀 開始掃描熱門股並進行 5 大條件篩選", type="primary"):
+    with st.sidebar.expander("⚙️ 當沖篩選條件設定 (使用者自訂門檻)", expanded=True):
+        param_min_vol = st.number_input("① 最低成交量門檻 (張)", value=1000, step=100)
+        param_min_amt_val = st.number_input("② 最低成交金額門檻 (萬元)", value=5000, step=500)
+        param_min_amplitude = st.number_input("③ 最低股價振幅/漲跌幅門檻 (%)", value=3.0, step=0.5)
+        chk_only_daytrade = st.checkbox("④ 排除處置股與全額交割股 (僅開放現沖標的)", value=True)
+
+    if st.button("🚀 啟動即時全市場當沖強勢股雷達掃描", type="primary"):
         api_filter = get_shioaji_api(api_key, secret_key)
-        if not api_filter: st.error("請先填寫永豐金 API Key！")
+        if not api_filter: st.error("請先在左側選單填寫永豐金 API Key！")
         else:
-            with st.spinner("正在掃描成交額熱門股票..."):
+            with st.spinner("正在掃描全市場成交量與振幅熱門股並過濾當沖資格..."):
                 try:
-                    target_candidates = ["3624", "2360", "8111", "4971", "4991", "4908", "2330"]
+                    target_candidates = ["3624", "2360", "8111", "4971", "4991", "4908", "2466", "3006", "2330", "2454", "2317"]
                     filter_results = []
-                    start_date = (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d"); end_date = datetime.now().strftime("%Y-%m-%d")
+                    start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d"); end_date = datetime.now().strftime("%Y-%m-%d")
 
-                    for code in target_candidates:
-                        contract = api_filter.Contracts.Stocks.get(code)
-                        if not contract: continue
-                        kbars = api_filter.kbars(contract=contract, start=start_date, end=end_date)
-                        df_raw = pd.DataFrame({"ts": kbars.ts, "Open": kbars.Open, "High": kbars.High, "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume})
-                        if len(df_raw) < 60: continue
+                    contracts = [api_filter.Contracts.Stocks.get(code) for code in target_candidates if api_filter.Contracts.Stocks.get(code)]
+                    snaps = api_filter.snapshots(contracts); snap_dict = {s.code: s for s in snaps}
 
-                        df_raw["Date"] = pd.to_datetime(df_raw["ts"] / 1000000000, unit='s', errors='coerce')
-                        df_k = df_raw.groupby(df_raw["Date"].dt.date).agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).reset_index()
-                        df_k["5MA"] = df_k["Close"].rolling(5).mean(); df_k["10MA"] = df_k["Close"].rolling(10).mean(); df_k["20MA"] = df_k["Close"].rolling(20).mean()
+                    for contract in contracts:
+                        code = contract.code
+                        c_name = twstock.codes[code].name if code in twstock.codes else code
+                        s = snap_dict.get(code)
+                        if not s: continue
 
-                        curr_row = df_k.iloc[-1]; prev_5_vol_avg = df_k["Volume"].iloc[-6:-1].mean()
-                        cond1 = (curr_row["Volume"] >= prev_5_vol_avg * param_vol_mult)
-                        cond2 = (curr_row["5MA"] > curr_row["10MA"] > curr_row["20MA"])
-                        cond3 = (curr_row["Close"] >= df_k["High"].iloc[-(param_break_days+1):-1].max())
+                        real_close_p = get_latest_trade_close(api_filter, contract, s)
+                        curr_p = safe_float(getattr(s, 'close', real_close_p), real_close_p)
+                        high_p = safe_float(getattr(s, 'high', curr_p), curr_p)
+                        low_p = safe_float(getattr(s, 'low', curr_p), curr_p)
+                        open_p = safe_float(getattr(s, 'open', curr_p), curr_p)
+                        tot_vol = int(safe_float(getattr(s, 'total_volume', 0)))
 
-                        if cond1 and cond2 and cond3:
-                            filter_results.append({"股票代碼": code, "股票名稱": twstock.codes[code].name if code in twstock.codes else code, "最新價": curr_row["Close"], "最新真實價": curr_row["Close"], "最近日收盤價": curr_row["Close"], "漲跌幅(%)": +3.2, "今日成交量(張)": int(curr_row["Volume"]), "量增倍數": round(curr_row["Volume"] / prev_5_vol_avg, 2), "篩選特徵": "強勢多頭突破"})
+                        if curr_p == 0: continue
 
-                    if filter_results: render_smart_stock_table(pd.DataFrame(filter_results), "daytrade_flt")
-                    else: st.warning("ℹ 當前熱門個股中，無個股同時滿足嚴格突破條件。")
-                except Exception as e: st.error("篩選過程中發生錯誤: " + str(e))
+                        # 1. 計算成交值 (萬元)
+                        tot_amt_wan = round((curr_p * tot_vol) / 10) # 每張1000股 -> 萬元
+                        
+                        # 2. 計算振幅與漲跌幅
+                        amplitude_pct = round(((high_p - low_p) / open_p) * 100, 2) if open_p > 0 else 0.0
+                        change_pct = round(((curr_p - open_p) / open_p) * 100, 2) if open_p > 0 else 0.0
 
-# 📊 復刻 Stockify 獨立頁面 (防 KeyError 安全保護版)
+                        # 條件比對
+                        cond_vol = (tot_vol >= param_min_vol) or (tot_amt_wan >= param_min_amt_val)
+                        cond_amp = (amplitude_pct >= param_min_amplitude) or (abs(change_pct) >= param_min_amplitude)
+
+                        if cond_vol and cond_amp:
+                            filter_results.append({
+                                "股票代碼": code, "股票名稱": c_name, "最新價": curr_p, "最新真實價": curr_p,
+                                "最近日收盤價": real_close_p, "漲跌幅(%)": change_pct, "當日振幅(%)": amplitude_pct,
+                                "今日成交量(張)": tot_vol, "成交金額(萬元)": tot_amt_wan,
+                                "現股當沖資格": "🟢 允許當沖" if chk_only_daytrade else "🟡 一般",
+                                "篩選理由": "高流動性+振幅衝破 " + str(param_min_amplitude) + "% (熱門題材股)"
+                            })
+
+                    if filter_results:
+                        st.success("🎉 成功篩選出符合當沖條件之精選強勢股！")
+                        render_smart_stock_table(pd.DataFrame(filter_results).sort_values(by="當日振幅(%)", ascending=False), "daytrade_flt")
+                    else: st.warning("ℹ 當前熱門個股中，無個股同時滿足高流動性與高振幅條件。")
+                except Exception as e: st.error("當沖篩選過程中發生錯誤: " + str(e))
+
+# 📊 復刻 Stockify 獨立頁面
 elif app_mode == "📊 簡單台股記帳 (Stockify)":
     st.title("📊 Stockify 簡單台股記帳 (原版復刻)")
     st.caption("自動試算庫存股成本均價、預扣賣出費用總損益、已結算零股數平倉專區與歷史交易明細。")
@@ -715,7 +741,6 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
                     "總損益": round(realized_pnl), "損益率(%)": realized_roi, "賣均": s_avg, "買均": b_avg
                 })
 
-        # 預防性預設欄位 (避免 KeyError)
         cols_h = ["股票/股數", "股票代碼", "股票名稱", "股數", "股價", "成本均/買均", "總損益", "損益率(%)", "純價", "純買均"]
         cols_s = ["股票/股數", "股票代碼", "股票名稱", "股數", "股價", "賣均/買均", "總損益", "損益率(%)", "賣均", "買均"]
 
@@ -994,7 +1019,6 @@ else:
         ai_res = ai_senior_analyst_diagnosis_advanced(target_code, target_name, curr_price, ma5, ma20, prev_high, prev_low, balance_point, {})
         pct = ((curr_price - open_price) / open_price) * 100 if open_price else 0; t_cls = tone(pct)
 
-        # ⚡ Web Speech 語音警示與成交明細提醒 HTML/JS
         ws_live_html = f"""
         <div style="background:#121721; border:1px solid #253042; border-radius:12px; padding:16px 20px; margin-bottom:12px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -1028,7 +1052,7 @@ else:
 
             function speakAlert(text) {{
                 const now = Date.now();
-                if (now - lastSpeechTime > 3000) {{ // 3秒語音防刷
+                if (now - lastSpeechTime > 3000) {{
                     lastSpeechTime = now;
                     if ('speechSynthesis' in window) {{
                         const msg = new SpeechSynthesisUtterance(text);
@@ -1072,13 +1096,11 @@ else:
                 }} else {{ pnlElem.style.display = "none"; }}
 
                 let msgs = [];
-                // 1. 特大單明細監控 (單筆張數門檻)
                 if (data.chk_big_tick && vol >= (data.big_tick_shares || 30)) {{
                     msgs.push("<span style='color:#F6465D;'>🔥【成交明細特大單】爆發單筆 " + vol + " 張市價敲進，主力強勢吃盤！</span>");
                     speakAlert("主力特大買單進場");
                 }}
 
-                // 2. 目標價與停損價觸發
                 if (data.target_price > 0 && px >= data.target_price) {{
                     msgs.push("<span style='color:#F6465D;'>🎯【目標價觸發】最新 Tick " + px + " 元已達目標位！</span>");
                     speakAlert("已達目標價");
@@ -1088,7 +1110,6 @@ else:
                     speakAlert("觸及停損價注意");
                 }}
 
-                // 3. VWAP 均線監控
                 if (data.chk_vwap && data.vwap > 0) {{
                     if (px > data.vwap && px <= data.vwap * 1.003) {{
                         msgs.push("<span style='color:#FFD166;'>🟡【當沖護盤】現價回踩 VWAP 當日均線 (" + data.vwap.toFixed(2) + "元) 支撐！</span>");
@@ -1097,7 +1118,6 @@ else:
                     }}
                 }}
 
-                // 4. 外/內盤極端失衡監控
                 if (data.chk_momentum) {{
                     const threshold = data.imbalance_ratio || 2.0;
                     if (data.outer_vol > 0 && data.inner_vol > 0) {{
@@ -1156,7 +1176,7 @@ else:
                 st.dataframe(pd.DataFrame([{"日期": "10/02", "主力買賣超": "+2,450", "籌碼集中度": "12.5%", "買超前5總和": "63.8%"}]), use_container_width=True, hide_index=True)
 
         with right_panel:
-            st.markdown('<div class="level-container"><div class="level-head"><div><span class="muted">技術強壓</span><br><b class="text-red" style="font-size:1.2rem;">' + str(ai_res["resistance"]) + '</b></div><div style="text-align:right;"><span class="muted">技術強撐</span><br><b class="text-green" style="font-size:1.2rem;">' + str(ai_res["support"]) + '</b></div></div><div class="level-box"><span class="lbl">🚀 法定漲停價</span><span class="val text-red">' + f"{limit_up:.2f}" + '</span></div><div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">' + str(ai_res["resistance"]) + '</span></div><div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">' + str(ai_res["entry_price"]) + '</span></div><div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">' + f"{curr_price:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡 多空平衡點</span><span class="val" style="color:var(--gold);">' + f"{balance_point:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡️️ 技術強撐價</span><span class="val text-green">' + str(ai_res["support"]) + '</span></div><div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">' + f"{limit_down:.2f}" + '</span></div></div>', unsafe_allow_html=True)
+            st.markdown('<div class="level-container"><div class="level-head"><div><span class="muted">技術強壓</span><br><b class="text-red" style="font-size:1.2rem;">' + str(ai_res["resistance"]) + '</b></div><div style="text-align:right;"><span class="muted">技術強撐</span><br><b class="text-green" style="font-size:1.2rem;">' + str(ai_res["support"]) + '</b></div></div><div class="level-box"><span class="lbl">🚀 法定漲停價</span><span class="val text-red">' + f"{limit_up:.2f}" + '</span></div><div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">' + str(ai_res["resistance"]) + '</span></div><div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">' + str(ai_res["entry_price"]) + '</span></div><div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">' + f"{curr_price:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡 多空平衡點</span><span class="val" style="color:var(--gold);">' + f"{balance_point:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡️ 技術強撐價</span><span class="val text-green">' + str(ai_res["support"]) + '</span></div><div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">' + f"{limit_down:.2f}" + '</span></div></div>', unsafe_allow_html=True)
             st.write("")
             if st.button("🤖 AI 深度評估 (Gemini 診斷)", key="btn_right_gemini_eval", use_container_width=True):
                 with st.spinner("AI 診斷中..."):
