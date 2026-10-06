@@ -195,7 +195,7 @@ if st.sidebar.button("🔄 一鍵重置 API 連線與清理 Session", use_contai
     time.sleep(1); st.rerun()
 
 # =========================================================
-# 🔒 4. Shioaji API Session 複用保護
+# 🔒 4. Shioaji API Session 複用保護與前日收盤價精確獲取
 # =========================================================
 @st.cache_resource(ttl=3600, show_spinner=False)
 def get_shioaji_api(k_key, s_key):
@@ -218,14 +218,25 @@ def get_shioaji_api(k_key, s_key):
 
 def get_latest_trade_close(api, contract, snapshot=None):
     try:
+        # 1. 優先從 snapshot 取出非 0 參考價
         if snapshot:
-            close_p = safe_float(getattr(snapshot, 'close', 0.0))
             ref_p = safe_float(getattr(snapshot, 'reference_price', getattr(snapshot, 'yesterday_close', 0.0)))
+            if ref_p > 0: return ref_p
+            close_p = safe_float(getattr(snapshot, 'close', 0.0))
             if close_p > 0: return close_p
-            elif ref_p > 0: return ref_p
+        
+        # 2. 備援從 K 線取歷史收盤價
         start_date = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d"); end_date = datetime.now().strftime("%Y-%m-%d")
         kbars = api.kbars(contract=contract, start=start_date, end=end_date)
-        if kbars and len(kbars.Close) > 0: return safe_float(kbars.Close[-1])
+        if kbars and len(kbars.Close) > 1: return safe_float(kbars.Close[-2]) # 前一日 K 線收盤
+        elif kbars and len(kbars.Close) > 0: return safe_float(kbars.Close[-1])
+    except Exception: pass
+    
+    # 3. 三層備援從 twstock 庫獲取
+    try:
+        code = contract.code if hasattr(contract, 'code') else str(contract)
+        if code in twstock.codes and hasattr(twstock.codes[code], 'price'):
+            return safe_float(twstock.codes[code].price, 0.0)
     except Exception: pass
     return 0.0
 
@@ -243,7 +254,7 @@ def fetch_real_stock_snapshots(codes_list, tag_feature="精選"):
             open_p = safe_float(getattr(s, 'open', real_close_p), real_close_p)
             tot_vol = int(safe_float(getattr(s, 'total_volume', 0))) if s else 0
             
-            # 正確以最近日收盤價為基準計算漲跌幅 (%)
+            # 精確漲跌幅計算（防止分母為 0）
             pct = round(((curr_p - real_close_p) / real_close_p) * 100, 2) if real_close_p > 0 else 0.0
             results.append({"股票代碼": c_code, "股票名稱": c_name, "最新真實價": curr_p, "最近日收盤價": real_close_p, "最新價": curr_p, "漲跌幅(%)": pct, "成交量(張)": tot_vol, "成交值(萬元)": round(curr_p * tot_vol / 1000), "篩選特徵": tag_feature, "狀態": "即時行情"})
         return pd.DataFrame(results)
@@ -303,21 +314,56 @@ def fetch_finmind_chip_data(stock_code, token=""):
     except Exception: pass
     return pd.DataFrame()
 
-def get_stock_code_and_name(user_input):
-    target = user_input.strip()
-    if target.isdigit():
-        if target in twstock.codes: return target, twstock.codes[target].name
-        return target, target
-    for code, info in twstock.codes.items():
-        if info.type == '股票' and (target == info.name or target in info.name): return code, info.name
-    return None, None
+def check_fundamental_6layer(code):
+    fund_db = {
+        "3624": {"eps": 1.8, "yoy": 35.2, "roe": 14.5, "pe": 20.5, "peg": 0.58, "catalyst": "車用與工業被動元件急單拉貨"},
+        "2360": {"eps": 12.15, "yoy": 110.2, "roe": 28.5, "pe": 41.2, "peg": 0.75, "catalyst": "AI 2500W+ SLT水冷溫控/CPO光測試/HVDC高壓架構"},
+        "8111": {"eps": 1.5, "yoy": 38.5, "roe": 13.2, "pe": 22.0, "peg": 0.60, "catalyst": "光電模組與半導體封測成長"},
+        "4971": {"eps": 1.3, "yoy": 42.0, "roe": 11.5, "pe": 24.0, "peg": 0.57, "catalyst": "高頻磊晶片訂單升溫"},
+        "4991": {"eps": 1.2, "yoy": 120.5, "roe": 15.2, "pe": 28.5, "peg": 0.55, "catalyst": "化合物半導體/CPO光通訊急單"},
+        "4908": {"eps": 2.5, "yoy": 85.0, "roe": 18.2, "pe": 22.0, "peg": 0.48, "catalyst": "CPO光收發模組強勁拉貨"},
+        "2330": {"eps": 9.5, "yoy": 32.5, "roe": 26.5, "pe": 24.5, "peg": 0.70, "catalyst": "CoWoS產能擴充/AI晶片需求"},
+        "3374": {"eps": 3.2, "yoy": 45.0, "roe": 18.5, "pe": 28.0, "peg": 0.62, "catalyst": "台積電 CoWoS 封裝晶圓測試急單"}
+    }
+    return fund_db.get(code, {"eps": 1.2, "yoy": 25.0, "roe": 12.0, "pe": 18.0, "peg": 0.70, "catalyst": "產業復甦成長"})
 
-def calculate_atr(df, period=14):
-    df['TR'] = pd.concat([df['High'] - df['Low'], abs(df['High'] - df['Close'].shift(1)), abs(df['Low'] - df['Close'].shift(1))], axis=1).max(axis=1)
-    df['ATR'] = df['TR'].rolling(period).mean()
-    return df
+def render_smart_stock_table(df_display, key_prefix):
+    if df_display.empty:
+        st.info("ℹ️ 正在即時抓取最新成交價數據中，請稍候...")
+        return
+    st.dataframe(df_display, use_container_width=True, hide_index=True)
+    st.markdown("##### ⚡ 個股清單（一鍵帶入盯盤、AI評估或加自選）")
+    for idx, row in df_display.reset_index(drop=True).iterrows():
+        c_code = str(row['股票代碼']); c_name = str(row['股票名稱']); stock_lbl = c_code + " " + c_name
+        curr_p = row.get('最新真實價', row.get('最新價', 'N/A')); prev_close_p = row.get('最近日收盤價', row.get('前日收盤', 0.0))
+        feature_lbl = row.get('篩選理由', row.get('狀態', row.get('篩選特徵', '精選'))); change_pct = row.get('漲跌幅(%)', 0.0)
 
-# 高盛機構級 AI 診斷引擎
+        st.markdown(stock_row_html(c_code, c_name, curr_p, change_pct, "理由: " + str(feature_lbl), prev_close=safe_float(prev_close_p)), unsafe_allow_html=True)
+
+        col_b1, col_b2, col_b3 = st.columns([1, 1, 1])
+        btn_nav_key = f"btn_nav_{key_prefix}_{c_code}_{idx}"
+        btn_ai_key = f"btn_ai_{key_prefix}_{c_code}_{idx}"
+        btn_add_key = f"btn_add_{key_prefix}_{c_code}_{idx}"
+
+        if col_b1.button("🔍 帶入盯盤", key=btn_nav_key, use_container_width=True):
+            st.session_state["selected_stock"] = c_code; st.session_state["last_stock"] = c_code
+            if "analysis_data" in st.session_state: del st.session_state["analysis_data"]
+            st.success("已帶入【" + stock_lbl + "】，請切換至『📈 三維定位與當沖盯盤系統』！")
+
+        if col_b2.button("🤖 AI進行評估", key=btn_ai_key, use_container_width=True):
+            with st.spinner("正在連線 Gemini AI 分析【" + stock_lbl + "】..."):
+                st.session_state["ai_eval_" + c_code] = run_goldman_sachs_ai_evaluation(row.to_dict(), gemini_api_key)
+
+        if stock_lbl in st.session_state["watchlist"]:
+            col_b3.button("✅ 已在自選", key="disabled_" + btn_add_key, disabled=True, use_container_width=True)
+        else:
+            if col_b3.button("➕ 加自選", key=btn_add_key, use_container_width=True):
+                add_to_watchlist_safe(stock_lbl)
+                st.rerun()
+
+        if ("ai_eval_" + c_code) in st.session_state:
+            st.markdown("<div class='navy-card'>" + str(st.session_state["ai_eval_" + c_code]) + "</div>", unsafe_allow_html=True)
+
 def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     c_code = str(data_dict.get('股票代碼', data_dict.get('target_code', '')))
     c_name = str(data_dict.get('股票名稱', data_dict.get('target_name', '')))
@@ -327,7 +373,7 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     catalyst = data_dict.get('催化劑', '產業復甦/AI檢測需求'); status = data_dict.get('狀態', '盤中監控')
 
     key_to_use = user_gemini_key.strip() if user_gemini_key else gemini_api_key.strip()
-    if not key_to_use: return "⚠️ 請先在左側選單輸入 **Gemini API Key**！"
+    if not key_to_use: return "⚠️️ 請先在左側選單輸入 **Gemini API Key**！"
 
     prompt = "你是高盛亞太區台股首席策略分析師。針對台股【" + c_code + " " + c_name + "】進場評估：\n現價:" + str(price) + "元 (漲跌:" + f"{pct:+.2f}" + "%)\n基本面:EPS " + str(eps) + " | YoY " + str(yoy) + " | ROE " + str(roe) + " | PEG " + str(peg) + "\n催化劑:" + str(catalyst) + " (" + str(status) + ")\n\n請依4大維度評估：\n1. 產業趨勢與獲利實質檢視\n2. 投資人類型建議與分戰略操作策略 (空手與持股者)\n3. 買進勝率與結構剖析\n4. 風險提示與精確停損位"
 
@@ -384,43 +430,6 @@ def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high,
 
     return {"support": support_price, "resistance": resistance_price, "trend": trend, "entry_price": entry_price, "strategy": strategy}
 
-def render_smart_stock_table(df_display, key_prefix):
-    if df_display.empty:
-        st.info("ℹ️ 正在即時抓取最新成交價數據中，請稍候...")
-        return
-    st.dataframe(df_display, use_container_width=True, hide_index=True)
-    st.markdown("##### ⚡ 個股清單（一鍵帶入盯盤、AI評估或加自選）")
-    for idx, row in df_display.reset_index(drop=True).iterrows():
-        c_code = str(row['股票代碼']); c_name = str(row['股票名稱']); stock_lbl = c_code + " " + c_name
-        curr_p = row.get('最新真實價', row.get('最新價', 'N/A')); prev_close_p = row.get('最近日收盤價', row.get('前日收盤', 0.0))
-        feature_lbl = row.get('篩選理由', row.get('狀態', row.get('篩選特徵', '精選'))); change_pct = row.get('漲跌幅(%)', 0.0)
-
-        st.markdown(stock_row_html(c_code, c_name, curr_p, change_pct, "理由: " + str(feature_lbl), prev_close=safe_float(prev_close_p)), unsafe_allow_html=True)
-
-        col_b1, col_b2, col_b3 = st.columns([1, 1, 1])
-        btn_nav_key = f"btn_nav_{key_prefix}_{c_code}_{idx}"
-        btn_ai_key = f"btn_ai_{key_prefix}_{c_code}_{idx}"
-        btn_add_key = f"btn_add_{key_prefix}_{c_code}_{idx}"
-
-        if col_b1.button("🔍 帶入盯盤", key=btn_nav_key, use_container_width=True):
-            st.session_state["selected_stock"] = c_code; st.session_state["last_stock"] = c_code
-            if "analysis_data" in st.session_state: del st.session_state["analysis_data"]
-            st.success("已帶入【" + stock_lbl + "】，請切換至『📈 三維定位與當沖盯盤系統』！")
-
-        if col_b2.button("🤖 AI進行評估", key=btn_ai_key, use_container_width=True):
-            with st.spinner("正在連線 Gemini AI 分析【" + stock_lbl + "】..."):
-                st.session_state["ai_eval_" + c_code] = run_goldman_sachs_ai_evaluation(row.to_dict(), gemini_api_key)
-
-        if stock_lbl in st.session_state["watchlist"]:
-            col_b3.button("✅ 已在自選", key="disabled_" + btn_add_key, disabled=True, use_container_width=True)
-        else:
-            if col_b3.button("➕ 加自選", key=btn_add_key, use_container_width=True):
-                add_to_watchlist_safe(stock_lbl)
-                st.rerun()
-
-        if ("ai_eval_" + c_code) in st.session_state:
-            st.markdown("<div class='navy-card'>" + str(st.session_state["ai_eval_" + c_code]) + "</div>", unsafe_allow_html=True)
-
 # =========================================================
 # 5. 各頁面路由與戰情室
 # =========================================================
@@ -456,7 +465,6 @@ if app_mode == "🔍 FinMind 全市場掃描器":
                         foreign_buy = {"3624": 1850, "2360": 4250, "8111": 1120, "4971": 650, "4991": 3200, "4908": 1420}.get(code, 1000)
                         dist_ma60_pct = round(((real_p - ma60) / ma60) * 100, 2)
                         
-                        # 正確漲跌幅算出 (以最近日收盤價為分母)
                         pct_real = round(((real_p - real_close_p) / real_close_p) * 100, 2) if real_close_p > 0 else 0.0
 
                         scanned_results.append({
@@ -627,7 +635,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                             # 1. 振幅：以當日最高低點與開盤價為基準
                             amplitude_pct = round(((high_p - low_p) / open_p) * 100, 2) if open_p > 0 else 0.0
                             
-                            # 2. 漲跌幅：精確以【最近日收盤價】為分母基準
+                            # 2. 漲跌幅：精確以【最近日收盤價 (real_close_p)】為分母基準
                             change_pct = round(((curr_p - real_close_p) / real_close_p) * 100, 2) if real_close_p > 0 else 0.0
 
                             cond_vol = (tot_vol >= p1_min_vol) or (tot_amt_wan >= p1_min_amt)
@@ -809,7 +817,7 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
             curr_shares = b_shares - s_shares
 
             b_avg = (buys["price"] * buys["shares"]).sum() / b_shares if b_shares > 0 else 0.0
-            s_avg = (sells["price"] * sells["shares"]).sum() / s_sh if s_shares > 0 else 0.0
+            s_avg = (sells["price"] * sells["shares"]).sum() / s_shares if s_shares > 0 else 0.0
 
             latest_p = snap_prices.get(c, b_avg if b_avg > 0 else s_avg)
             div_total = divs["net_amt"].sum() if not divs.empty else 0.0
@@ -1108,7 +1116,9 @@ else:
         else: ma5, ma20, atr_val, prev_high, prev_low = curr_price, curr_price, curr_price * 0.02, high_price, low_price
 
         ai_res = ai_senior_analyst_diagnosis_advanced(target_code, target_name, curr_price, ma5, ma20, prev_high, prev_low, balance_point, {})
-        pct = ((curr_price - open_price) / open_price) * 100 if open_price else 0; t_cls = tone(pct)
+        
+        # 漲跌幅精確計算：以最近日收盤價 (prev_close_price) 為基準
+        pct = ((curr_price - prev_close_price) / prev_close_price) * 100 if prev_close_price > 0 else 0; t_cls = tone(pct)
 
         ws_live_html = f"""
         <div style="background:#121721; border:1px solid #253042; border-radius:12px; padding:16px 20px; margin-bottom:12px;">
@@ -1138,7 +1148,7 @@ else:
         <script>
             const host = window.location.hostname || "localhost";
             const ws = new WebSocket("ws://" + host + ":8765");
-            const openPx = {open_price};
+            const prevClosePx = {prev_close_price};
             let lastSpeechTime = 0;
 
             function speakAlert(text) {{
@@ -1164,8 +1174,8 @@ else:
 
                 pxElem.innerText = px.toFixed(2);
 
-                if (openPx > 0) {{
-                    const diffPct = ((px - openPx) / openPx) * 100;
+                if (prevClosePx > 0) {{
+                    const diffPct = ((px - prevClosePx) / prevClosePx) * 100;
                     pctElem.innerText = (diffPct >= 0 ? "+" : "") + diffPct.toFixed(2) + "%";
                     if (diffPct > 0) {{ pxElem.className = "up"; pctElem.className = "up"; }}
                     else if (diffPct < 0) {{ pxElem.className = "down"; pctElem.className = "down"; }}
@@ -1233,7 +1243,7 @@ else:
         elif "波段" in trade_style: sl_pct, tp_pct = 0.07, 0.15
         else: sl_pct, tp_pct = 0.12, 0.30
 
-        with col_sl_box: st.markdown(level_card_html("🛡️ 多重停損參考試算", [(f"百分比法 ({sl_pct*100:.0f}%)", curr_price * (1 - sl_pct)), ("ATR 波動法 (1.5xATR)", curr_price - (1.5 * atr_val)), ("均線跌破法 (5MA)", ma5), ("K線前低支撐", prev_low)], "down"), unsafe_allow_html=True)
+        with col_sl_box: st.markdown(level_card_html("🛡️️ 多重停損參考試算", [(f"百分比法 ({sl_pct*100:.0f}%)", curr_price * (1 - sl_pct)), ("ATR 波動法 (1.5xATR)", curr_price - (1.5 * atr_val)), ("均線跌破法 (5MA)", ma5), ("K線前低支撐", prev_low)], "down"), unsafe_allow_html=True)
         with col_tp_box: st.markdown(level_card_html("🎯 多重停利參考試算", [(f"百分比法 ({tp_pct*100:.0f}%)", curr_price * (1 + tp_pct)), ("ATR 波動法 (3xATR)", curr_price + (3 * atr_val)), ("移動停利線 (沿5MA)", ma5), ("前高壓力區停利", prev_high)], "up"), unsafe_allow_html=True)
 
         left_main, right_panel = st.columns([3, 1])
