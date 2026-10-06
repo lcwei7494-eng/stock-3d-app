@@ -17,7 +17,71 @@ _CSS = "<style>:root{--bg:#0B0E14;--panel:#121721;--panel2:#1A2130;--line:#25304
 st.markdown(_CSS, unsafe_allow_html=True)
 
 # =========================================================
-# 🧮 2. 核心運算與工具函式
+# 💾 2. 自選股與持股資料安全無損讀寫模組 (核心防刪除機制)
+# =========================================================
+WATCHLIST_FILE = "watchlist.json"
+HOLDINGS_FILE = "holdings.json"
+
+def load_saved_watchlist():
+    default_list = ["3624 光頡", "2360 致茂", "8111 立碁", "4971 IET-KY", "4991 環宇-KY", "2330 台積電"]
+    if os.path.exists(WATCHLIST_FILE):
+        try:
+            with open(WATCHLIST_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list) and len(data) > 0:
+                    # 與預設合併扣重，確保不遺漏任何歷史自選
+                    combined = list(data)
+                    for item in default_list:
+                        if item not in combined:
+                            combined.append(item)
+                    return combined
+        except Exception: pass
+    return default_list
+
+def save_watchlist_to_file(watchlist):
+    try:
+        # 去除重複項保持順序
+        unique_list = []
+        for item in watchlist:
+            if item not in unique_list:
+                unique_list.append(item)
+        with open(WATCHLIST_FILE, "w", encoding="utf-8") as f:
+            json.dump(unique_list, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        st.error("寫入自選股失敗: " + str(e))
+
+def load_saved_holdings():
+    if os.path.exists(HOLDINGS_FILE):
+        try:
+            with open(HOLDINGS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict): return data
+        except Exception: pass
+    return {}
+
+def save_stock_holding_multi(code, trades_list, custom_stop, custom_target):
+    holdings = load_saved_holdings()
+    holdings[str(code)] = {"trades": trades_list, "custom_stop": float(custom_stop), "custom_target": float(custom_target)}
+    try:
+        with open(HOLDINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(holdings, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        st.error("儲存持股失敗: " + str(e))
+
+# Session State 初始化 (確保不被清空)
+if "watchlist" not in st.session_state:
+    st.session_state["watchlist"] = load_saved_watchlist()
+if "holdings" not in st.session_state:
+    st.session_state["holdings"] = load_saved_holdings()
+
+# 增強版：新增自選股輔助函式
+def add_to_watchlist_safe(stock_lbl):
+    if stock_lbl not in st.session_state["watchlist"]:
+        st.session_state["watchlist"].append(stock_lbl)
+        save_watchlist_to_file(st.session_state["watchlist"])
+
+# =========================================================
+# 🧮 3. 核心運算與工具函式
 # =========================================================
 def safe_float(val, default=0.0):
     try: return float(val) if val is not None else default
@@ -71,47 +135,7 @@ def calculate_pnl_and_roi(curr_price, trades_list, discount=0.2, tax_rate=0.003)
     pnl = net_sell - total_buy_cost; roi = (pnl / total_buy_cost) * 100.0 if total_buy_cost > 0 else 0.0
     return pnl, roi
 
-# =========================================================
-# 💾 3. 持久化儲存 (JSON)
-# =========================================================
-WATCHLIST_FILE = "watchlist.json"
-def load_saved_watchlist():
-    default_list = ["3624 光頡", "2360 致茂", "8111 立碁", "4971 IET-KY", "4991 環宇-KY", "2330 台積電"]
-    if os.path.exists(WATCHLIST_FILE):
-        try:
-            with open(WATCHLIST_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, list) and len(data) > 0: return data
-        except Exception: pass
-    return default_list
-
-def save_watchlist_to_file(watchlist):
-    try:
-        with open(WATCHLIST_FILE, "w", encoding="utf-8") as f:
-            json.dump(watchlist, f, ensure_ascii=False, indent=2)
-    except Exception as e: st.error("寫入自選股失敗: " + str(e))
-
-HOLDINGS_FILE = "holdings.json"
-def load_saved_holdings():
-    if os.path.exists(HOLDINGS_FILE):
-        try:
-            with open(HOLDINGS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, dict): return data
-        except Exception: pass
-    return {}
-
-def save_stock_holding_multi(code, trades_list, custom_stop, custom_target):
-    holdings = load_saved_holdings()
-    holdings[str(code)] = {"trades": trades_list, "custom_stop": float(custom_stop), "custom_target": float(custom_target)}
-    try:
-        with open(HOLDINGS_FILE, "w", encoding="utf-8") as f:
-            json.dump(holdings, f, ensure_ascii=False, indent=2)
-    except Exception as e: st.error("儲存持股失敗: " + str(e))
-
-if "watchlist" not in st.session_state: st.session_state["watchlist"] = load_saved_watchlist()
-if "holdings" not in st.session_state: st.session_state["holdings"] = load_saved_holdings()
-
+# 讀取 Secrets
 api_key = st.secrets.get("SHIOAJI_API_KEY", "")
 secret_key = st.secrets.get("SHIOAJI_SECRET_KEY", "")
 gemini_api_key = st.secrets.get("GEMINI_API_KEY", "")
@@ -370,8 +394,7 @@ def render_smart_stock_table(df_display, key_prefix):
             col_b3.button("✅ 已在自選", key="disabled_" + btn_add_key, disabled=True, use_container_width=True)
         else:
             if col_b3.button("➕ 加自選", key=btn_add_key, use_container_width=True):
-                st.session_state["watchlist"].append(stock_lbl)
-                save_watchlist_to_file(st.session_state["watchlist"])
+                add_to_watchlist_safe(stock_lbl)
                 st.rerun()
 
         if ("ai_eval_" + c_code) in st.session_state:
@@ -589,8 +612,7 @@ else:
         if current_stock_lbl in st.session_state["watchlist"]: st.button("✅ 已在自選", key="add_disabled", disabled=True, use_container_width=True)
         else:
             if st.button("➕ 加入自選股", key="add_btn", use_container_width=True):
-                st.session_state["watchlist"].append(current_stock_lbl)
-                save_watchlist_to_file(st.session_state["watchlist"])
+                add_to_watchlist_safe(current_stock_lbl)
                 st.rerun()
 
     with col_style: trade_style = st.selectbox("🎯 交易風格", ["短線/當沖 (1~3天)", "波段操作 (幾天~幾週)", "長線投資"])
