@@ -157,7 +157,7 @@ def get_all_taiwan_stock_codes():
         all_codes = ["2330", "2317", "2454", "3374", "1785", "3081", "3088", "3219", "3228", "2308", "2382", "3231", "2356", "6669", "3017", "2360", "3624", "8111", "4971", "4991", "4908"]
     return all_codes
 
-# 🎯 修正賦值解包數量匹配 (修正第 163 行 TypeError/ValueError)
+# 🎯 試算加權平均成本 (相容「買進股數」與舊版「張數」結構)
 def calculate_breakeven_price(trades_list, discount=0.2, tax_rate=0.003):
     if not trades_list: return 0.0, 0.0, 0.0, 0, 0.0
     total_shares = 0
@@ -166,7 +166,9 @@ def calculate_breakeven_price(trades_list, discount=0.2, tax_rate=0.003):
     weighted_price_sum = 0.0
 
     for t in trades_list:
-        p = safe_float(t.get("price", 0.0)); q = int(safe_float(t.get("shares", t.get("sheets", 0)*1000)))
+        p = safe_float(t.get("price", 0.0))
+        # 相容傳入的 shares (股數) 或舊資料 sheets (張數 * 1000)
+        q = int(safe_float(t.get("shares", safe_float(t.get("sheets", 0)) * 1000)))
         if p > 0 and q > 0:
             amt = p * q
             fee = math.floor(amt * 0.001425 * discount); fee = 20 if fee < 20 else fee
@@ -782,6 +784,7 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
     with acc_col: sel_account = st.selectbox("📂 選擇投資帳戶", ["主帳戶", "存股帳戶", "當沖戰略帳戶", "帳戶 4"])
     with disc_col: global_discount = st.selectbox("🏷️ 券商手續費折讓", [0.2, 0.28, 0.38, 0.5, 0.6, 1.0], index=0, format_func=lambda x: f"{x*10:.2f} 折 ({x*100:.0f}%)")
 
+    # 新增交易表單 (修正：買進股數/賣出股數，預設按 step 以 1000 股為單位)
     with st.expander("➕ 新增交易紀錄 (對照原版 Stockify 表單)", expanded=False):
         c1, c2, c3 = st.columns([1.5, 1, 1])
         with c1: stock_in = st.text_input("股票 (輸入股名或股號)", "3624 光頡")
@@ -790,7 +793,7 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
 
         c4, c5 = st.columns([1.5, 1.5])
         with c4: price_in = st.number_input("股價 (元)", value=148.5, step=0.5)
-        with c5: shares_in = st.number_input("股數 (1張=1000股)", value=1000, step=100)
+        with c5: shares_in = st.number_input("買進股數 (1張=1000股)", value=1000, step=1000, min_value=1)
 
         est_amt = price_in * shares_in
         est_fee = math.floor(est_amt * 0.001425 * global_discount) if type_in in ["買進", "賣出"] else 0
@@ -971,7 +974,7 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
     else:
         st.info("ℹ️【" + str(sel_account) + "】目前尚無交易紀錄，請展開上方『➕ 新增交易紀錄』填寫。")
 
-# 三維定位與當沖盯盤系統 (含成交明細大單與語音警示)
+# 三維定位與當沖盯盤系統 (含買進股數/張數自動轉換與盯盤功能)
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
     if "selected_stock" not in st.session_state: st.session_state["selected_stock"] = "3624"
@@ -1017,16 +1020,17 @@ else:
         saved_info = holdings_db.get(str(target_code), {})
         saved_trades = saved_info.get("trades", [])
         if not saved_trades and "buy_cost" in saved_info and saved_info["buy_cost"] > 0:
-            saved_trades = [{"date": datetime.now().strftime("%Y-%m-%d"), "price": float(saved_info.get("buy_cost", 0.0)), "sheets": int(saved_info.get("buy_sheets", 1))}]
+            saved_trades = [{"date": datetime.now().strftime("%Y-%m-%d"), "price": float(saved_info.get("buy_cost", 0.0)), "shares": int(saved_info.get("buy_sheets", 1))*1000}]
         st.session_state[trade_state_key] = saved_trades if saved_trades else [
-            {"date": "2026-10-02", "price": 148.5, "sheets": 1},
-            {"date": "2026-10-05", "price": 152.0, "sheets": 1}
+            {"date": "2026-10-02", "price": 148.5, "shares": 1000},
+            {"date": "2026-10-05", "price": 152.0, "shares": 1000}
         ] if target_code == "3624" else []
 
     if "last_stock" not in st.session_state or st.session_state["last_stock"] != target_code:
         st.session_state["last_stock"] = target_code
         if "analysis_data" in st.session_state: del st.session_state["analysis_data"]
 
+    # 盯盤介面：買進股數微調與建倉紀錄
     st.markdown("##### ⚙️ 交易計劃與多筆買進建倉紀錄 (自動試算加權平均成本、投入本金與損益兩平價)")
     with st.expander("📝【" + current_stock_lbl + "】分批買進明細管理", expanded=True):
         trades_buffer = st.session_state[trade_state_key]
@@ -1036,7 +1040,9 @@ else:
             c_d, c_p, c_s, c_del = st.columns([1.2, 1.2, 1, 0.8])
             with c_d: trades_buffer[t_idx]["date"] = st.text_input("買進日期 #" + str(t_idx+1), value=trade.get("date", datetime.now().strftime("%Y-%m-%d")), key=f"inp_date_{target_code}_{t_idx}")
             with c_p: trades_buffer[t_idx]["price"] = st.number_input("買進單價 (元) #" + str(t_idx+1), value=float(trade.get("price", 0.0)), step=0.5, key=f"inp_price_{target_code}_{t_idx}")
-            with c_s: trades_buffer[t_idx]["sheets"] = st.number_input("買進張數 #" + str(t_idx+1), value=int(trade.get("sheets", 1)), min_value=1, step=1, key=f"inp_sheets_{target_code}_{t_idx}")
+            # 修正：買進股數，預設按 step 以 1000 股為單位
+            current_sh = int(safe_float(trade.get("shares", safe_float(trade.get("sheets", 1))*1000)))
+            trades_buffer[t_idx]["shares"] = st.number_input("買進股數 (1張=1000股) #" + str(t_idx+1), value=current_sh, min_value=1, step=1000, key=f"inp_shares_{target_code}_{t_idx}")
             with c_del:
                 st.write(""); st.write("")
                 if st.button("🗑️ 刪除", key=f"btn_del_t_{target_code}_{t_idx}", use_container_width=True): indices_to_delete.append(t_idx)
@@ -1047,14 +1053,14 @@ else:
             st.rerun()
 
         if st.button("➕ 新增一筆買進紀錄", key=f"btn_add_new_trade_{target_code}"):
-            st.session_state[trade_state_key].append({"date": datetime.now().strftime("%Y-%m-%d"), "price": 0.0, "sheets": 1})
+            st.session_state[trade_state_key].append({"date": datetime.now().strftime("%Y-%m-%d"), "price": 0.0, "shares": 1000})
             st.rerun()
 
-    breakeven_p, total_cost, b_fee, total_sheets, avg_buy_price = calculate_breakeven_price(st.session_state[trade_state_key], discount=0.2, tax_rate=0.003)
+    breakeven_p, total_cost, b_fee, total_shares, avg_buy_price = calculate_breakeven_price(st.session_state[trade_state_key], discount=0.2, tax_rate=0.003)
 
     col_p1, col_p2, col_p3, col_p4, col_stop, col_target = st.columns([1.1, 0.9, 1.1, 1.1, 1, 1])
     with col_p1: st.markdown('<div style="background:var(--panel2); border:1px solid var(--accent); border-radius:8px; padding:6px 12px; text-align:center;"><div style="font-size:0.8rem; color:#D1D8E0;">📊 加權平均買進成本</div><div style="font-size:1.2rem; font-weight:900; color:var(--gold);">' + f"{avg_buy_price:.2f}" + ' 元</div></div>', unsafe_allow_html=True)
-    with col_p2: st.markdown('<div style="background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:6px 12px; text-align:center;"><div style="font-size:0.8rem; color:#D1D8E0;">📦 累計總持股</div><div style="font-size:1.2rem; font-weight:900; color:#FFFFFF;">' + str(total_sheets//1000) + ' 張 (' + str(total_sheets) + '股)</div></div>', unsafe_allow_html=True)
+    with col_p2: st.markdown('<div style="background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:6px 12px; text-align:center;"><div style="font-size:0.8rem; color:#D1D8E0;">📦 累計總持股</div><div style="font-size:1.2rem; font-weight:900; color:#FFFFFF;">' + str(total_shares//1000) + ' 張 (' + str(total_shares) + '股)</div></div>', unsafe_allow_html=True)
 
     latest_price = safe_float(st.session_state["analysis_data"].get("curr_price", 0.0)) if ("analysis_data" in st.session_state and st.session_state["analysis_data"]["target_code"] == target_code) else 0.0
     calc_pnl, calc_roi = calculate_pnl_and_roi(latest_price, st.session_state[trade_state_key], discount=0.2, tax_rate=0.003)
@@ -1111,7 +1117,7 @@ else:
                             t_time = datetime.now().strftime("%H:%M:%S.%f")[:-3]
                             tick_payload = {
                                 "price": t_price, "volume": t_vol, "time": t_time, "target_price": custom_target_price,
-                                "stop_price": custom_stop_price, "buy_cost": avg_buy_price, "buy_sheets": total_sheets,
+                                "stop_price": custom_stop_price, "buy_cost": avg_buy_price, "buy_sheets": total_shares,
                                 "breakeven_p": breakeven_p, "total_cost": total_cost, "vwap": avg_price, "pivot": bal_p,
                                 "outer_vol": outer_vol, "inner_vol": inner_vol, "chk_vwap": chk_vwap, "chk_pivot": chk_pivot,
                                 "chk_momentum": chk_momentum, "imbalance_ratio": param_imbalance_ratio,
