@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="三維定位法 & 6層量化選股與當沖盯盤全功能系統", layout="wide")
 
 # =========================================================
-# 🎨 1. 極致高對比 UI 主題 (徹底排除黑底黑字/深色字疊加)
+# 🎨 1. 極致高對比 UI 主題
 # =========================================================
 _CSS = "<style>:root{--bg:#0B0E14;--panel:#121721;--panel2:#1E2638;--line:#2A364F;--text:#FFFFFF;--muted:#CBD5E1;--up:#F6465D;--down:#1FC98B;--accent:#4C8DFF;--gold:#FFD166;}.stApp{background:var(--bg);color:#FFFFFF !important;}html,body,p,span,label,div,.stMarkdown{font-family:'Noto Sans TC','Microsoft JhengHei',sans-serif;color:#FFFFFF !important;}h1,h2,h3,h4,h5,h6{color:#FFFFFF !important;font-weight:700 !important;}.block-container{padding-top:1.2rem;max-width:1400px;}#MainMenu,footer{visibility:hidden;}[data-testid='stSidebar']{background:var(--panel) !important;border-right:1px solid var(--line);}[data-testid='stSidebar'] *{color:#FFFFFF !important;}.stTabs [data-baseweb='tab-list']{gap:6px;flex-wrap:wrap;}.stTabs [data-baseweb='tab']{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 16px;}.stTabs [aria-selected='true']{background:var(--accent);border-color:var(--accent);}.stTabs [aria-selected='true'] *{color:#FFFFFF !important;font-weight:700;}.stButton>button{min-height:38px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:#FFFFFF !important;font-weight:600;}.stButton>button:hover{border-color:var(--accent);background:var(--accent);color:#FFFFFF !important;}input,select,textarea,[data-baseweb='select'] > div{background:var(--panel2) !important;color:#FFFFFF !important;border-radius:8px !important;border:1.5px solid var(--line) !important;}[data-baseweb='popover'] *{background:#1E2638 !important;color:#FFFFFF !important;}[data-baseweb='calendar'] *{color:#FFFFFF !important;}[data-testid='stDataFrame']{background:var(--panel) !important;border-radius:8px;padding:4px;border:1px solid var(--line);}[data-testid='stDataFrame'] *{color:#FFFFFF !important;}.up,.text-red{color:var(--up) !important;font-weight:700;}.down,.text-green{color:var(--down) !important;font-weight:700;}.muted{color:var(--muted) !important;font-size:.9rem;}.navy-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin-bottom:10px;}.lv{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px;height:100%;}.lv h5{margin:0 0 8px;font-size:.95rem;}.lv .it{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed var(--line);}.level-container{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;}.level-head{display:flex;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--line);}.level-box{background:var(--panel2);border:1.5px solid var(--gold);border-radius:8px;padding:8px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;}.level-box.normal{border-color:var(--line);}.level-box .lbl{font-size:.9rem;color:#FFFFFF !important;font-weight:600;}.level-box .val{font-size:1.15rem;font-weight:800;}.row{display:flex;justify-content:space-between;align-items:center;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:10px;padding:10px 14px;margin:6px 0;}.row.up-bar{border-left-color:var(--up);}.row.down-bar{border-left-color:var(--down);}.row .name{font-size:1rem;font-weight:700;color:#FFFFFF;}.row .code{color:var(--muted);font-size:.82rem;margin-left:6px;}.row .px{font-size:1.15rem;font-weight:800;text-align:right;}</style>"
 st.markdown(_CSS, unsafe_allow_html=True)
@@ -93,7 +93,7 @@ def add_to_watchlist_safe(stock_lbl):
         save_watchlist_to_file(st.session_state["watchlist"])
 
 # =========================================================
-# 🧮 3. 核心工具與股票代碼對照函式 (宣告置頂修復 NameError)
+# 🧮 3. 核心工具與股票代碼對照函式
 # =========================================================
 def safe_float(val, default=0.0):
     try: return float(val) if val is not None else default
@@ -104,7 +104,6 @@ def tone(pct):
     return "up" if pct > 0 else ("down" if pct < 0 else "flat")
 
 def get_stock_code_and_name(user_input):
-    """置頂宣告股票代碼與名稱轉換函式"""
     target = user_input.strip()
     if target.isdigit():
         if target in twstock.codes: return target, twstock.codes[target].name
@@ -158,19 +157,29 @@ def get_all_taiwan_stock_codes():
         all_codes = ["2330", "2317", "2454", "3374", "1785", "3081", "3088", "3219", "3228", "2308", "2382", "3231", "2356", "6669", "3017", "2360", "3624", "8111", "4971", "4991", "4908"]
     return all_codes
 
+# 🎯 修正賦值解包數量匹配 (修正第 163 行 TypeError/ValueError)
 def calculate_breakeven_price(trades_list, discount=0.2, tax_rate=0.003):
     if not trades_list: return 0.0, 0.0, 0.0, 0, 0.0
-    total_shares, total_buy_cost, total_fee, weighted_price_sum = 0, 0.0, 0.0, 0, 0.0
+    total_shares = 0
+    total_buy_cost = 0.0
+    total_fee = 0.0
+    weighted_price_sum = 0.0
+
     for t in trades_list:
         p = safe_float(t.get("price", 0.0)); q = int(safe_float(t.get("shares", t.get("sheets", 0)*1000)))
         if p > 0 and q > 0:
             amt = p * q
             fee = math.floor(amt * 0.001425 * discount); fee = 20 if fee < 20 else fee
-            total_shares += q; total_buy_cost += (amt + fee); total_fee += fee; weighted_price_sum += (p * q)
+            total_shares += q
+            total_buy_cost += (amt + fee)
+            total_fee += fee
+            weighted_price_sum += (p * q)
+
     if total_shares == 0: return 0.0, 0.0, 0.0, 0, 0.0
     avg_price = weighted_price_sum / total_shares
     factor = 1.0 - (0.001425 * discount) - tax_rate
     raw_breakeven = total_buy_cost / (total_shares * factor)
+    
     def get_tick_size(price):
         if price < 10: return 0.01
         elif price < 50: return 0.05
@@ -178,6 +187,7 @@ def calculate_breakeven_price(trades_list, discount=0.2, tax_rate=0.003):
         elif price < 500: return 0.5
         elif price < 1000: return 1.0
         else: return 5.0
+
     tick = get_tick_size(raw_breakeven)
     breakeven_price = math.ceil(raw_breakeven / tick) * tick
     return breakeven_price, total_buy_cost, total_fee, total_shares, avg_price
@@ -265,7 +275,6 @@ def parse_accurate_stock_data(snapshot, api, contract):
         "2330": {"close": 1040.0, "ref": 1030.0, "pct": 0.97}   # 台積電 (+0.97%)
     }
 
-    # 通用反推價差演算法
     change_p = 0.0
     if snapshot:
         for attr in ['close', 'close_price', 'price']:
@@ -846,7 +855,7 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
             curr_shares = b_shares - s_shares
 
             b_avg = (buys["price"] * buys["shares"]).sum() / b_shares if b_shares > 0 else 0.0
-            s_avg = (sells["price"] * sells["shares"]).sum() / s_sh if s_shares > 0 else 0.0
+            s_avg = (sells["price"] * sells["shares"]).sum() / s_shares if s_shares > 0 else 0.0
 
             latest_p = snap_prices.get(c, b_avg if b_avg > 0 else s_avg)
             div_total = divs["net_amt"].sum() if not divs.empty else 0.0
@@ -1271,7 +1280,7 @@ else:
         elif "波段" in trade_style: sl_pct, tp_pct = 0.07, 0.15
         else: sl_pct, tp_pct = 0.12, 0.30
 
-        with col_sl_box: st.markdown(level_card_html("🛡️️ 多重停損參考試算", [(f"百分比法 ({sl_pct*100:.0f}%)", curr_price * (1 - sl_pct)), ("ATR 波動法 (1.5xATR)", curr_price - (1.5 * atr_val)), ("均線跌破法 (5MA)", ma5), ("K線前低支撐", prev_low)], "down"), unsafe_allow_html=True)
+        with col_sl_box: st.markdown(level_card_html("🛡️ 多重停損參考試算", [(f"百分比法 ({sl_pct*100:.0f}%)", curr_price * (1 - sl_pct)), ("ATR 波動法 (1.5xATR)", curr_price - (1.5 * atr_val)), ("均線跌破法 (5MA)", ma5), ("K線前低支撐", prev_low)], "down"), unsafe_allow_html=True)
         with col_tp_box: st.markdown(level_card_html("🎯 多重停利參考試算", [(f"百分比法 ({tp_pct*100:.0f}%)", curr_price * (1 + tp_pct)), ("ATR 波動法 (3xATR)", curr_price + (3 * atr_val)), ("移動停利線 (沿5MA)", ma5), ("前高壓力區停利", prev_high)], "up"), unsafe_allow_html=True)
 
         left_main, right_panel = st.columns([3, 1])
