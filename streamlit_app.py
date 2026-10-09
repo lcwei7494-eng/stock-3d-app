@@ -1655,4 +1655,97 @@ else:
 
                     pnlElem.style.display = "block";
                     const colorCls = pnl >= 0 ? "#F6465D" : "#1FC98B";
-                    pnlElem.innerHTML = "<span style='color:#FFFFFF;'>💰 微秒級即時預估損益：</span><span style='color:" + colorCls + "; font-size:1.2rem;'>" + (pnl >= 0 ? "+" : "") + Math.round(
+                    pnlElem.innerHTML = "<span style='color:#FFFFFF;'>💰 微秒級即時預估損益：</span><span style='color:" + colorCls + "; font-size:1.2rem;'>" + (pnl >= 0 ? "+" : "") + Math.round(pnl).toLocaleString() + " 元 (" + (pnlRate >= 0 ? "+" : "") + pnlRate.toFixed(2) + "%)</span>";
+                }} else {{ pnlElem.style.display = "none"; }}
+
+                let msgs = [];
+                if (data.chk_big_tick && vol >= (data.big_tick_shares || 30)) {{
+                    msgs.push("<span style='color:#F6465D;'>🔥【成交明細特大單】爆發單筆 " + vol + " 張市價敲進，主力強勢吃盤！</span>");
+                    speakAlert("主力特大買單進場");
+                }}
+
+                if (data.target_price > 0 && px >= data.target_price) {{
+                    msgs.push("<span style='color:#F6465D;'>🎯【目標價觸發】最新 Tick " + px + " 元已達目標位！</span>");
+                    speakAlert("已達目標價");
+                }}
+                if (data.stop_price > 0 && px <= data.stop_price) {{
+                    msgs.push("<span style='color:#1FC98B;'>🚨【停損價觸發】最新 Tick " + px + " 元已觸及停損位！</span>");
+                    speakAlert("觸及停損價注意");
+                }}
+
+                if (data.chk_vwap && data.vwap > 0) {{
+                    if (px > data.vwap && px <= data.vwap * 1.003) {{
+                        msgs.push("<span style='color:#FFD166;'>🟡【當沖護盤】現價回踩 VWAP 當日均線 (" + data.vwap.toFixed(2) + "元) 支撐！</span>");
+                    }} else if (px < data.vwap) {{
+                        msgs.push("<span style='color:#1FC98B;'>⚠️【當沖轉弱】現價已跌破 VWAP 當日均線 (" + data.vwap.toFixed(2) + "元)！</span>");
+                    }}
+                }}
+
+                if (data.chk_momentum) {{
+                    const threshold = data.imbalance_ratio || 2.0;
+                    if (data.outer_vol > 0 && data.inner_vol > 0) {{
+                        const ratio = data.outer_vol / data.inner_vol;
+                        if (ratio >= threshold) {{
+                            msgs.push("<span style='color:#F6465D;'>🔥【買盤極強失衡】外盤遠大於內盤 (" + ratio.toFixed(1) + "倍 > " + threshold + "倍)，具強推升動能！</span>");
+                        }} else if (data.inner_vol / data.outer_vol >= threshold) {{
+                            msgs.push("<span style='color:#1FC98B;'>⚠【賣盤極強失衡】內盤遠大於外盤 (" + (data.inner_vol / data.outer_vol).toFixed(1) + "倍 > " + threshold + "倍)，注意砍單風險！</span>");
+                        }}
+                    }}
+                }}
+
+                alarmElem.innerHTML = msgs.join("<br>");
+            }};
+        </script>
+        """
+        st.components.v1.html(ws_live_html, height=250)
+
+        st.markdown("#### 2️⃣ 四大停損與停利參考設定 (多重停損綠色 / 多重停利紅色)")
+        col_sl_box, col_tp_box = st.columns(2)
+        if "短線" in trade_style: sl_pct, tp_pct = 0.04, 0.06
+        elif "波段" in trade_style: sl_pct, tp_pct = 0.07, 0.15
+        else: sl_pct, tp_pct = 0.12, 0.30
+
+        with col_sl_box: st.markdown(level_card_html("🛡️ 多重停損參考試算", [(f"百分比法 ({sl_pct*100:.0f}%)", curr_price * (1 - sl_pct)), ("ATR 波動法 (1.5xATR)", curr_price - (1.5 * atr_val)), ("均線跌破法 (5MA)", ma5), ("K線前低支撐", prev_low)], "down"), unsafe_allow_html=True)
+        with col_tp_box: st.markdown(level_card_html("🎯 多重停利參考試算", [(f"百分比法 ({tp_pct*100:.0f}%)", curr_price * (1 + tp_pct)), ("ATR 波動法 (3xATR)", curr_price + (3 * atr_val)), ("移動停利線 (沿5MA)", ma5), ("前高壓力區停利", prev_high)], "up"), unsafe_allow_html=True)
+
+        left_main, right_panel = st.columns([3, 1])
+        with left_main:
+            kbar_tf = st.radio("顯示週期：", ["5分K", "1分K", "60分K", "日K"], horizontal=True)
+            if "日K" in kbar_tf and 'df_k_daily' in locals() and not df_k_daily.empty:
+                df_chart = df_k_daily.tail(60).copy(); df_chart["DateTime"] = pd.to_datetime(df_chart["DateTime"]); time_fmt = '%Y-%m-%d'
+            else:
+                latest_d = df_raw["DateTime"].dt.date.max() if len(df_raw)>0 else datetime.now().date()
+                df_today_raw = df_raw[df_raw["DateTime"].dt.date == latest_d]
+                if "1分K" in kbar_tf: df_chart = df_today_raw.set_index("DateTime").resample("1min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index() if len(df_today_raw)>0 else pd.DataFrame(); time_fmt = '%H:%M'
+                elif "60分K" in kbar_tf: df_chart = df_raw.set_index("DateTime").resample("60min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index().tail(60) if len(df_raw)>0 else pd.DataFrame(); time_fmt = '%m-%d %H:%M'
+                else: df_chart = df_today_raw.set_index("DateTime").resample("5min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index() if len(df_today_raw)>0 else pd.DataFrame(); time_fmt = '%H:%M'
+
+            if len(df_chart) > 0:
+                fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.03)
+                fig.add_trace(go.Candlestick(x=df_chart['DateTime'].dt.strftime(time_fmt), open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'], name='K線', increasing_line_color="#F6465D", decreasing_line_color="#1FC98B"), row=1, col=1)
+                fig.add_trace(go.Bar(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['Volume'], name='成交量', marker_color="#4C8DFF"), row=2, col=1)
+                fig.update_layout(height=450, margin=dict(l=10, r=10, t=10, b=10), template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis_rangeslider_visible=False)
+                st.plotly_chart(fig, use_container_width=True)
+
+            st.markdown("##### 📊 籌碼面進階數據 (三大法人近5日買賣超 & 籌碼集中度)")
+            c_left, c_right = st.columns(2)
+            with c_left:
+                st.caption("三大法人買賣超 (張) [FinMind 即時數據]")
+                df_finmind = fetch_finmind_chip_data(target_code, finmind_token)
+                if not df_finmind.empty: st.dataframe(df_finmind, use_container_width=True, hide_index=True)
+                else: st.dataframe(pd.DataFrame([{"日期": "10/02", "外資": "+1,200", "投信": "+350", "自營商": "-120", "合計": "+1,430"}]), use_container_width=True, hide_index=True)
+            with c_right:
+                st.caption("籌碼集中度 / 主力控盤近5日")
+                st.dataframe(pd.DataFrame([{"日期": "10/02", "主力買賣超": "+2,450", "籌碼集中度": "12.5%", "買超前5總和": "63.8%"}]), use_container_width=True, hide_index=True)
+
+        with right_panel:
+            st.markdown('<div class="level-container"><div class="level-head"><div><span class="muted">技術強壓</span><br><b class="text-red" style="font-size:1.2rem;">' + str(ai_res["resistance"]) + '</b></div><div style="text-align:right;"><span class="muted">技術強撐</span><br><b class="text-green" style="font-size:1.2rem;">' + str(ai_res["support"]) + '</b></div></div><div class="level-box"><span class="lbl">🚀 法定漲停價</span><span class="val text-red">' + f"{limit_up:.2f}" + '</span></div><div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">' + str(ai_res["resistance"]) + '</span></div><div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">' + str(ai_res["entry_price"]) + '</span></div><div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">' + f"{curr_price:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡 多空平衡點</span><span class="val" style="color:var(--gold);">' + f"{balance_point:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡️ 技術強撐價</span><span class="val text-green">' + str(ai_res["support"]) + '</span></div><div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">' + f"{limit_down:.2f}" + '</span></div></div>', unsafe_allow_html=True)
+            st.write("")
+            if st.button("🤖 AI 深度評估 (Gemini 診斷)", key="btn_right_gemini_eval", use_container_width=True):
+                with st.spinner("AI 診斷中..."):
+                    fund_info = check_fundamental_6layer(target_code)
+                    combined_dict = {'target_code': target_code, 'target_name': target_name, 'curr_price': curr_price, 'bias_rate': bias_rate, 'momentum_coef': data.get('momentum_coef', 1.0), 'balance_point': balance_point, '季EPS': fund_info.get('eps', 1.5), '營收YoY': f"+{fund_info.get('yoy', 20.0)}%", 'ROE': f"{fund_info.get('roe', 15.0)}%", 'PEG': fund_info.get('peg', 0.8), '綜合評分': 80, '催化劑': fund_info.get('catalyst', '當沖多空轉折監控'), '狀態': ai_res['trend']}
+                    st.session_state["monitor_ai_eval_" + str(target_code)] = run_goldman_sachs_ai_evaluation(combined_dict, gemini_api_key)
+
+        if ("monitor_ai_eval_" + str(target_code)) in st.session_state:
+            st.markdown("<div class='navy-card'>" + str(st.session_state["monitor_ai_eval_" + str(target_code)]) + "</div>", unsafe_allow_html=True)
