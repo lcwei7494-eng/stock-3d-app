@@ -260,7 +260,7 @@ def calculate_three_lines_strategy_advanced(df, market_df=None):
         (data["chip_cum_10"] > data["chip_ma_10"]) & (data["chip_cum_10"] > 0), 1, -1
     )
 
-    # 3. 動能線 (Momentum Line)：RSI 14
+    # 3. 動能線 (Momentum Line)：RSI 14 與 MACD 交叉驗證
     delta = data["close"].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -285,7 +285,8 @@ def calculate_three_lines_strategy_advanced(df, market_df=None):
     data["is_volume_breakout"] = data["volume"] >= (data["vol_ma5"] * 1.5)
     data["is_red_candle"] = (data["close"] - data["open"]) / (data["open"] + 1e-9) >= 0.025
     data["is_gap_up"] = data["open"] > data["high"].shift(1)
-    data["kline_breakout"] = data["is_volume_breakout"] & (data["is_red_candle"] | data["is_gap_up"])
+    data["is_20d_high"] = data["close"] >= data["high"].rolling(20).max()
+    data["kline_breakout"] = data["is_volume_breakout"] & (data["is_red_candle"] | data["is_gap_up"] | data["is_20d_high"])
 
     data["ma_5"] = data["close"].rolling(5).mean()
     data["ma_10"] = data["close"].rolling(10).mean()
@@ -485,7 +486,6 @@ class SmartOrderManager:
         except Exception as e:
             return False, str(e)
 
-# 🎯 完全移除模板對照表，全數改由 Shioaji Snapshot 或日 K 線 (kbars) 動態解析真實價格
 def parse_accurate_stock_data(snapshot, api, contract):
     c_price = 0.0
     ref_price = 0.0
@@ -509,7 +509,6 @@ def parse_accurate_stock_data(snapshot, api, contract):
         if c_price > 0 and change_p != 0.0 and ref_price == 0.0:
             ref_price = c_price - change_p
 
-    # 若快照未刷出最新價，直接呼叫 API 讀取真實日 K 線
     if (c_price == 0.0 or ref_price == 0.0) and api and contract:
         try:
             start_date = (datetime.now() - timedelta(days=15)).strftime("%Y-%m-%d")
@@ -721,7 +720,6 @@ if app_mode == "📐 張宇明三線多空戰略":
 
     api_3line = get_shioaji_api(api_key, secret_key)
     
-    # 🚀 新增：全自選/熱門股一鍵動態 API 掃描按鈕
     if st.button("🚀 啟動自選股 / 精選股 API 真實數據多頭六星與三線動態掃描", type="primary"):
         if not api_3line:
             st.error("請先填寫正確的永豐金 API Key！")
