@@ -234,7 +234,7 @@ def calculate_atr(df, period=14):
     df['ATR'] = df['TR'].rolling(period).mean()
     return df
 
-# 📐 張宇明股神系統：三線 + 多頭六星 + 一條價值一億元的線(RS強弱線)[cite: 1]
+# 📐 張宇明股神系統：三線 + 多頭六星 + 一條價值一億元的線(RS強弱線)
 def calculate_three_lines_strategy_advanced(df, market_df=None):
     data = df.copy()
 
@@ -242,15 +242,15 @@ def calculate_three_lines_strategy_advanced(df, market_df=None):
         if col in data.columns and col.lower() not in data.columns:
             data[col.lower()] = data[col]
 
-    # 1. 趨勢線 (Trend Line)：20 EMA 與 60 EMA 及其斜率 (長度力道)[cite: 1]
+    # 1. 趨勢線 (Trend Line)：20 EMA 與 60 EMA 及其斜率 (長度力道)
     data["ema_20"] = data["close"].ewm(span=20, adjust=False).mean()
     data["ema_60"] = data["close"].ewm(span=60, adjust=False).mean()
     data["ema20_slope"] = data["ema_20"].diff(3)
     data["trend_line"] = np.where(
         (data["ema_20"] > data["ema_60"]) & (data["close"] > data["ema_20"]) & (data["ema20_slope"] > 0), 1, -1
-    ) #[cite: 1, 2]
+    )
 
-    # 2. 籌碼線 (Chip Line)：10 日三大法人與盤中擬真籌碼 (真吃貨驗證)[cite: 1]
+    # 2. 籌碼線 (Chip Line)：10 日三大法人與盤中擬真籌碼 (真吃貨驗證)
     if "institutional_net_buy" not in data.columns:
         data["institutional_net_buy"] = (data["close"] - data["open"]) / (data["high"] - data["low"] + 1e-6) * data["volume"]
 
@@ -258,18 +258,18 @@ def calculate_three_lines_strategy_advanced(df, market_df=None):
     data["chip_ma_10"] = data["chip_cum_10"].rolling(window=10).mean()
     data["chip_line"] = np.where(
         (data["chip_cum_10"] > data["chip_ma_10"]) & (data["chip_cum_10"] > 0), 1, -1
-    ) #[cite: 1, 2]
+    )
 
-    # 3. 動能線 (Momentum Line)：RSI 14[cite: 1]
+    # 3. 動能線 (Momentum Line)：RSI 14
     delta = data["close"].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / (loss + 1e-9)
     data["rsi_14"] = 100 - (100 / (1 + rs))
     data["rsi_14"] = data["rsi_14"].fillna(50)
-    data["momentum_line"] = np.where(data["rsi_14"] > 50, 1, -1) #[cite: 1, 2]
+    data["momentum_line"] = np.where(data["rsi_14"] > 50, 1, -1)
 
-    # 4. 「一條價值一億元的線」：相對大盤強弱比 (Relative Strength Index, RS)[cite: 1]
+    # 4. 「一條價值一億元的線」：相對大盤強弱比 (Relative Strength Index, RS)
     if market_df is not None and len(market_df) > 0:
         m_close = market_df["close"] if "close" in market_df.columns else market_df["Close"]
         s_ret = data["close"] / (data["close"].shift(20) + 1e-9)
@@ -278,14 +278,14 @@ def calculate_three_lines_strategy_advanced(df, market_df=None):
     else:
         data["rs_index"] = (data["close"] / (data["close"].shift(20) + 1e-9)).fillna(1.0)
 
-    data["rs_line"] = np.where(data["rs_index"] > 1.0, 1, -1) #[cite: 1]
+    data["rs_line"] = np.where(data["rs_index"] > 1.0, 1, -1)
 
-    # 5. K線突破型態與均線洗盤糾結 (5MA, 10MA, 20MA, 60MA 糾結頻幅 < 3.5%)[cite: 1, 3]
+    # 5. K線突破型態與均線洗盤糾結 (5MA, 10MA, 20MA, 60MA 糾結頻幅 < 3.5%)
     data["vol_ma5"] = data["volume"].rolling(5).mean()
-    data["is_volume_breakout"] = data["volume"] >= (data["vol_ma5"] * 1.5) #[cite: 1]
+    data["is_volume_breakout"] = data["volume"] >= (data["vol_ma5"] * 1.5)
     data["is_red_candle"] = (data["close"] - data["open"]) / data["open"] >= 0.025
     data["is_gap_up"] = data["open"] > data["high"].shift(1)
-    data["kline_breakout"] = data["is_volume_breakout"] & (data["is_red_candle"] | data["is_gap_up"]) #[cite: 1]
+    data["kline_breakout"] = data["is_volume_breakout"] & (data["is_red_candle"] | data["is_gap_up"])
 
     data["ma_5"] = data["close"].rolling(5).mean()
     data["ma_10"] = data["close"].rolling(10).mean()
@@ -295,9 +295,9 @@ def calculate_three_lines_strategy_advanced(df, market_df=None):
     ma_max = data[["ma_5", "ma_10", "ma_20", "ma_60"]].max(axis=1)
     ma_min = data[["ma_5", "ma_10", "ma_20", "ma_60"]].min(axis=1)
     data["ma_tangle_ratio"] = (ma_max - ma_min) / (ma_min + 1e-9) * 100
-    data["is_tangled"] = data["ma_tangle_ratio"] <= 3.5 #[cite: 3]
+    data["is_tangled"] = data["ma_tangle_ratio"] <= 3.5
 
-    # 6. 多頭六星評等計算 (Six-Star Rating)[cite: 1]
+    # 6. 多頭六星評等計算 (Six-Star Rating)
     star1 = (data["trend_line"] == 1).astype(int)
     star2 = (data["chip_line"] == 1).astype(int)
     star3 = (data["momentum_line"] == 1).astype(int)
@@ -305,18 +305,18 @@ def calculate_three_lines_strategy_advanced(df, market_df=None):
     star5 = (data["kline_breakout"]).astype(int)
     star6 = (data["is_tangled"].shift(1) | data["is_tangled"]).astype(int)
 
-    data["star_count"] = star1 + star2 + star3 + star4 + star5 + star6 #[cite: 1]
+    data["star_count"] = star1 + star2 + star3 + star4 + star5 + star6
 
-    # 7. 三線總分與診斷訊號[cite: 1, 2]
+    # 7. 三線總分與診斷訊號
     data["total_score"] = (
         data["trend_line"] + data["chip_line"] + data["momentum_line"]
-    ) #[cite: 1]
+    )
 
     conditions = [
-        (data["star_count"] >= 5),                                                          # 六星爆發特選股
-        (data["total_score"] == 3) & (data["chip_line"] == -1),                             # 偽利多誘多警訊
-        (data["total_score"] == 3),                                                         # 標準三線翻多
-        (data["total_score"] == -3) | ((data["total_score"] < 0) & (data["close"] < data["ma_20"])) # 三線轉空離場
+        (data["star_count"] >= 5),
+        (data["total_score"] == 3) & (data["chip_line"] == -1),
+        (data["total_score"] == 3),
+        (data["total_score"] == -3) | ((data["total_score"] < 0) & (data["close"] < data["ma_20"]))
     ]
     choices = [
         "⭐⭐⭐⭐⭐ 六星爆發強勢股 (三線共振+超越大盤+帶量突破)",
@@ -724,10 +724,10 @@ def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high,
 # 5. 各頁面路由與戰情室
 # =========================================================
 
-# 📐 張宇明三線多空戰略分頁 (含多頭六星與一條價值一億元的線)[cite: 1]
+# 📐 張宇明三線多空戰略分頁 (含多頭六星與一條價值一億元的線)
 if app_mode == "📐 張宇明三線多空戰略":
-    st.title("📐 張宇明股神系統 (三線多空 + 多頭六星 + 一條價值一億元的線)")[cite: 1]
-    st.caption("【核心戰術】：結合 20/60 EMA 趨勢、10日法人/盤中擬真籌碼、14日 RSI 動能與相對大盤強弱線 (RS) 進行綜合驗證。")[cite: 1]
+    st.title("📐 張宇明股神系統 (三線多空 + 多頭六星 + 一條價值一億元的線)")
+    st.caption("【核心戰術】：結合 20/60 EMA 趨勢、10日法人/盤中擬真籌碼、14日 RSI 動能與相對大盤強弱線 (RS) 進行綜合驗證。")
 
     col_target, col_btn = st.columns([3, 1])
     with col_target:
@@ -739,11 +739,10 @@ if app_mode == "📐 張宇明三線多空戰略":
 
     api_3line = get_shioaji_api(api_key, secret_key)
     if api_3line:
-        with st.spinner("正在連線計算【" + t_code + " " + t_name + "】股神三線與多頭六星指標..."):[cite: 1]
+        with st.spinner("正在連線計算【" + t_code + " " + t_name + "】股神三線與多頭六星指標..."):
             try:
                 contract = api_3line.Contracts.Stocks.get(t_code)
-                # 抓取大盤資料作為相對強弱對照[cite: 1]
-                m_contract = api_3line.Contracts.Stocks.get("2330") # 以台積電作為權重大盤替代基準
+                m_contract = api_3line.Contracts.Stocks.get("2330")
                 start_d = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
                 end_d = datetime.now().strftime("%Y-%m-%d")
 
@@ -760,43 +759,39 @@ if app_mode == "📐 張宇明三線多空戰略":
                         df_res = calculate_three_lines_strategy_advanced(df_3line_raw, df_market_raw)
                         curr_row = df_res.iloc[-1]
 
-                        # 頂部六星與三線指標戰情面板[cite: 1]
                         c1, c2, c3, c4, c5 = st.columns([1.2, 1, 1, 1, 1.2])
                         with c1:
                             star_num = int(curr_row["star_count"])
                             star_str = "⭐" * star_num
-                            st.markdown(f'<div style="background:var(--panel2); border:1.5px solid var(--gold); border-radius:10px; padding:12px; text-align:center;"><div class="muted">多頭六星評等</div><div style="font-size:1.1rem; font-weight:900; color:var(--gold);">{star_str} ({star_num}星)</div></div>', unsafe_allow_html=True)[cite: 1]
+                            st.markdown(f'<div style="background:var(--panel2); border:1.5px solid var(--gold); border-radius:10px; padding:12px; text-align:center;"><div class="muted">多頭六星評等</div><div style="font-size:1.1rem; font-weight:900; color:var(--gold);">{star_str} ({star_num}星)</div></div>', unsafe_allow_html=True)
                         with c2:
-                            st.markdown(f'<div style="background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:12px; text-align:center;"><div class="muted">趨勢線 (EMA20/60)</div><div style="font-size:1.15rem; font-weight:800; color:{"var(--up)" if curr_row["trend_line"]>0 else "var(--down)"};">{"🟢 多頭同步" if curr_row["trend_line"]>0 else "🔴 空頭走弱"}</div></div>', unsafe_allow_html=True)[cite: 1]
+                            st.markdown(f'<div style="background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:12px; text-align:center;"><div class="muted">趨勢線 (EMA20/60)</div><div style="font-size:1.15rem; font-weight:800; color:{"var(--up)" if curr_row["trend_line"]>0 else "var(--down)"};">{"🟢 多頭同步" if curr_row["trend_line"]>0 else "🔴 空頭走弱"}</div></div>', unsafe_allow_html=True)
                         with c3:
-                            st.markdown(f'<div style="background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:12px; text-align:center;"><div class="muted">籌碼線 (真吃貨)</div><div style="font-size:1.15rem; font-weight:800; color:{"var(--up)" if curr_row["chip_line"]>0 else "var(--down)"};">{"🟢 主力鎖碼" if curr_row["chip_line"]>0 else "🔴 籌碼散亂/倒貨"}</div></div>', unsafe_allow_html=True)[cite: 1]
+                            st.markdown(f'<div style="background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:12px; text-align:center;"><div class="muted">籌碼線 (真吃貨)</div><div style="font-size:1.15rem; font-weight:800; color:{"var(--up)" if curr_row["chip_line"]>0 else "var(--down)"};">{"🟢 主力鎖碼" if curr_row["chip_line"]>0 else "🔴 籌碼散亂/倒貨"}</div></div>', unsafe_allow_html=True)
                         with c4:
-                            st.markdown(f'<div style="background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:12px; text-align:center;"><div class="muted">動能線 (RSI 14)</div><div style="font-size:1.15rem; font-weight:800; color:{"var(--up)" if curr_row["momentum_line"]>0 else "var(--down)"};">{"🟢 強勢攻勢" if curr_row["momentum_line"]>0 else "🔴 動能衰退"} ({curr_row["rsi_14"]:.1f})</div></div>', unsafe_allow_html=True)[cite: 1]
+                            st.markdown(f'<div style="background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:12px; text-align:center;"><div class="muted">動能線 (RSI 14)</div><div style="font-size:1.15rem; font-weight:800; color:{"var(--up)" if curr_row["momentum_line"]>0 else "var(--down)"};">{"🟢 強勢攻勢" if curr_row["momentum_line"]>0 else "🔴 動能衰退"} ({curr_row["rsi_14"]:.1f})</div></div>', unsafe_allow_html=True)
                         with c5:
-                            st.markdown(f'<div style="background:var(--panel2); border:1.5px solid var(--accent); border-radius:10px; padding:12px; text-align:center;"><div class="muted">億元強弱線 (RS)</div><div style="font-size:1.15rem; font-weight:800; color:{"var(--up)" if curr_row["rs_line"]>0 else "var(--down)"};">{"🟢 勝過大盤" if curr_row["rs_line"]>0 else "🔴 弱於大盤"} ({curr_row["rs_index"]:.2f})</div></div>', unsafe_allow_html=True)[cite: 1]
+                            st.markdown(f'<div style="background:var(--panel2); border:1.5px solid var(--accent); border-radius:10px; padding:12px; text-align:center;"><div class="muted">億元強弱線 (RS)</div><div style="font-size:1.15rem; font-weight:800; color:{"var(--up)" if curr_row["rs_line"]>0 else "var(--down)"};">{"🟢 勝過大盤" if curr_row["rs_line"]>0 else "🔴 弱於大盤"} ({curr_row["rs_index"]:.2f})</div></div>', unsafe_allow_html=True)
 
                         st.write("")
-                        st.markdown(f"#### 🎯 股神系統診斷訊號：<b style='color:var(--gold); font-size:1.35rem;'>{curr_row['signal']}</b>", unsafe_allow_html=True)[cite: 1]
+                        st.markdown(f"#### 🎯 股神系統診斷訊號：<b style='color:var(--gold); font-size:1.35rem;'>{curr_row['signal']}</b>", unsafe_allow_html=True)
 
-                        # 雙副圖 K 線圖：包含 K 線、均線、RSI 動能與「價值一億元的 RS 相對強弱線」[cite: 1]
                         fig_3 = make_subplots(rows=3, cols=1, shared_xaxes=True, row_heights=[0.55, 0.22, 0.23], vertical_spacing=0.03)
                         fig_3.add_trace(go.Candlestick(x=df_res.index, open=df_res['open'], high=df_res['high'], low=df_res['low'], close=df_res['close'], name='K線'), row=1, col=1)
                         fig_3.add_trace(go.Scatter(x=df_res.index, y=df_res['ema_20'], name='20 EMA', line=dict(color='#FFD166', width=1.5)), row=1, col=1)
                         fig_3.add_trace(go.Scatter(x=df_res.index, y=df_res['ema_60'], name='60 EMA', line=dict(color='#4C8DFF', width=1.5)), row=1, col=1)
                         
-                        # 副圖 1: RS 相對強弱線 (一條價值一億元的線)[cite: 1]
-                        fig_3.add_trace(go.Scatter(x=df_res.index, y=df_res['rs_index'], name='億元強弱線 (RS)', line=dict(color='#FFD166', width=2)), row=2, col=1)[cite: 1]
+                        fig_3.add_trace(go.Scatter(x=df_res.index, y=df_res['rs_index'], name='億元強弱線 (RS)', line=dict(color='#FFD166', width=2)), row=2, col=1)
                         fig_3.add_hline(y=1.0, line_dash="dash", line_color="white", row=2, col=1)
 
-                        # 副圖 2: RSI 14[cite: 1]
-                        fig_3.add_trace(go.Scatter(x=df_res.index, y=df_res['rsi_14'], name='RSI 14', line=dict(color='#F6465D', width=1.5)), row=3, col=1)[cite: 1]
+                        fig_3.add_trace(go.Scatter(x=df_res.index, y=df_res['rsi_14'], name='RSI 14', line=dict(color='#F6465D', width=1.5)), row=3, col=1)
                         fig_3.add_hline(y=50, line_dash="dash", line_color="white", row=3, col=1)
                         
                         fig_3.update_layout(height=560, template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis_rangeslider_visible=False)
                         st.plotly_chart(fig_3, use_container_width=True)
 
-                        st.markdown("##### 📜 近 15 日三線、六星顆數與億元強弱線歷史變化表")[cite: 1]
-                        st.dataframe(df_res[["close", "ema_20", "ema_60", "rsi_14", "rs_index", "star_count", "total_score", "signal"]].tail(15), use_container_width=True)[cite: 1]
+                        st.markdown("##### 📜 近 15 日三線、六星顆數與億元強弱線歷史變化表")
+                        st.dataframe(df_res[["close", "ema_20", "ema_60", "rsi_14", "rs_index", "star_count", "total_score", "signal"]].tail(15), use_container_width=True)
             except Exception as e: st.error("三線戰略計算失敗: " + str(e))
 
 elif app_mode == "🔍 FinMind 全市場掃描器":
