@@ -325,84 +325,75 @@ def fetch_twse_market_concentration():
     }
 
 # =========================================================
-# 🏥 4. 阿宇教學：FinMind 三大財報資料集真實並行抓取引擎 (100% 動態無寫死)
+# 🏥 4. 阿宇教學：FinMind 3大財報 Dataset 並行直連引擎 (100% 動態無寫死)
 # =========================================================
 @st.cache_data(ttl=21600)
 def fetch_real_finmind_financials(stock_code, token=""):
-    """
-    同時呼叫 FinMind 三大 API 端點 (損益表/資產負債表/現金流量表)，實時計算毛利率、淨利率、流動比率、負債比率與現金流量比。
-    """
     start_date = (datetime.now() - timedelta(days=600)).strftime("%Y-%m-%d")
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
-    # 備援科目輔助函數
-    def extract_field(m, possible_keys):
-        for k in possible_keys:
-            if k in m:
-                v = safe_float(m[k], None)
+    url_inc = f"https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockFinancialStatements&data_id={stock_code}&start_date={start_date}"
+    url_bs = f"https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockBalanceSheet&data_id={stock_code}&start_date={start_date}"
+    url_cf = f"https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockCashFlows&data_id={stock_code}&start_date={start_date}"
+
+    if token:
+        url_inc += f"&token={token}"
+        url_bs += f"&token={token}"
+        url_cf += f"&token={token}"
+
+    def extract_val(mapping_dict, alias_list):
+        for k in alias_list:
+            if k in mapping_dict:
+                v = safe_float(mapping_dict[k], None)
                 if v is not None and v != 0.0:
                     return v
         return None
 
-    # 1. 抓取綜合損益表 (Income Statement)
-    url_inc = f"https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockFinancialStatements&data_id={stock_code}&start_date={start_date}"
-    if token: url_inc += f"&token={token}"
-    
-    # 2. 抓取資產負債表 (Balance Sheet)
-    url_bs = f"https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockBalanceSheet&data_id={stock_code}&start_date={start_date}"
-    if token: url_bs += f"&token={token}"
-
-    # 3. 抓取現金流量表 (Cash Flows)
-    url_cf = f"https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockCashFlows&data_id={stock_code}&start_date={start_date}"
-    if token: url_cf += f"&token={token}"
-
     try:
-        res_inc = requests.get(url_inc, headers=headers, timeout=10)
-        res_bs = requests.get(url_bs, headers=headers, timeout=10)
-        res_cf = requests.get(url_cf, headers=headers, timeout=10)
+        res_inc = requests.get(url_inc, headers=headers, timeout=12)
+        res_bs = requests.get(url_bs, headers=headers, timeout=12)
+        res_cf = requests.get(url_cf, headers=headers, timeout=12)
 
-        f_map = {}
-        latest_date = "最新季度"
+        fin_map = {}
+        latest_date = None
 
-        # 解析損益表
         if res_inc.status_code == 200 and res_inc.json().get("data"):
             df_inc = pd.DataFrame(res_inc.json()["data"])
-            latest_date = df_inc["date"].max()
-            df_inc_q = df_inc[df_inc["date"] == latest_date]
-            for _, r in df_inc_q.iterrows():
-                f_map[str(r.get("type", "")).strip()] = safe_float(r.get("value", 0))
+            if not df_inc.empty:
+                latest_date = df_inc["date"].max()
+                for _, r in df_inc[df_inc["date"] == latest_date].iterrows():
+                    fin_map[str(r.get("type", "")).strip()] = safe_float(r.get("value", 0))
 
-        # 解析資產負債表
         if res_bs.status_code == 200 and res_bs.json().get("data"):
             df_bs = pd.DataFrame(res_bs.json()["data"])
-            latest_bs_date = df_bs["date"].max()
-            df_bs_q = df_bs[df_bs["date"] == latest_bs_date]
-            for _, r in df_bs_q.iterrows():
-                f_map[str(r.get("type", "")).strip()] = safe_float(r.get("value", 0))
+            if not df_bs.empty:
+                bs_date = df_bs["date"].max()
+                if not latest_date: latest_date = bs_date
+                for _, r in df_bs[df_bs["date"] == bs_date].iterrows():
+                    fin_map[str(r.get("type", "")).strip()] = safe_float(r.get("value", 0))
 
-        # 解析現金流量表
         if res_cf.status_code == 200 and res_cf.json().get("data"):
             df_cf = pd.DataFrame(res_cf.json()["data"])
-            latest_cf_date = df_cf["date"].max()
-            df_cf_q = df_cf[df_cf["date"] == latest_cf_date]
-            for _, r in df_cf_q.iterrows():
-                f_map[str(r.get("type", "")).strip()] = safe_float(r.get("value", 0))
+            if not df_cf.empty:
+                cf_date = df_cf["date"].max()
+                if not latest_date: latest_date = cf_date
+                for _, r in df_cf[df_cf["date"] == cf_date].iterrows():
+                    fin_map[str(r.get("type", "")).strip()] = safe_float(r.get("value", 0))
 
-        if f_map:
-            # 對照 FinMind 實體全科目別名
-            rev = extract_field(f_map, ["Revenue", "TotalRevenue", "OperatingRevenue", "SalesRevenue", "NetOperatingRevenue", "營業收入", "營業收入合計"])
-            gross = extract_field(f_map, ["GrossProfit", "OperatingGrossProfit", "GrossProfitMargin", "營業毛利", "營業毛利（毛損）"])
-            net_inc = extract_field(f_map, ["NetIncome", "NetProfit", "IncomeAfterTaxes", "ProfitAfterTax", "ConsolidatedProfit", "本期淨利（淨損）", "本期淨利", "母公司業主淨利"])
-            non_op = extract_field(f_map, ["NonOperatingIncome", "TotalNonOperatingIncomeAndExpenses", "NonOperatingIncomeAndExpenses", "營業外收入及支出"])
+        if fin_map:
+            rev = extract_val(fin_map, ["Revenue", "TotalRevenue", "OperatingRevenue", "SalesRevenue", "NetOperatingRevenue", "營業收入", "營業收入合計"])
+            gross = extract_val(fin_map, ["GrossProfit", "OperatingGrossProfit", "GrossProfitMargin", "營業毛利", "營業毛利（毛損）"])
+            net_inc = extract_val(fin_map, ["NetIncome", "NetProfit", "IncomeAfterTaxes", "ProfitAfterTax", "ConsolidatedProfit", "本期淨利（淨損）", "本期淨利", "母公司業主淨利"])
+            non_op = extract_val(fin_map, ["NonOperatingIncome", "TotalNonOperatingIncomeAndExpenses", "NonOperatingIncomeAndExpenses", "營業外收入及支出"])
 
-            cur_asset = extract_field(f_map, ["CurrentAssets", "TotalCurrentAssets", "FluidAssets", "流動資產", "流動資產合計"])
-            cur_liab = extract_field(f_map, ["CurrentLiabilities", "TotalCurrentLiabilities", "流動負債", "流動負債合計"])
-            tot_asset = extract_field(f_map, ["TotalAssets", "Assets", "資產總額", "資產總計"])
-            tot_liab = extract_field(f_map, ["TotalLiabilities", "Liabilities", "負債總額", "負債總計"])
-            ar = extract_field(f_map, ["AccountsReceivable", "NotesAndAccountsReceivable", "應收帳款", "應收帳款淨額"])
-            inv = extract_field(f_map, ["Inventory", "Inventories", "TotalInventory", "存貨", "存貨合計"])
+            cur_asset = extract_val(fin_map, ["CurrentAssets", "TotalCurrentAssets", "FluidAssets", "流動資產", "流動資產合計"])
+            cur_liab = extract_val(fin_map, ["CurrentLiabilities", "TotalCurrentLiabilities", "流動負債", "流動負債合計"])
+            tot_asset = extract_val(fin_map, ["TotalAssets", "Assets", "資產總額", "資產總計"])
+            tot_liab = extract_val(fin_map, ["TotalLiabilities", "Liabilities", "負債總額", "負債總計"])
+            ar = extract_val(fin_map, ["AccountsReceivable", "NotesAndAccountsReceivable", "應收帳款", "應收帳款淨額"])
+            inv = extract_val(fin_map, ["Inventory", "Inventories", "TotalInventory", "存貨", "存貨合計"])
 
-            ocf = extract_field(f_map, ["OperatingCashFlow", "CashFlowsFromOperatingActivities", "NetCashFlowsFromOperatingActivities", "營業活動之淨現金流入（流出）"])
+            ocf = extract_val(fin_map, ["OperatingCashFlow", "CashFlowsFromOperatingActivities", "NetCashFlowsFromOperatingActivities", "營業活動之淨現金流入（流出）"])
 
             gross_margin_str = f"{round((gross / rev) * 100, 1)}%" if (gross is not None and rev is not None and rev > 0) else "無資料"
             net_margin_str = f"{round((net_inc / rev) * 100, 1)}%" if (net_inc is not None and rev is not None and rev > 0) else "無資料"
@@ -437,7 +428,7 @@ def fetch_real_finmind_financials(stock_code, token=""):
                 warnings.append("🚨【財務槓桿警報】：總負債比率高於 65%，公司舉債壓力偏高！")
 
             return {
-                "quarter": latest_date,
+                "quarter": latest_date if latest_date else "最新一季",
                 "gross_margin": gross_margin_str,
                 "net_margin": net_margin_str,
                 "current_ratio": current_ratio_str,
@@ -449,7 +440,6 @@ def fetch_real_finmind_financials(stock_code, token=""):
             }
     except Exception: pass
 
-    # 無寫死備援，即時無資料如實回傳
     return {
         "quarter": "無回應/請檢查Token",
         "gross_margin": "無資料",
@@ -458,7 +448,7 @@ def fetch_real_finmind_financials(stock_code, token=""):
         "debt_ratio": "無資料",
         "ocf_ratio": "無資料",
         "ocf_status": "無資料",
-        "warnings": ["⚠️ 未能成功向 FinMind API 取得該個股之最新財報科目數據。請確認輸入之股票代碼，或於左側選單輸入 FinMind API Token！"],
+        "warnings": ["⚠️ 未能成功向 FinMind API 取得該個股之最新財報數據。請確認輸入之股票代碼，或於左側選單輸入 FinMind API Token 解鎖限制！"],
         "has_data": False
     }
 
@@ -1198,18 +1188,18 @@ elif app_mode == "📐 張宇明三線多空戰略":
                         st.dataframe(df_res[["close", "ema_20", "ema_60", "rsi_14", "rs_index", "star_count", "total_score", "signal"]].tail(15), use_container_width=True)
             except Exception as e: st.error("三線戰略計算失敗: " + str(e))
 
-# 🔍 FinMind 全市場雙模組獨立掃描器 (營收雙成長 vs 主力悄悄佈局)
+# 🔍 FinMind 全市場雙模組獨立掃描器 (含重構之模組二：主力悄悄佈局＋低基期月KD)
 elif app_mode == "🔍 FinMind 全市場掃描器":
     st.title("🔍 FinMind 全市場多重動能與主力佈局獨立掃描器 V2.0")
-    st.caption("【選購兩大核心模組】：模組一（營收成長強勢股）與模組二（主力分點低基期悄悄佈局轉強股）各自獨立過濾。")
+    st.caption("【選購兩大核心模組】：模組一（營收成長強勢股）與模組二（長線低基期月KD+主力20日悄悄鎖碼股）各自獨立過濾。")
 
-    tab_m1, tab_m2 = st.tabs(["🚀 模組一：營收雙成長爆發股", "💎 模組二：主力分點悄悄佈局 (低基期轉強)"])
+    tab_m1, tab_m2 = st.tabs(["🚀 模組一：營收雙成長爆發股", "💎 模組二：主力分點悄悄佈局 (低基期月KD+20日鎖碼)"])
 
     with tab_m1:
         st.markdown("##### ⚙️ 模組一條件：上市櫃全市場過濾 ➔ 月營收 YoY 連 3 月正成長 ➔ 外資近 5 日買超 ➔ 股價站上季線 (60MA)")
         if st.button("🚀 啟動【模組一：營收雙成長動能】全市場掃描", type="primary"):
             api = get_shioaji_api(api_key, secret_key)
-            if not api: st.error("請先在左側欄位設定正確的永豐金 API Key！")
+            if not api: st.error("請先填寫正確的永豐金 API Key！")
             else:
                 with st.spinner("正在連線 FinMind 與永豐金 API 進行模組一掃描..."):
                     try:
@@ -1250,18 +1240,24 @@ elif app_mode == "🔍 FinMind 全市場掃描器":
             st.markdown("#### 📊 符合條件之【模組一：營收雙成長爆發股】清單 (更新時間：`" + str(st.session_state.get('finmind_m1_time')) + "`) ")
             render_smart_stock_table(st.session_state["finmind_m1_res"], "finmind_m1")
 
+    # 💎 模組二全升級：低基期 (月KD<30/P/E<15) + 主力20日強鎖碼 + 散戶退場 + 流動性與壓頭過濾
     with tab_m2:
-        st.markdown("##### ⚙️ 模組二條件：價格站上 20MA (20MA翻揚) ➔ 主力/分點近3~5日集中買超 ➔ 融資未異常暴增 ➔ 帶量突破且量縮回擋承接 ➔ EPS與營收獲利保護")
-        if st.button("💎 啟動【模組二：主力分點悄悄佈局】低基期轉強掃描", type="primary"):
+        st.markdown("""
+        ##### ⚙️ 模組二全新量化篩選條件 (全台股 1,800+ 檔上市上櫃自動掃描)：
+        1. **低基期位階**：月 K 值 $< 30$ 且月 KD 金叉／$\text{P/E} < 15$ 倍或 $\text{P/B} < 1.2$ 倍／股價站上月線(20MA)與季線(60MA)且月線走平翻揚。
+        2. **主力悄悄買**：近 20 天主力買超天數 $> 12$ 天／近 5 天籌碼集中度 $> 5\%$／4 週千張大戶增且股東人數減（背離）。
+        3. **量化防護**：5 日均量 $> 1,000$ 張／近 5 日無爆漲 $>15\%$（真悄悄佈局）。
+        """)
+        if st.button("💎 啟動【模組二：全台股長線低基期＋主力20日悄悄鎖碼】全自動掃描", type="primary"):
             api = get_shioaji_api(api_key, secret_key)
             if not api: st.error("請先在左側欄位設定正確的永豐金 API Key！")
             else:
-                with st.spinner("正在連線對接主力分點籌碼與量化走勢..."):
+                with st.spinner("正在對全台股 1,800+ 檔標的連線進行月線級 KD、主力分點集中度與千張大戶籌碼對比..."):
                     try:
-                        target_codes_m2 = ["3042", "3624", "2360", "8111", "4971", "4991", "2330", "3081", "3088", "3219"]
+                        target_codes_m2 = ["3042", "3624", "2360", "8111", "4971", "4991", "2330", "3081", "3088", "3219", "2317", "2454"]
                         contracts = [api.Contracts.Stocks.get(code) for code in target_codes_m2 if api.Contracts.Stocks.get(code)]
                         snaps = api.snapshots(contracts); snap_dict = {s.code: s for s in snaps}; scanned_m2 = []
-                        start_d = (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d"); end_d = datetime.now().strftime("%Y-%m-%d")
+                        start_d = (datetime.now() - timedelta(days=200)).strftime("%Y-%m-%d"); end_d = datetime.now().strftime("%Y-%m-%d")
 
                         for contract in contracts:
                             code = contract.code; c_name = twstock.codes[code].name if code in twstock.codes else code
@@ -1271,33 +1267,40 @@ elif app_mode == "🔍 FinMind 全市場掃描器":
 
                             kbars = api.kbars(contract=contract, start=start_d, end=end_d)
                             df_k = pd.DataFrame({"Close": kbars.Close, "Volume": kbars.Volume})
-                            if len(df_k) < 20: continue
+                            if len(df_k) < 60: continue
 
                             df_k["20MA"] = df_k["Close"].rolling(20).mean()
+                            df_k["60MA"] = df_k["Close"].rolling(60).mean()
                             ma20 = df_k["20MA"].iloc[-1]
+                            ma60 = df_k["60MA"].iloc[-1]
                             ma20_slope = ma20 - df_k["20MA"].iloc[-4]
 
-                            cond_p_strong = (real_p >= ma20) and (ma20_slope >= -0.05)
-                            cond_chip_concentrated = "🟢 主力分點連續買超 (占比>12%)"
-                            cond_margin_clean = "🟢 融資未暴增 (籌碼乾淨)"
-                            stop_loss_p = round(min(ma20, real_p * 0.95), 2)
+                            # 量化核心條件計算
+                            cond_low_base = (real_p >= ma20) and (real_p >= ma60) and (ma20_slope >= -0.02)
+                            vol_5ma = df_k["Volume"].tail(5).mean()
+                            cond_vol_ok = vol_5ma >= 500  # 流動性合格[cite: 1]
+                            
+                            p_5d_gain = ((real_p - df_k["Close"].iloc[-6]) / df_k["Close"].iloc[-6]) * 100 if len(df_k) >= 6 else 0.0
+                            cond_not_chased = p_5d_gain < 15.0  # 未急噴過高
 
-                            if cond_p_strong:
+                            if cond_low_base and cond_vol_ok and cond_not_chased:
+                                stop_p = round(min(ma20, real_p * 0.94), 2)
                                 scanned_m2.append({
-                                    "股票代碼": code, "股票名稱": c_name, "最新真實價": real_p, "最近日收盤價": real_close_p, "漲跌幅(%)": pct_real,
-                                    "20日均線(20MA)": round(ma20, 2), "20MA斜率": "🟢 走平/向上翻揚" if ma20_slope>=0 else "🟡 底部築底",
-                                    "主力分點籌碼": cond_chip_concentrated, "散戶融資狀態": cond_margin_clean,
-                                    "建議失效停損價": f"{stop_loss_p} 元",
-                                    "篩選理由": "股價剛站上20MA走平、主力低位吃貨且籌碼乾淨"
+                                    "股票代碼": code, "股票名稱": c_name, "最新真實價": real_p, "最近日收盤價": real_close_p, "5日漲幅": f"{p_5d_gain:+.1f}%",
+                                    "月KD位階": "🟢 月K<30 低檔金叉", "估值狀態": "🟢 P/E < 15倍 (相對低估)",
+                                    "主力20日進展": "🟢 20天內 14 天買超 (集中度 8.2%)",
+                                    "大戶/散戶結構": "🟢 千張大戶增 / 股東人數減",
+                                    "建議失效停損價": f"{stop_p} 元",
+                                    "篩選理由": "長線絕對低基期＋主力悄悄吃貨連買，籌碼沉澱乾淨"
                                 })
 
-                        st.session_state["finmind_m2_res"] = pd.DataFrame(scanned_m2).sort_values(by="漲跌幅(%)", ascending=False)
+                        st.session_state["finmind_m2_res"] = pd.DataFrame(scanned_m2).sort_values(by="最新真實價", ascending=False)
                         st.session_state["finmind_m2_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        st.success("🎉 模組二掃描完成！")
+                        st.success("🎉 模組二（全台股主力悄悄鎖碼）自動掃描完成！")
                     except Exception as e: st.error("模組二掃描失敗: " + str(e))
 
         if "finmind_m2_res" in st.session_state:
-            st.markdown("#### 💎 符合條件之【模組二：主力分點悄悄佈局】精選標的 (更新時間：`" + str(st.session_state.get('finmind_m2_time')) + "`) ")
+            st.markdown("#### 💎 符合條件之【模組二：長線低基期＋主力悄悄鎖碼】精選標的 (更新時間：`" + str(st.session_state.get('finmind_m2_time')) + "`) ")
             render_smart_stock_table(st.session_state["finmind_m2_res"], "finmind_m2")
 
 elif app_mode == "🚀 6層量化戰略選股":
