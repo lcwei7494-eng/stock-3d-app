@@ -325,12 +325,13 @@ def fetch_twse_market_concentration():
     }
 
 # =========================================================
-# 🏥 4. 阿宇教學：「5分鐘看懂財報體檢」FinMind API 完整修復對應引擎
+# 🏥 4. 阿宇教學：「5分鐘看懂財報體檢」FinMind API 實時對接 (完全無預設假資料)
 # =========================================================
 @st.cache_data(ttl=21600)
 def fetch_real_finmind_financials(stock_code, token=""):
     """
-    100% 直連 FinMind 三大財報資料集，透過跨 4 季別名庫對應與降級機制，精準呈現實態數據
+    完全直連 FinMind API 抓取輸入股票真實三表數據，動態解析並計算體檢指標。
+    100% 隨輸入股票變動，絕不包含任何寫死的降級備援數據。
     """
     start_date = (datetime.now() - timedelta(days=600)).strftime("%Y-%m-%d")
     url = f"https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockFinancialStatements&data_id={stock_code}&start_date={start_date}"
@@ -338,8 +339,10 @@ def fetch_real_finmind_financials(stock_code, token=""):
 
     def extract_field(mapping_dict, possible_keys):
         for k in possible_keys:
-            if k in mapping_dict and safe_float(mapping_dict[k]) != 0.0:
-                return safe_float(mapping_dict[k])
+            if k in mapping_dict:
+                v = safe_float(mapping_dict[k], None)
+                if v is not None and v != 0.0:
+                    return v
         return None
 
     try:
@@ -350,83 +353,89 @@ def fetch_real_finmind_financials(stock_code, token=""):
                 df = pd.DataFrame(raw_data)
                 unique_dates = sorted(df["date"].unique(), reverse=True)
                 
-                for latest_date in unique_dates[:4]:
+                # 倒序嘗試找到有資料的最新季度
+                for latest_date in unique_dates:
                     q_df = df[df["date"] == latest_date]
                     if "type" in q_df.columns and "value" in q_df.columns:
-                        f_map = {row["type"]: safe_float(row["value"]) for _, row in q_df.iterrows()}
+                        f_map = {str(row["type"]).strip(): safe_float(row["value"], 0.0) for _, row in q_df.iterrows()}
                     else:
                         f_map = q_df.iloc[0].to_dict()
 
-                    # 1. 損益表多重對應別名庫
-                    rev = extract_field(f_map, ["Revenue", "TotalRevenue", "OperatingRevenue", "SalesRevenue", "NetOperatingRevenue", "營業收入", "營業收入合計"])
+                    # 1. 損益表科目別名庫
+                    rev = extract_field(f_map, ["Revenue", "TotalRevenue", "OperatingRevenue", "SalesRevenue", "NetOperatingRevenue", "營業收入", "營業收入合計", "營業收入淨額"])
                     gross = extract_field(f_map, ["GrossProfit", "OperatingGrossProfit", "GrossProfitMargin", "營業毛利", "營業毛利（毛損）"])
-                    net_inc = extract_field(f_map, ["NetIncome", "NetProfit", "ProfitAfterTax", "ConsolidatedProfit", "NetIncomeIncomeFromContinuingOperations", "本期淨利（淨損）", "母公司業主淨利"])
-                    non_op = extract_field(f_map, ["NonOperatingIncome", "TotalNonOperatingIncomeAndExpenses", "NonOperatingIncomeAndExpenses", "營業外收入及支出"])
+                    net_inc = extract_field(f_map, ["NetIncome", "NetProfit", "ProfitAfterTax", "ConsolidatedProfit", "NetIncomeIncomeFromContinuingOperations", "本期淨利（淨損）", "母公司業主淨利", "本期淨利"])
+                    non_op = extract_field(f_map, ["NonOperatingIncome", "TotalNonOperatingIncomeAndExpenses", "NonOperatingIncomeAndExpenses", "營業外收入及支出", "營業外收入及支出合計"])
 
-                    # 2. 資產負債表多重對應別名庫
+                    # 2. 資產負債表科目別名庫
                     cur_asset = extract_field(f_map, ["CurrentAssets", "TotalCurrentAssets", "FluidAssets", "流動資產", "流動資產合計"])
                     cur_liab = extract_field(f_map, ["CurrentLiabilities", "TotalCurrentLiabilities", "流動負債", "流動負債合計"])
                     tot_asset = extract_field(f_map, ["TotalAssets", "Assets", "資產總額", "資產總計"])
                     tot_liab = extract_field(f_map, ["TotalLiabilities", "Liabilities", "負債總額", "負債總計"])
-                    ar = extract_field(f_map, ["AccountsReceivable", "NotesAndAccountsReceivable", "AccountsAndNotesReceivable", "應收帳款", "應收帳款淨額"])
+                    ar = extract_field(f_map, ["AccountsReceivable", "NotesAndAccountsReceivable", "AccountsAndNotesReceivable", "應收帳款", "應收帳款淨額", "應收票據及帳款淨額"])
                     inv = extract_field(f_map, ["Inventory", "Inventories", "TotalInventory", "存貨", "存貨合計"])
 
-                    # 3. 現金流量表多重對應別名庫
-                    ocf = extract_field(f_map, ["OperatingCashFlow", "CashFlowsFromOperatingActivities", "NetCashFlowsFromOperatingActivities", "CashFlowFromOperatingActivities", "營業活動之淨現金流入（流出）"])
+                    # 3. 現金流量表科目別名庫
+                    ocf = extract_field(f_map, ["OperatingCashFlow", "CashFlowsFromOperatingActivities", "NetCashFlowsFromOperatingActivities", "CashFlowFromOperatingActivities", "營業活動之淨現金流入（流出）", "營業活動之現金流量"])
 
-                    if rev is not None and rev > 0 and tot_asset is not None and tot_asset > 0:
-                        gross_margin = round((gross / rev) * 100, 1) if gross is not None else 33.1
-                        net_margin = round((net_inc / rev) * 100, 1) if net_inc is not None else 18.5
-                        current_ratio = round((cur_asset / cur_liab) * 100, 1) if (cur_asset is not None and cur_liab is not None and cur_liab > 0) else 215.0
-                        debt_ratio = round((tot_liab / tot_asset) * 100, 1) if (tot_liab is not None and tot_asset > 0) else 34.2
+                    # 確保有抓取到主要指標 (營收或總資產 > 0)
+                    if (rev is not None and rev > 0) or (tot_asset is not None and tot_asset > 0):
+                        gross_margin_str = f"{round((gross / rev) * 100, 1)}%" if (gross is not None and rev is not None and rev > 0) else "無資料"
+                        net_margin_str = f"{round((net_inc / rev) * 100, 1)}%" if (net_inc is not None and rev is not None and rev > 0) else "無資料"
+                        current_ratio_str = f"{round((cur_asset / cur_liab) * 100, 1)}%" if (cur_asset is not None and cur_liab is not None and cur_liab > 0) else "無資料"
+                        debt_ratio_str = f"{round((tot_liab / tot_asset) * 100, 1)}%" if (tot_liab is not None and tot_asset is not None and tot_asset > 0) else "無資料"
                         
                         if ocf is not None and net_inc is not None and net_inc != 0:
-                            ocf_ratio = round((ocf / net_inc) * 100, 1)
+                            ocf_ratio_val = round((ocf / net_inc) * 100, 1)
+                            ocf_ratio_str = f"{ocf_ratio_val}%"
                         else:
-                            ocf_ratio = 120.0
+                            ocf_ratio_val = None
+                            ocf_ratio_str = "無資料"
 
                         warnings = []
                         if isinstance(ocf, (int, float)) and ocf <= 0:
                             warnings.append("⚠️【營業現金流偏弱警報】：最新一季營業活動現金流量為負值，注意『帳面賺錢 ≠ 現金真的進來』！")
-                        elif isinstance(ocf_ratio, (int, float)) and ocf_ratio < 75.0:
+                        elif isinstance(ocf_ratio_val, (int, float)) and ocf_ratio_val < 75.0:
                             warnings.append("⚠️【營業現金流覆蓋率不足】：營業現金流對淨利比低於 75%，現金落袋力道較弱！")
 
-                        if isinstance(ar, (int, float)) and isinstance(inv, (int, float)) and (ar + inv) / rev > 0.50:
+                        if isinstance(ar, (int, float)) and isinstance(inv, (int, float)) and rev is not None and rev > 0 and (ar + inv) / rev > 0.50:
                             warnings.append("⚠️【應收/存貨過高警報】：應收帳款與存貨占營收比率偏高，需防範客戶延扣款或庫存跌價風險！")
 
                         if isinstance(non_op, (int, float)) and isinstance(net_inc, (int, float)) and net_inc > 0 and abs(non_op) > abs(net_inc) * 0.35:
                             warnings.append("⚠️【業外收益虛胖警報】：稅後淨利相當比例來自業外收益變動，非單純來自本業強勁獲利！")
 
-                        if isinstance(current_ratio, (int, float)) and current_ratio < 100.0:
+                        curr_ratio_num = (cur_asset / cur_liab) * 100 if (cur_asset is not None and cur_liab is not None and cur_liab > 0) else None
+                        if isinstance(curr_ratio_num, (int, float)) and curr_ratio_num < 100.0:
                             warnings.append("🚨【短期還款安全性警報】：流動比率低於 100%，短期周轉與償債能力需特別注意！")
 
-                        if isinstance(debt_ratio, (int, float)) and debt_ratio > 65.0:
+                        debt_ratio_num = (tot_liab / tot_asset) * 100 if (tot_liab is not None and tot_asset is not None and tot_asset > 0) else None
+                        if isinstance(debt_ratio_num, (int, float)) and debt_ratio_num > 65.0:
                             warnings.append("🚨【財務槓桿警報】：總負債比率高於 65%，公司舉債壓力偏高！")
 
                         return {
                             "quarter": latest_date,
-                            "gross_margin": f"{gross_margin}%",
-                            "net_margin": f"{net_margin}%",
-                            "current_ratio": f"{current_ratio}%",
-                            "debt_ratio": f"{debt_ratio}%",
-                            "ocf_ratio": f"{ocf_ratio}%",
-                            "ocf_status": "🟢 現金實質流入" if (isinstance(ocf, (int, float)) and ocf > 0) else "🔴 現金流入不足",
+                            "gross_margin": gross_margin_str,
+                            "net_margin": net_margin_str,
+                            "current_ratio": current_ratio_str,
+                            "debt_ratio": debt_ratio_str,
+                            "ocf_ratio": ocf_ratio_str,
+                            "ocf_status": "🟢 現金實質流入" if (isinstance(ocf, (int, float)) and ocf > 0) else ("🔴 現金流入不足" if ocf is not None else "無資料"),
                             "warnings": warnings,
                             "has_data": True
                         }
     except Exception: pass
 
-    # 事實對接降級防護 (以晶技 3042 為標竿)
+    # 無任何預設假數據，未獲取即如實呈現無資料提示
     return {
-        "quarter": "2026-06-30 (MOPS事實資料對接)",
-        "gross_margin": "33.1%",
-        "net_margin": "18.5%",
-        "current_ratio": "215.0%",
-        "debt_ratio": "34.2%",
-        "ocf_ratio": "120.0%",
-        "ocf_status": "🟢 現金實質流入",
-        "warnings": [],
-        "has_data": True
+        "quarter": "無回應/未開放",
+        "gross_margin": "無資料",
+        "net_margin": "無資料",
+        "current_ratio": "無資料",
+        "debt_ratio": "無資料",
+        "ocf_ratio": "無資料",
+        "ocf_status": "無資料",
+        "warnings": ["⚠️ 無法向 FinMind API 取得該個股之最新財報科目數據。請確認輸入之股票代碼，或於左側選單補填 FinMind API Token！"],
+        "has_data": False
     }
 
 # =========================================================
@@ -948,18 +957,18 @@ if app_mode == "🌐 TWSE 全市場成交值集中度":
     st.markdown("#### 📋 證交所 5 步驟集中度與量價資金流向判定明細表")
     st.dataframe(df_top10, use_container_width=True, hide_index=True)
 
-# 🏥 獨立分頁 2：阿宇教學「5分鐘看懂財報體檢」FinMind API 實體數據動態連線版 (100% 最新數據)
+# 🏥 獨立分頁 2：阿宇教學「5分鐘看懂財報體檢」FinMind API 實體數據動態連線版
 elif app_mode == "🏥 財報體檢與三張表健康掃描":
     st.title("🏥 阿宇 | 台股實用教學：5分鐘看懂財報體檢與健康診斷")
     st.caption("【核心哲學】：連線 FinMind API 實體三表數據！『帳面賺錢 ≠ 現金真的進來』，拒絕寫死資料。")
 
     col_f_in, col_f_btn = st.columns([3, 1])
     with col_f_in:
-        fin_stock_input = st.text_input("請輸入欲進行財報健檢之股票代碼或名稱", value="3042 晶技")
+        fin_stock_input = st.text_input("請輸入欲進行財報健檢之股票代碼或名稱", value="2330 台積電")
     
     f_code, f_name = get_stock_code_and_name(fin_stock_input)
-    f_code = f_code if f_code else "3042"
-    f_name = f_name if f_name else "晶技"
+    f_code = f_code if f_code else "2330"
+    f_name = f_name if f_name else "台積電"
 
     with st.spinner(f"正在向 FinMind API 連線抓取【{f_name} ({f_code})】最新季度實體財務報表..."):
         fin_scan = fetch_real_finmind_financials(f_code, finmind_token)
@@ -1914,236 +1923,4 @@ else:
                         snapshots = api.snapshots([contract]); snap = snapshots[0] if snapshots else None
                         curr_price, prev_close_price, _ = parse_accurate_stock_data(snap, api, contract)
                         high_price = safe_float(getattr(snap, 'high', curr_price), curr_price)
-                        low_price = safe_float(getattr(snap, 'low', curr_price), curr_price)
-                        open_price = safe_float(getattr(snap, 'open', prev_close_price), prev_close_price)
-                        volume = int(safe_float(getattr(snap, 'total_volume', 0))) if snap else 0
-                        avg_price = safe_float(getattr(snap, 'average_price', curr_price), curr_price) or curr_price
-                        outer_vol = safe_float(getattr(snap, 'ask_volume', 0.0)) if snap else 0.0
-                        inner_vol = safe_float(getattr(snap, 'bid_volume', 0.0)) if snap else 0.0
-
-                        limit_up = safe_float(getattr(snap, 'price_up', None), round(curr_price * 1.1, 2))
-                        limit_down = safe_float(getattr(snap, 'price_down', None), round(curr_price * 0.9, 2))
-
-                        start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d"); end_date = datetime.now().strftime("%Y-%m-%d")
-                        kbars = api.kbars(contract=contract, start=start_date, end=end_date)
-                        df_raw = pd.DataFrame({"ts": kbars.ts, "Open": kbars.Open, "High": kbars.High, "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume})
-                        bal_p = (high_price + low_price + curr_price) / 3
-
-                        @api.on_tick_stk_v1()
-                        def on_tick_cb(exchange, tick):
-                            t_price = safe_float(getattr(tick, 'close', 0.0)); t_vol = int(safe_float(getattr(tick, 'volume', 0)))
-                            t_time = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-                            tick_payload = {
-                                "price": t_price, "volume": t_vol, "time": t_time, "target_price": custom_target_price,
-                                "stop_price": custom_stop_price, "buy_cost": avg_buy_price, "buy_sheets": total_shares,
-                                "breakeven_p": breakeven_p, "total_cost": total_cost, "vwap": avg_price, "pivot": bal_p,
-                                "outer_vol": outer_vol, "inner_vol": inner_vol, "chk_vwap": chk_vwap, "chk_pivot": chk_pivot,
-                                "chk_momentum": chk_momentum, "imbalance_ratio": param_imbalance_ratio,
-                                "chk_big_tick": chk_big_tick, "big_tick_shares": param_big_tick_shares
-                            }
-                            broadcast_tick_microsecond(tick_payload)
-
-                        try: api.quote.subscribe(contract, quote_type=sj.constant.QuoteType.Tick)
-                        except Exception: pass
-
-                        st.session_state["analysis_data"] = {
-                            "target_code": target_code, "target_name": target_name, "curr_price": curr_price,
-                            "prev_close_price": prev_close_price, "high_price": high_price, "low_price": low_price,
-                            "open_price": open_price, "volume": volume, "avg_price": avg_price, "limit_up": limit_up,
-                            "limit_down": limit_down, "bias_rate": ((curr_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0,
-                            "momentum_coef": (outer_vol / inner_vol) if inner_vol > 0 else 1.0, "balance_point": bal_p, "df_raw": df_raw
-                        }
-                except Exception as e: st.error("連線失敗: " + str(e))
-
-    if "analysis_data" in st.session_state and st.session_state["analysis_data"]["target_code"] == target_code:
-        data = st.session_state["analysis_data"]
-        curr_price = safe_float(data.get("curr_price", 0.0)); prev_close_price = safe_float(data.get("prev_close_price", curr_price), curr_price)
-        open_price = safe_float(data.get('open_price', curr_price), curr_price); high_price = safe_float(data.get('high_price', curr_price), curr_price)
-        low_price = safe_float(data.get('low_price', curr_price), curr_price); avg_price = safe_float(data.get('avg_price', curr_price), curr_price)
-        balance_point = safe_float(data.get('balance_point', curr_price), curr_price); bias_rate = safe_float(data.get('bias_rate', 0.0), 0.0)
-        limit_up = safe_float(data.get('limit_up', round(curr_price * 1.1, 2)), round(curr_price * 1.1, 2))
-        limit_down = safe_float(data.get('limit_down', round(curr_price * 0.9, 2)), round(curr_price * 0.9, 2))
-        df_raw = data.get("df_raw", pd.DataFrame())
-
-        if len(df_raw) > 0:
-            df_raw["DateTime"] = pd.to_datetime(df_raw["ts"] / 1000000000, unit='s', errors='coerce')
-            df_k_daily = df_raw.groupby(df_raw["DateTime"].dt.date).agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).reset_index()
-            df_k_daily["5MA"] = df_k_daily["Close"].rolling(5).mean(); df_k_daily["10MA"] = df_k_daily["Close"].rolling(10).mean(); df_k_daily["20MA"] = df_k_daily["Close"].rolling(20).mean()
-            df_k_daily = calculate_atr(df_k_daily)
-            ma5 = df_k_daily['5MA'].iloc[-1]; ma20 = df_k_daily['20MA'].iloc[-1]
-            atr_val = df_k_daily['ATR'].iloc[-1] if not pd.isna(df_k_daily['ATR'].iloc[-1]) else (curr_price * 0.02)
-            prev_high = df_k_daily['High'].iloc[-2] if len(df_k_daily)>1 else high_price
-            prev_low = df_k_daily['Low'].iloc[-2] if len(df_k_daily)>1 else low_price
-        else: ma5, ma20, atr_val, prev_high, prev_low = curr_price, curr_price, curr_price * 0.02, high_price, low_price
-
-        ai_res = ai_senior_analyst_diagnosis_advanced(target_code, target_name, curr_price, ma5, ma20, prev_high, prev_low, balance_point, {})
-        
-        pct = ((curr_price - prev_close_price) / prev_close_price) * 100 if prev_close_price > 0 else 0; t_cls = tone(pct)
-
-        ws_live_html = f"""
-        <div style="background:#121721; border:1px solid #253042; border-radius:12px; padding:16px 20px; margin-bottom:12px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                    <span style="font-size:1.6rem; font-weight:900; color:#FFFFFF;">{data['target_code']} {data['target_name']}</span>
-                    <span style="font-size:1.05rem; font-weight:700; color:#FFD166; margin-left:12px; background:#1A2130; padding:4px 10px; border-radius:6px; border:1px solid #FFD166;">📌 最近日收盤價: {prev_close_price:.2f} 元</span>
-                    <span style="font-size:0.85rem; color:#4C8DFF; font-weight:600; margin-left:10px;">⚡ WebSocket 微秒級當沖條件即時監控</span>
-                </div>
-                <div style="text-align:right;">
-                    <span id="live-price" class="{t_cls}" style="font-size:2.8rem; font-weight:900; line-height:1;">{curr_price:.2f}</span>
-                    <span id="live-pct" class="{t_cls}" style="font-size:1.2rem; margin-left:8px;">{pct:+.2f}%</span>
-                </div>
-            </div>
-            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:12px; background:#1A2130; border-radius:8px; padding:12px 16px; margin-top:12px; border:1px solid #253042;">
-                <div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">最高</span><b style="color:#F6465D;">{high_price:.2f}</b></div>
-                <div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">最低</span><b style="color:#1FC98B;">{low_price:.2f}</b></div>
-                <div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">最近日收盤</span><b style="color:#FFD166;">{prev_close_price:.2f}</b></div>
-                <div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">漲停</span><b style="color:#F6465D;">{limit_up:.2f}</b></div>
-                <div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">跌停</span><b style="color:#1FC98B;">{limit_down:.2f}</b></div>
-                <div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">均價 (VWAP)</span><b style="color:#FFD166;">{avg_price:.2f}</b></div>
-            </div>
-            <div id="pnl-box" style="margin-top:10px; padding:8px 12px; background:#1A2130; border-radius:6px; font-weight:700; display:none; border:1px solid #4C8DFF;"></div>
-            <div id="alarm-box" style="margin-top:10px; font-size:1.15rem; font-weight:700;"></div>
-        </div>
-
-        <script>
-            const host = window.location.hostname || "localhost";
-            const ws = new WebSocket("ws://" + host + ":8765");
-            const prevClosePx = {prev_close_price};
-            let lastSpeechTime = 0;
-
-            function speakAlert(text) {{
-                const now = Date.now();
-                if (now - lastSpeechTime > 3000) {{
-                    lastSpeechTime = now;
-                    if ('speechSynthesis' in window) {{
-                        const msg = new SpeechSynthesisUtterance(text);
-                        msg.lang = 'zh-TW';
-                        window.speechSynthesis.speak(msg);
-                    }}
-                }}
-            }}
-
-            ws.onmessage = function(event) {{
-                const data = JSON.parse(event.data);
-                const px = data.price;
-                const vol = data.volume;
-                const pxElem = document.getElementById("live-price");
-                const pctElem = document.getElementById("live-pct");
-                const alarmElem = document.getElementById("alarm-box");
-                const pnlElem = document.getElementById("pnl-box");
-
-                pxElem.innerText = px.toFixed(2);
-
-                if (prevClosePx > 0) {{
-                    const diffPct = ((px - prevClosePx) / prevClosePx) * 100;
-                    pctElem.innerText = (diffPct >= 0 ? "+" : "") + diffPct.toFixed(2) + "%";
-                    if (diffPct > 0) {{ pxElem.className = "up"; pctElem.className = "up"; }}
-                    else if (diffPct < 0) {{ pxElem.className = "down"; pctElem.className = "down"; }}
-                }}
-
-                if (data.buy_cost > 0 && data.total_cost > 0) {{
-                    const shares = data.buy_sheets;
-                    const sellVal = px * shares;
-                    let sellFee = Math.floor(sellVal * 0.001425 * 0.2);
-                    if (sellFee < 20) sellFee = 20;
-                    const sellTax = Math.floor(sellVal * 0.003);
-                    const netIncome = sellVal - sellFee - sellTax;
-                    const pnl = netIncome - data.total_cost;
-                    const pnlRate = (pnl / data.total_cost) * 100;
-
-                    pnlElem.style.display = "block";
-                    const colorCls = pnl >= 0 ? "#F6465D" : "#1FC98B";
-                    pnlElem.innerHTML = "<span style='color:#FFFFFF;'>💰 微秒級即時預估損益：</span><span style='color:" + colorCls + "; font-size:1.2rem;'>" + (pnl >= 0 ? "+" : "") + Math.round(pnl).toLocaleString() + " 元 (" + (pnlRate >= 0 ? "+" : "") + pnlRate.toFixed(2) + "%)</span>";
-                }} else {{ pnlElem.style.display = "none"; }}
-
-                let msgs = [];
-                if (data.chk_big_tick && vol >= (data.big_tick_shares || 30)) {{
-                    msgs.push("<span style='color:#F6465D;'>🔥【成交明細特大單】爆發單筆 " + vol + " 張市價敲進，主力強勢吃盤！</span>");
-                    speakAlert("主力特大買單進場");
-                }}
-
-                if (data.target_price > 0 && px >= data.target_price) {{
-                    msgs.push("<span style='color:#F6465D;'>🎯【目標價觸發】最新 Tick " + px + " 元已達目標位！</span>");
-                    speakAlert("已達目標價");
-                }}
-                if (data.stop_price > 0 && px <= data.stop_price) {{
-                    msgs.push("<span style='color:#1FC98B;'>🚨【停損價觸發】最新 Tick " + px + " 元已觸及停損位！</span>");
-                    speakAlert("觸及停損價注意");
-                }}
-
-                if (data.chk_vwap && data.vwap > 0) {{
-                    if (px > data.vwap && px <= data.vwap * 1.003) {{
-                        msgs.push("<span style='color:#FFD166;'>🟡【當沖護盤】現價回踩 VWAP 當日均線 (" + data.vwap.toFixed(2) + "元) 支撐！</span>");
-                    }} else if (px < data.vwap) {{
-                        msgs.push("<span style='color:#1FC98B;'>⚠️【當沖轉弱】現價已跌破 VWAP 當日均線 (" + data.vwap.toFixed(2) + "元)！</span>");
-                    }}
-                }}
-
-                if (data.chk_momentum) {{
-                    const threshold = data.imbalance_ratio || 2.0;
-                    if (data.outer_vol > 0 && data.inner_vol > 0) {{
-                        const ratio = data.outer_vol / data.inner_vol;
-                        if (ratio >= threshold) {{
-                            msgs.push("<span style='color:#F6465D;'>🔥【買盤極強失衡】外盤遠大於內盤 (" + ratio.toFixed(1) + "倍 > " + threshold + "倍)，具強推升動能！</span>");
-                        }} else if (data.inner_vol / data.outer_vol >= threshold) {{
-                            msgs.push("<span style='color:#1FC98B;'>⚠【賣盤極強失衡】內盤遠大於外盤 (" + (data.inner_vol / data.outer_vol).toFixed(1) + "倍 > " + threshold + "倍)，注意砍單風險！</span>");
-                        }}
-                    }}
-                }}
-
-                alarmElem.innerHTML = msgs.join("<br>");
-            }};
-        </script>
-        """
-        st.components.v1.html(ws_live_html, height=250)
-
-        st.markdown("#### 2️⃣ 四大停損與停利參考設定 (多重停損綠色 / 多重停利紅色)")
-        col_sl_box, col_tp_box = st.columns(2)
-        if "短線" in trade_style: sl_pct, tp_pct = 0.04, 0.06
-        elif "波段" in trade_style: sl_pct, tp_pct = 0.07, 0.15
-        else: sl_pct, tp_pct = 0.12, 0.30
-
-        with col_sl_box: st.markdown(level_card_html("🛡️ 多重停損參考試算", [(f"百分比法 ({sl_pct*100:.0f}%)", curr_price * (1 - sl_pct)), ("ATR 波動法 (1.5xATR)", curr_price - (1.5 * atr_val)), ("均線跌破法 (5MA)", ma5), ("K線前低支撐", prev_low)], "down"), unsafe_allow_html=True)
-        with col_tp_box: st.markdown(level_card_html("🎯 多重停利參考試算", [(f"百分比法 ({tp_pct*100:.0f}%)", curr_price * (1 + tp_pct)), ("ATR 波動法 (3xATR)", curr_price + (3 * atr_val)), ("移動停利線 (沿5MA)", ma5), ("前高壓力區停利", prev_high)], "up"), unsafe_allow_html=True)
-
-        left_main, right_panel = st.columns([3, 1])
-        with left_main:
-            kbar_tf = st.radio("顯示週期：", ["5分K", "1分K", "60分K", "日K"], horizontal=True)
-            if "日K" in kbar_tf and 'df_k_daily' in locals() and not df_k_daily.empty:
-                df_chart = df_k_daily.tail(60).copy(); df_chart["DateTime"] = pd.to_datetime(df_chart["DateTime"]); time_fmt = '%Y-%m-%d'
-            else:
-                latest_d = df_raw["DateTime"].dt.date.max() if len(df_raw)>0 else datetime.now().date()
-                df_today_raw = df_raw[df_raw["DateTime"].dt.date == latest_d]
-                if "1分K" in kbar_tf: df_chart = df_today_raw.set_index("DateTime").resample("1min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index() if len(df_today_raw)>0 else pd.DataFrame(); time_fmt = '%H:%M'
-                elif "60分K" in kbar_tf: df_chart = df_raw.set_index("DateTime").resample("60min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index().tail(60) if len(df_raw)>0 else pd.DataFrame(); time_fmt = '%m-%d %H:%M'
-                else: df_chart = df_today_raw.set_index("DateTime").resample("5min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index() if len(df_today_raw)>0 else pd.DataFrame(); time_fmt = '%H:%M'
-
-            if len(df_chart) > 0:
-                fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.03)
-                fig.add_trace(go.Candlestick(x=df_chart['DateTime'].dt.strftime(time_fmt), open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'], name='K線', increasing_line_color="#F6465D", decreasing_line_color="#1FC98B"), row=1, col=1)
-                fig.add_trace(go.Bar(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['Volume'], name='成交量', marker_color="#4C8DFF"), row=2, col=1)
-                fig.update_layout(height=450, margin=dict(l=10, r=10, t=10, b=10), template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis_rangeslider_visible=False)
-                st.plotly_chart(fig, use_container_width=True)
-
-            st.markdown("##### 📊 籌碼面進階數據 (三大法人近5日買賣超 & 籌碼集中度)")
-            c_left, c_right = st.columns(2)
-            with c_left:
-                st.caption("三大法人買賣超 (張) [FinMind 即時數據]")
-                df_finmind = fetch_finmind_chip_data(target_code, finmind_token)
-                if not df_finmind.empty: st.dataframe(df_finmind, use_container_width=True, hide_index=True)
-                else: st.dataframe(pd.DataFrame([{"日期": "10/02", "外資": "+1,200", "投信": "+350", "自營商": "-120", "合計": "+1,430"}]), use_container_width=True, hide_index=True)
-            with c_right:
-                st.caption("籌碼集中度 / 主力控盤近5日")
-                st.dataframe(pd.DataFrame([{"日期": "10/02", "主力買賣超": "+2,450", "籌碼集中度": "12.5%", "買超前5總和": "63.8%"}]), use_container_width=True, hide_index=True)
-
-        with right_panel:
-            st.markdown('<div class="level-container"><div class="level-head"><div><span class="muted">技術強壓</span><br><b class="text-red" style="font-size:1.2rem;">' + str(ai_res["resistance"]) + '</b></div><div style="text-align:right;"><span class="muted">技術強撐</span><br><b class="text-green" style="font-size:1.2rem;">' + str(ai_res["support"]) + '</b></div></div><div class="level-box"><span class="lbl">🚀 法定漲停價</span><span class="val text-red">' + f"{limit_up:.2f}" + '</span></div><div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">' + str(ai_res["resistance"]) + '</span></div><div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">' + str(ai_res["entry_price"]) + '</span></div><div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">' + f"{curr_price:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡 多空平衡點</span><span class="val" style="color:var(--gold);">' + f"{balance_point:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡️ 技術強撐價</span><span class="val text-green">' + str(ai_res["support"]) + '</span></div><div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">' + f"{limit_down:.2f}" + '</span></div></div>', unsafe_allow_html=True)
-            st.write("")
-            if st.button("🤖 AI 深度評估 (Gemini 診斷)", key="btn_right_gemini_eval", use_container_width=True):
-                with st.spinner("AI 診斷中..."):
-                    fund_info = check_fundamental_6layer(target_code)
-                    combined_dict = {'target_code': target_code, 'target_name': target_name, 'curr_price': curr_price, 'bias_rate': bias_rate, 'momentum_coef': data.get('momentum_coef', 1.0), 'balance_point': balance_point, '季EPS': fund_info.get('eps', 1.5), '營收YoY': f"+{fund_info.get('yoy', 20.0)}%", 'ROE': f"{fund_info.get('roe', 15.0)}%", 'PEG': fund_info.get('peg', 0.8), '綜合評分': 80, '催化劑': fund_info.get('catalyst', '當沖多空轉折監控'), '狀態': ai_res['trend']}
-                    st.session_state["monitor_ai_eval_" + str(target_code)] = run_goldman_sachs_ai_evaluation(combined_dict, gemini_api_key)
-
-        if ("monitor_ai_eval_" + str(target_code)) in st.session_state:
-            st.markdown("<div class='navy-card'>" + str(st.session_state["monitor_ai_eval_" + str(target_code)]) + "</div>", unsafe_allow_html=True)
+                        low_price = safe_float(getattr(snap, 'low', curr_price), curr
