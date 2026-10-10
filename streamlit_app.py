@@ -472,28 +472,6 @@ def fetch_real_finmind_financials(stock_code, token=""):
 # =========================================================
 # 🧮 5. 核心工具與【張宇明股神三線經典演算法】
 # =========================================================
-def safe_float(val, default=0.0):
-    try: return float(val) if val is not None else default
-    except (ValueError, TypeError): return default
-
-def tone(pct):
-    pct = safe_float(pct)
-    return "up" if pct > 0 else ("down" if pct < 0 else "flat")
-
-def get_stock_code_and_name(user_input):
-    target = user_input.strip()
-    if target.isdigit():
-        if target in twstock.codes: return target, twstock.codes[target].name
-        return target, target
-    for code, info in twstock.codes.items():
-        if info.type == '股票' and (target == info.name or target in info.name): return code, info.name
-    return None, None
-
-def calculate_atr(df, period=14):
-    df['TR'] = pd.concat([df['High'] - df['Low'], abs(df['High'] - df['Close'].shift(1)), abs(df['Low'] - df['Close'].shift(1))], axis=1).max(axis=1)
-    df['ATR'] = df['TR'].rolling(period).mean()
-    return df
-
 def calculate_three_lines_strategy_advanced(df, market_df=None):
     data = df.copy()
 
@@ -1205,12 +1183,15 @@ elif app_mode == "📐 張宇明三線多空戰略":
                         st.dataframe(df_res[["close", "ema_20", "ema_60", "rsi_14", "rs_index", "star_count", "total_score", "signal"]].tail(15), use_container_width=True)
             except Exception as e: st.error("三線戰略計算失敗: " + str(e))
 
-# 🔍 FinMind 全市場雙模組獨立掃描器
+# 🔍 FinMind 全市場雙模組獨立掃描器 (修復 KeyError 與範圍對齊)
 elif app_mode == "🔍 FinMind 全市場掃描器":
     st.title("🔍 FinMind 全市場多重動能與主力佈局獨立掃描器 V2.0")
     st.caption("【選購兩大核心模組】：模組一（營收成長強勢股）與模組二（長線低基期月KD+主力20日悄悄鎖碼股）各自獨立過濾。")
 
     tab_m1, tab_m2 = st.tabs(["🚀 模組一：營收雙成長爆發股", "💎 模組二：主力分點悄悄佈局 (低基期月KD+20日鎖碼)"])
+
+    # 統一模組一與模組二之掃描池清單
+    scan_pool_codes = ["3624", "2360", "8111", "4971", "4991", "4908", "2466", "3006", "2330", "2454", "2317", "3374", "1785", "3081", "3088", "3219", "3228", "3042"]
 
     with tab_m1:
         st.markdown("##### ⚙️ 模組一條件：上市櫃全市場過濾 ➔ 月營收 YoY 連 3 月正成長 ➔ 外資近 5 日買超 ➔ 股價站上季線 (60MA)")
@@ -1220,8 +1201,7 @@ elif app_mode == "🔍 FinMind 全市場掃描器":
             else:
                 with st.spinner("正在連線 FinMind 與永豐金 API 進行模組一掃描..."):
                     try:
-                        target_codes = ["3624", "2360", "8111", "4971", "4991", "4908", "2466", "3006", "2330", "2454", "2317", "3374", "1785", "3081", "3088", "3219", "3228"]
-                        contracts = [api.Contracts.Stocks.get(code) for code in target_codes if api.Contracts.Stocks.get(code)]
+                        contracts = [api.Contracts.Stocks.get(code) for code in scan_pool_codes if api.Contracts.Stocks.get(code)]
                         snaps = api.snapshots(contracts); snap_dict = {s.code: s for s in snaps}; scanned_results = []
                         start_d = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d"); end_d = datetime.now().strftime("%Y-%m-%d")
 
@@ -1248,7 +1228,7 @@ elif app_mode == "🔍 FinMind 全市場掃描器":
                                 "篩選理由": fund.get("catalyst", "基本面強勁且外資鎖碼突破季線")
                             })
 
-                        st.session_state["finmind_m1_res"] = pd.DataFrame(scanned_results).sort_values(by="最新價", ascending=False)
+                        st.session_state["finmind_m1_res"] = pd.DataFrame(scanned_results).sort_values(by="最新真實價", ascending=False)
                         st.session_state["finmind_m1_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         st.success("🎉 模組一掃描完成！")
                     except Exception as e: st.error("模組一掃描失敗: " + str(e))
@@ -1257,9 +1237,10 @@ elif app_mode == "🔍 FinMind 全市場掃描器":
             st.markdown("#### 📊 符合條件之【模組一：營收雙成長爆發股】清單 (更新時間：`" + str(st.session_state.get('finmind_m1_time')) + "`) ")
             render_smart_stock_table(st.session_state["finmind_m1_res"], "finmind_m1")
 
+    # 💎 模組二 (對齊模組一範圍，安全解析解決 KeyError)
     with tab_m2:
         st.markdown("""
-        ##### ⚙️ 模組二全新量化篩選條件 (全台股 1,800+ 檔上市上櫃自動掃描)：
+        ##### ⚙️ 模組二全新量化篩選條件 (依照模組一對齊範圍全台股自動掃描)：
         1. **低基期位階**：月 K 值 $< 30$ 且月 KD 金叉／$\text{P/E} < 15$ 倍或 $\text{P/B} < 1.2$ 倍／股價站上月線(20MA)與季線(60MA)且月線走平翻揚。
         2. **主力悄悄買**：近 20 天主力買超天數 $> 12$ 天／近 5 天籌碼集中度 $> 5\%$／4 週千張大戶增且股東人數減（背離）。
         3. **量化防護**：5 日均量 $> 1,000$ 張／近 5 日無爆漲 $>15\%$（真悄悄佈局）。
@@ -1268,10 +1249,9 @@ elif app_mode == "🔍 FinMind 全市場掃描器":
             api = get_shioaji_api(api_key, secret_key)
             if not api: st.error("請先在左側欄位設定正確的永豐金 API Key！")
             else:
-                with st.spinner("正在對全台股 1,800+ 檔標的連線進行月線級 KD、主力分點集中度與千張大戶籌碼對比..."):
+                with st.spinner("正在對全台股標的連線進行月線級 KD、主力分點集中度與千張大戶籌碼對比..."):
                     try:
-                        target_codes_m2 = ["3042", "3624", "2360", "8111", "4971", "4991", "2330", "3081", "3088", "3219", "2317", "2454"]
-                        contracts = [api.Contracts.Stocks.get(code) for code in target_codes_m2 if api.Contracts.Stocks.get(code)]
+                        contracts = [api.Contracts.Stocks.get(code) for code in scan_pool_codes if api.Contracts.Stocks.get(code)]
                         snaps = api.snapshots(contracts); snap_dict = {s.code: s for s in snaps}; scanned_m2 = []
                         start_d = (datetime.now() - timedelta(days=200)).strftime("%Y-%m-%d"); end_d = datetime.now().strftime("%Y-%m-%d")
 
@@ -1293,7 +1273,7 @@ elif app_mode == "🔍 FinMind 全市場掃描器":
 
                             cond_low_base = (real_p >= ma20) and (real_p >= ma60) and (ma20_slope >= -0.02)
                             vol_5ma = df_k["Volume"].tail(5).mean()
-                            cond_vol_ok = vol_5ma >= 500
+                            cond_vol_ok = vol_5ma >= 500  # 流動性合格
                             
                             p_5d_gain = ((real_p - df_k["Close"].iloc[-6]) / df_k["Close"].iloc[-6]) * 100 if len(df_k) >= 6 else 0.0
                             cond_not_chased = p_5d_gain < 15.0
@@ -1309,9 +1289,15 @@ elif app_mode == "🔍 FinMind 全市場掃描器":
                                     "篩選理由": "長線絕對低基期＋主力悄悄吃貨連買，籌碼沉澱乾淨"
                                 })
 
-                        st.session_state["finmind_m2_res"] = pd.DataFrame(scanned_m2).sort_values(by="最新真實價", ascending=False)
+                        df_m2 = pd.DataFrame(scanned_m2)
+                        # 容錯處理避免 KeyError '最新真實價'
+                        sort_key = "最新真實價" if "最新真實價" in df_m2.columns else ("最新價" if "最新價" in df_m2.columns else None)
+                        if sort_key and not df_m2.empty:
+                            df_m2 = df_m2.sort_values(by=sort_key, ascending=False)
+
+                        st.session_state["finmind_m2_res"] = df_m2
                         st.session_state["finmind_m2_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        st.success("🎉 模組二（全台股主力悄悄鎖碼）自動掃描完成！")
+                        st.success("🎉 模組二（對齊模組一範圍全台股主力悄悄鎖碼）自動掃描完成！")
                     except Exception as e: st.error("模組二掃描失敗: " + str(e))
 
         if "finmind_m2_res" in st.session_state:
