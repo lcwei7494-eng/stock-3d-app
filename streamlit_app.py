@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="TWSE全市場集中度 & 財報體檢與張宇明股神系統", layout="wide")
 
 # =========================================================
-# 🎨 1. 股神系統經典黑底高對比 UI 主題
+# 🎨 1. UI 主題樣式
 # =========================================================
 st.markdown("""
 <style>
@@ -52,7 +52,6 @@ h1, h2, h3, h4, h5, h6 {
 
 #MainMenu, footer { visibility: hidden; }
 
-/* 側邊欄樣式 */
 [data-testid='stSidebar'] {
     background: #0A0D14 !important;
     border-right: 1px solid #222C3D;
@@ -61,7 +60,6 @@ h1, h2, h3, h4, h5, h6 {
     color: #FFFFFF !important;
 }
 
-/* 標籤頁 Tabs 樣式 */
 .stTabs [data-baseweb='tab-list'] { gap: 6px; flex-wrap: wrap; }
 .stTabs [data-baseweb='tab'] {
     background: #0A0D14;
@@ -75,7 +73,6 @@ h1, h2, h3, h4, h5, h6 {
 }
 .stTabs [aria-selected='true'] * { color: #000000 !important; font-weight: 700; }
 
-/* 按鈕樣式 */
 .stButton>button {
     min-height: 38px;
     border-radius: 8px;
@@ -90,7 +87,6 @@ h1, h2, h3, h4, h5, h6 {
     color: #000000 !important;
 }
 
-/* Dataframe 表格修復 */
 [data-testid='stDataFrame'] {
     background: #0A0D14 !important;
     border-radius: 8px;
@@ -104,7 +100,6 @@ h1, h2, h3, h4, h5, h6 {
     color: #FFFFFF !important;
 }
 
-/* 財報體檢卡片樣式 (阿宇風格) */
 .fin-health-box {
     background: #121824;
     border: 1.5px solid #222C3D;
@@ -166,7 +161,7 @@ h1, h2, h3, h4, h5, h6 {
 """, unsafe_allow_html=True)
 
 # =========================================================
-# 💾 2. 自選股與持股資料安全無損讀寫模組
+# 💾 2. 資料讀寫模組
 # =========================================================
 WATCHLIST_FILE = "watchlist.json"
 HOLDINGS_FILE = "holdings.json"
@@ -240,6 +235,28 @@ def add_to_watchlist_safe(stock_lbl):
     if stock_lbl not in st.session_state["watchlist"]:
         st.session_state["watchlist"].append(stock_lbl)
         save_watchlist_to_file(st.session_state["watchlist"])
+
+def safe_float(val, default=0.0):
+    try: return float(val) if val is not None else default
+    except (ValueError, TypeError): return default
+
+def tone(pct):
+    pct = safe_float(pct)
+    return "up" if pct > 0 else ("down" if pct < 0 else "flat")
+
+def get_stock_code_and_name(user_input):
+    target = user_input.strip()
+    if target.isdigit():
+        if target in twstock.codes: return target, twstock.codes[target].name
+        return target, target
+    for code, info in twstock.codes.items():
+        if info.type == '股票' and (target == info.name or target in info.name): return code, info.name
+    return None, None
+
+def calculate_atr(df, period=14):
+    df['TR'] = pd.concat([df['High'] - df['Low'], abs(df['High'] - df['Close'].shift(1)), abs(df['Low'] - df['Close'].shift(1))], axis=1).max(axis=1)
+    df['ATR'] = df['TR'].rolling(period).mean()
+    return df
 
 # =========================================================
 # 🧮 3. TWSE OpenAPI 全市場成交值集中度 5 步驟計算引擎
@@ -325,7 +342,7 @@ def fetch_twse_market_concentration():
     }
 
 # =========================================================
-# 🏥 4. 阿宇教學：FinMind 3大財報 Dataset 並行直連引擎 (100% 動態無寫死)
+# 🏥 4. 阿宇教學：FinMind 3大財報 Dataset 並行直連引擎
 # =========================================================
 @st.cache_data(ttl=21600)
 def fetch_real_finmind_financials(stock_code, token=""):
@@ -383,7 +400,7 @@ def fetch_real_finmind_financials(stock_code, token=""):
         if fin_map:
             rev = extract_val(fin_map, ["Revenue", "TotalRevenue", "OperatingRevenue", "SalesRevenue", "NetOperatingRevenue", "營業收入", "營業收入合計"])
             gross = extract_val(fin_map, ["GrossProfit", "OperatingGrossProfit", "GrossProfitMargin", "營業毛利", "營業毛利（毛損）"])
-            net_inc = extract_val(fin_map, ["NetIncome", "NetProfit", "IncomeAfterTaxes", "ProfitAfterTax", "ConsolidatedProfit", "本期淨利（淨損）", "本期淨利", "母公司業主淨利"])
+            net_inc = extract_val(fin_map, ["NetIncome", "NetProfit", "IncomeAfterTaxes", "ProfitAfterTax", "ConsolidatedProfit", "本期淨利（淨損）", "母公司業主淨利", "本期淨利"])
             non_op = extract_val(fin_map, ["NonOperatingIncome", "TotalNonOperatingIncomeAndExpenses", "NonOperatingIncomeAndExpenses", "營業外收入及支出"])
 
             cur_asset = extract_val(fin_map, ["CurrentAssets", "TotalCurrentAssets", "FluidAssets", "流動資產", "流動資產合計"])
@@ -1188,7 +1205,7 @@ elif app_mode == "📐 張宇明三線多空戰略":
                         st.dataframe(df_res[["close", "ema_20", "ema_60", "rsi_14", "rs_index", "star_count", "total_score", "signal"]].tail(15), use_container_width=True)
             except Exception as e: st.error("三線戰略計算失敗: " + str(e))
 
-# 🔍 FinMind 全市場雙模組獨立掃描器 (含重構之模組二：主力悄悄佈局＋低基期月KD)
+# 🔍 FinMind 全市場雙模組獨立掃描器
 elif app_mode == "🔍 FinMind 全市場掃描器":
     st.title("🔍 FinMind 全市場多重動能與主力佈局獨立掃描器 V2.0")
     st.caption("【選購兩大核心模組】：模組一（營收成長強勢股）與模組二（長線低基期月KD+主力20日悄悄鎖碼股）各自獨立過濾。")
@@ -1199,7 +1216,7 @@ elif app_mode == "🔍 FinMind 全市場掃描器":
         st.markdown("##### ⚙️ 模組一條件：上市櫃全市場過濾 ➔ 月營收 YoY 連 3 月正成長 ➔ 外資近 5 日買超 ➔ 股價站上季線 (60MA)")
         if st.button("🚀 啟動【模組一：營收雙成長動能】全市場掃描", type="primary"):
             api = get_shioaji_api(api_key, secret_key)
-            if not api: st.error("請先填寫正確的永豐金 API Key！")
+            if not api: st.error("請先在左側欄位設定正確的永豐金 API Key！")
             else:
                 with st.spinner("正在連線 FinMind 與永豐金 API 進行模組一掃描..."):
                     try:
@@ -1240,7 +1257,6 @@ elif app_mode == "🔍 FinMind 全市場掃描器":
             st.markdown("#### 📊 符合條件之【模組一：營收雙成長爆發股】清單 (更新時間：`" + str(st.session_state.get('finmind_m1_time')) + "`) ")
             render_smart_stock_table(st.session_state["finmind_m1_res"], "finmind_m1")
 
-    # 💎 模組二全升級：低基期 (月KD<30/P/E<15) + 主力20日強鎖碼 + 散戶退場 + 流動性與壓頭過濾
     with tab_m2:
         st.markdown("""
         ##### ⚙️ 模組二全新量化篩選條件 (全台股 1,800+ 檔上市上櫃自動掃描)：
@@ -1275,13 +1291,12 @@ elif app_mode == "🔍 FinMind 全市場掃描器":
                             ma60 = df_k["60MA"].iloc[-1]
                             ma20_slope = ma20 - df_k["20MA"].iloc[-4]
 
-                            # 量化核心條件計算
                             cond_low_base = (real_p >= ma20) and (real_p >= ma60) and (ma20_slope >= -0.02)
                             vol_5ma = df_k["Volume"].tail(5).mean()
-                            cond_vol_ok = vol_5ma >= 500  # 流動性合格[cite: 1]
+                            cond_vol_ok = vol_5ma >= 500
                             
                             p_5d_gain = ((real_p - df_k["Close"].iloc[-6]) / df_k["Close"].iloc[-6]) * 100 if len(df_k) >= 6 else 0.0
-                            cond_not_chased = p_5d_gain < 15.0  # 未急噴過高
+                            cond_not_chased = p_5d_gain < 15.0
 
                             if cond_low_base and cond_vol_ok and cond_not_chased:
                                 stop_p = round(min(ma20, real_p * 0.94), 2)
