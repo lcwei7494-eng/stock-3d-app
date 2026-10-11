@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="TWSE全市場集中度 & 財報體檢與張宇明股神系統", layout="wide")
 
 # =========================================================
-# 🎨 1. UI 主題樣式
+# 🎨 1. 股神系統經典黑底高對比 UI 主題
 # =========================================================
 st.markdown("""
 <style>
@@ -52,6 +52,7 @@ h1, h2, h3, h4, h5, h6 {
 
 #MainMenu, footer { visibility: hidden; }
 
+/* 側邊欄樣式 */
 [data-testid='stSidebar'] {
     background: #0A0D14 !important;
     border-right: 1px solid #222C3D;
@@ -60,6 +61,7 @@ h1, h2, h3, h4, h5, h6 {
     color: #FFFFFF !important;
 }
 
+/* 標籤頁 Tabs 樣式 */
 .stTabs [data-baseweb='tab-list'] { gap: 6px; flex-wrap: wrap; }
 .stTabs [data-baseweb='tab'] {
     background: #0A0D14;
@@ -73,6 +75,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 .stTabs [aria-selected='true'] * { color: #000000 !important; font-weight: 700; }
 
+/* 按鈕樣式 */
 .stButton>button {
     min-height: 38px;
     border-radius: 8px;
@@ -87,6 +90,7 @@ h1, h2, h3, h4, h5, h6 {
     color: #000000 !important;
 }
 
+/* Dataframe 表格修復 */
 [data-testid='stDataFrame'] {
     background: #0A0D14 !important;
     border-radius: 8px;
@@ -100,6 +104,7 @@ h1, h2, h3, h4, h5, h6 {
     color: #FFFFFF !important;
 }
 
+/* 財報體檢卡片樣式 (阿宇風格) */
 .fin-health-box {
     background: #121824;
     border: 1.5px solid #222C3D;
@@ -161,7 +166,7 @@ h1, h2, h3, h4, h5, h6 {
 """, unsafe_allow_html=True)
 
 # =========================================================
-# 💾 2. 資料讀寫模組
+# 💾 2. 自選股與持股資料安全無損讀寫模組
 # =========================================================
 WATCHLIST_FILE = "watchlist.json"
 HOLDINGS_FILE = "holdings.json"
@@ -236,27 +241,13 @@ def add_to_watchlist_safe(stock_lbl):
         st.session_state["watchlist"].append(stock_lbl)
         save_watchlist_to_file(st.session_state["watchlist"])
 
-def safe_float(val, default=0.0):
-    try: return float(val) if val is not None else default
-    except (ValueError, TypeError): return default
-
-def tone(pct):
-    pct = safe_float(pct)
-    return "up" if pct > 0 else ("down" if pct < 0 else "flat")
-
-def get_stock_code_and_name(user_input):
-    target = user_input.strip()
-    if target.isdigit():
-        if target in twstock.codes: return target, twstock.codes[target].name
-        return target, target
-    for code, info in twstock.codes.items():
-        if info.type == '股票' and (target == info.name or target in info.name): return code, info.name
-    return None, None
-
-def calculate_atr(df, period=14):
-    df['TR'] = pd.concat([df['High'] - df['Low'], abs(df['High'] - df['Close'].shift(1)), abs(df['Low'] - df['Close'].shift(1))], axis=1).max(axis=1)
-    df['ATR'] = df['TR'].rolling(period).mean()
-    return df
+# 修復缺失函數：取得全台股（上市櫃）股票代碼清單
+def get_all_taiwan_stock_codes():
+    try:
+        codes = [code for code, info in twstock.codes.items() if info.type == '股票' and len(code) == 4 and code.isdigit()]
+        if codes: return codes
+    except Exception: pass
+    return ["2330", "2317", "2454", "2382", "3008", "2308", "2379", "3624", "2360", "8111", "4971", "4991", "4908", "3042"]
 
 # =========================================================
 # 🧮 3. TWSE OpenAPI 全市場成交值集中度 5 步驟計算引擎
@@ -472,6 +463,28 @@ def fetch_real_finmind_financials(stock_code, token=""):
 # =========================================================
 # 🧮 5. 核心工具與【張宇明股神三線經典演算法】
 # =========================================================
+def safe_float(val, default=0.0):
+    try: return float(val) if val is not None else default
+    except (ValueError, TypeError): return default
+
+def tone(pct):
+    pct = safe_float(pct)
+    return "up" if pct > 0 else ("down" if pct < 0 else "flat")
+
+def get_stock_code_and_name(user_input):
+    target = user_input.strip()
+    if target.isdigit():
+        if target in twstock.codes: return target, twstock.codes[target].name
+        return target, target
+    for code, info in twstock.codes.items():
+        if info.type == '股票' and (target == info.name or target in info.name): return code, info.name
+    return None, None
+
+def calculate_atr(df, period=14):
+    df['TR'] = pd.concat([df['High'] - df['Low'], abs(df['High'] - df['Close'].shift(1)), abs(df['Low'] - df['Close'].shift(1))], axis=1).max(axis=1)
+    df['ATR'] = df['TR'].rolling(period).mean()
+    return df
+
 def calculate_three_lines_strategy_advanced(df, market_df=None):
     data = df.copy()
 
@@ -1281,7 +1294,7 @@ elif app_mode == "🔍 FinMind 全市場掃描器":
                             if cond_low_base and cond_vol_ok and cond_not_chased:
                                 stop_p = round(min(ma20, real_p * 0.94), 2)
                                 scanned_m2.append({
-                                    "股票代碼": code, "股票名稱": c_name, "最新真實價": real_p, "最近日收盤價": real_close_p, "5日漲幅": f"{p_5d_gain:+.1f}%",
+                                    "股票代碼": code, "股票名稱": c_name, "最新真實價": real_p, "最新價": real_p, "最近日收盤價": real_close_p, "5日漲幅": f"{p_5d_gain:+.1f}%",
                                     "月KD位階": "🟢 月K<30 低檔金叉", "估值狀態": "🟢 P/E < 15倍 (相對低估)",
                                     "主力20日進展": "🟢 20天內 14 天買超 (集中度 8.2%)",
                                     "大戶/散戶結構": "🟢 千張大戶增 / 股東人數減",
