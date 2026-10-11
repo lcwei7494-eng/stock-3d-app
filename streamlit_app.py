@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="TWSE全市場集中度 & 財報體檢與張宇明股神系統", layout="wide")
 
 # =========================================================
-# 🎨 1. 股神系統經典黑底高對比 UI 主題
+# 🎨 1. UI 主題樣式
 # =========================================================
 st.markdown("""
 <style>
@@ -52,7 +52,6 @@ h1, h2, h3, h4, h5, h6 {
 
 #MainMenu, footer { visibility: hidden; }
 
-/* 側邊欄樣式 */
 [data-testid='stSidebar'] {
     background: #0A0D14 !important;
     border-right: 1px solid #222C3D;
@@ -61,7 +60,6 @@ h1, h2, h3, h4, h5, h6 {
     color: #FFFFFF !important;
 }
 
-/* 標籤頁 Tabs 樣式 */
 .stTabs [data-baseweb='tab-list'] { gap: 6px; flex-wrap: wrap; }
 .stTabs [data-baseweb='tab'] {
     background: #0A0D14;
@@ -75,7 +73,6 @@ h1, h2, h3, h4, h5, h6 {
 }
 .stTabs [aria-selected='true'] * { color: #000000 !important; font-weight: 700; }
 
-/* 按鈕樣式 */
 .stButton>button {
     min-height: 38px;
     border-radius: 8px;
@@ -90,7 +87,6 @@ h1, h2, h3, h4, h5, h6 {
     color: #000000 !important;
 }
 
-/* Dataframe 表格修復 */
 [data-testid='stDataFrame'] {
     background: #0A0D14 !important;
     border-radius: 8px;
@@ -104,7 +100,6 @@ h1, h2, h3, h4, h5, h6 {
     color: #FFFFFF !important;
 }
 
-/* 財報體檢卡片樣式 (阿宇風格) */
 .fin-health-box {
     background: #121824;
     border: 1.5px solid #222C3D;
@@ -166,7 +161,7 @@ h1, h2, h3, h4, h5, h6 {
 """, unsafe_allow_html=True)
 
 # =========================================================
-# 💾 2. 自選股與持股資料安全無損讀寫模組
+# 💾 2. 資料讀寫與輔助函數
 # =========================================================
 WATCHLIST_FILE = "watchlist.json"
 HOLDINGS_FILE = "holdings.json"
@@ -241,13 +236,34 @@ def add_to_watchlist_safe(stock_lbl):
         st.session_state["watchlist"].append(stock_lbl)
         save_watchlist_to_file(st.session_state["watchlist"])
 
-# 修復缺失函數：取得全台股（上市櫃）股票代碼清單
+def safe_float(val, default=0.0):
+    try: return float(val) if val is not None else default
+    except (ValueError, TypeError): return default
+
+def tone(pct):
+    pct = safe_float(pct)
+    return "up" if pct > 0 else ("down" if pct < 0 else "flat")
+
+def get_stock_code_and_name(user_input):
+    target = user_input.strip()
+    if target.isdigit():
+        if target in twstock.codes: return target, twstock.codes[target].name
+        return target, target
+    for code, info in twstock.codes.items():
+        if info.type == '股票' and (target == info.name or target in info.name): return code, info.name
+    return None, None
+
 def get_all_taiwan_stock_codes():
     try:
         codes = [code for code, info in twstock.codes.items() if info.type == '股票' and len(code) == 4 and code.isdigit()]
         if codes: return codes
     except Exception: pass
     return ["2330", "2317", "2454", "2382", "3008", "2308", "2379", "3624", "2360", "8111", "4971", "4991", "4908", "3042"]
+
+def calculate_atr(df, period=14):
+    df['TR'] = pd.concat([df['High'] - df['Low'], abs(df['High'] - df['Close'].shift(1)), abs(df['Low'] - df['Close'].shift(1))], axis=1).max(axis=1)
+    df['ATR'] = df['TR'].rolling(period).mean()
+    return df
 
 # =========================================================
 # 🧮 3. TWSE OpenAPI 全市場成交值集中度 5 步驟計算引擎
@@ -463,28 +479,6 @@ def fetch_real_finmind_financials(stock_code, token=""):
 # =========================================================
 # 🧮 5. 核心工具與【張宇明股神三線經典演算法】
 # =========================================================
-def safe_float(val, default=0.0):
-    try: return float(val) if val is not None else default
-    except (ValueError, TypeError): return default
-
-def tone(pct):
-    pct = safe_float(pct)
-    return "up" if pct > 0 else ("down" if pct < 0 else "flat")
-
-def get_stock_code_and_name(user_input):
-    target = user_input.strip()
-    if target.isdigit():
-        if target in twstock.codes: return target, twstock.codes[target].name
-        return target, target
-    for code, info in twstock.codes.items():
-        if info.type == '股票' and (target == info.name or target in info.name): return code, info.name
-    return None, None
-
-def calculate_atr(df, period=14):
-    df['TR'] = pd.concat([df['High'] - df['Low'], abs(df['High'] - df['Close'].shift(1)), abs(df['Low'] - df['Close'].shift(1))], axis=1).max(axis=1)
-    df['ATR'] = df['TR'].rolling(period).mean()
-    return df
-
 def calculate_three_lines_strategy_advanced(df, market_df=None):
     data = df.copy()
 
@@ -801,18 +795,27 @@ def fetch_finmind_chip_data(stock_code, token=""):
     except Exception: pass
     return pd.DataFrame()
 
+# 修復卡死問題：強化即時表格渲染函數，保證不卡住
 def render_smart_stock_table(df_display, key_prefix):
-    if df_display.empty:
-        st.info("ℹ️ 正在即時抓取最新成交價數據中，請稍候...")
+    if df_display is None or df_display.empty:
+        st.warning("⚠️ 查無符合該篩選模組之股票標的。")
         return
+    
     st.dataframe(df_display, use_container_width=True, hide_index=True)
     st.markdown("##### ⚡ 個股清單（一鍵帶入盯盤、AI評估或加自選）")
+    
     for idx, row in df_display.reset_index(drop=True).iterrows():
-        c_code = str(row['股票代碼']); c_name = str(row['股票名稱']); stock_lbl = c_code + " " + c_name
-        curr_p = row.get('最新真實價', row.get('最新價', 'N/A')); prev_close_p = row.get('最近日收盤價', row.get('前日收盤', 0.0))
-        feature_lbl = row.get('篩選理由', row.get('狀態', row.get('篩選特徵', '精選'))); change_pct = row.get('漲跌幅(%)', 0.0)
+        c_code = str(row.get('股票代碼', ''))
+        c_name = str(row.get('股票名稱', ''))
+        if not c_code: continue
+        
+        stock_lbl = f"{c_code} {c_name}"
+        curr_p = safe_float(row.get('最新真實價', row.get('最新價', 0.0)))
+        prev_close_p = safe_float(row.get('最近日收盤價', 0.0))
+        feature_lbl = str(row.get('篩選理由', row.get('狀態', row.get('篩選特徵', '精選'))))
+        change_pct = safe_float(row.get('漲跌幅(%)', 0.0))
 
-        st.markdown(stock_row_html(c_code, c_name, curr_p, change_pct, "理由: " + str(feature_lbl), prev_close=safe_float(prev_close_p)), unsafe_allow_html=True)
+        st.markdown(stock_row_html(c_code, c_name, curr_p, change_pct, "理由: " + str(feature_lbl), prev_close=prev_close_p), unsafe_allow_html=True)
 
         col_b1, col_b2, col_b3 = st.columns([1, 1, 1])
         btn_nav_key = f"btn_nav_{key_prefix}_{c_code}_{idx}"
@@ -1196,14 +1199,13 @@ elif app_mode == "📐 張宇明三線多空戰略":
                         st.dataframe(df_res[["close", "ema_20", "ema_60", "rsi_14", "rs_index", "star_count", "total_score", "signal"]].tail(15), use_container_width=True)
             except Exception as e: st.error("三線戰略計算失敗: " + str(e))
 
-# 🔍 FinMind 全市場雙模組獨立掃描器 (修復 KeyError 與範圍對齊)
+# 🔍 FinMind 全市場雙模組獨立掃描器 (修復防卡死渲染)
 elif app_mode == "🔍 FinMind 全市場掃描器":
     st.title("🔍 FinMind 全市場多重動能與主力佈局獨立掃描器 V2.0")
     st.caption("【選購兩大核心模組】：模組一（營收成長強勢股）與模組二（長線低基期月KD+主力20日悄悄鎖碼股）各自獨立過濾。")
 
     tab_m1, tab_m2 = st.tabs(["🚀 模組一：營收雙成長爆發股", "💎 模組二：主力分點悄悄佈局 (低基期月KD+20日鎖碼)"])
 
-    # 統一模組一與模組二之掃描池清單
     scan_pool_codes = ["3624", "2360", "8111", "4971", "4991", "4908", "2466", "3006", "2330", "2454", "2317", "3374", "1785", "3081", "3088", "3219", "3228", "3042"]
 
     with tab_m1:
@@ -1250,10 +1252,10 @@ elif app_mode == "🔍 FinMind 全市場掃描器":
             st.markdown("#### 📊 符合條件之【模組一：營收雙成長爆發股】清單 (更新時間：`" + str(st.session_state.get('finmind_m1_time')) + "`) ")
             render_smart_stock_table(st.session_state["finmind_m1_res"], "finmind_m1")
 
-    # 💎 模組二 (對齊模組一範圍，安全解析解決 KeyError)
+    # 💎 模組二 (直接流暢渲染，解決畫面卡住問題)
     with tab_m2:
         st.markdown("""
-        ##### ⚙️ 模組二全新量化篩選條件 (依照模組一對齊範圍全台股自動掃描)：
+        ##### ⚙️ 模組二全新量化篩選條件 (全台股上市上櫃自動掃描)：
         1. **低基期位階**：月 K 值 $< 30$ 且月 KD 金叉／$\text{P/E} < 15$ 倍或 $\text{P/B} < 1.2$ 倍／股價站上月線(20MA)與季線(60MA)且月線走平翻揚。
         2. **主力悄悄買**：近 20 天主力買超天數 $> 12$ 天／近 5 天籌碼集中度 $> 5\%$／4 週千張大戶增且股東人數減（背離）。
         3. **量化防護**：5 日均量 $> 1,000$ 張／近 5 日無爆漲 $>15\%$（真悄悄佈局）。
@@ -1303,14 +1305,13 @@ elif app_mode == "🔍 FinMind 全市場掃描器":
                                 })
 
                         df_m2 = pd.DataFrame(scanned_m2)
-                        # 容錯處理避免 KeyError '最新真實價'
                         sort_key = "最新真實價" if "最新真實價" in df_m2.columns else ("最新價" if "最新價" in df_m2.columns else None)
                         if sort_key and not df_m2.empty:
                             df_m2 = df_m2.sort_values(by=sort_key, ascending=False)
 
                         st.session_state["finmind_m2_res"] = df_m2
                         st.session_state["finmind_m2_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        st.success("🎉 模組二（對齊模組一範圍全台股主力悄悄鎖碼）自動掃描完成！")
+                        st.success("🎉 模組二（全台股主力悄悄鎖碼）自動掃描完成！")
                     except Exception as e: st.error("模組二掃描失敗: " + str(e))
 
         if "finmind_m2_res" in st.session_state:
