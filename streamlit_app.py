@@ -2110,10 +2110,7 @@ else:
                         kbars = api.kbars(contract=contract, start=start_date, end=end_date)
                         df_raw = pd.DataFrame({"ts": kbars.ts, "Open": kbars.Open, "High": kbars.High, "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume})
                         
-                        # 當沖 vs 波段三維算式更新
                         pivot_p = round((high_price + low_price + prev_close_price) / 3, 2)
-                        
-                        # 當沖/極短線技術強壓與技術強撐算式
                         daytrade_resistance = round(max(prev_close_price * 1.015, high_price), 2)
                         daytrade_support = round(min(prev_close_price * 0.985, low_price), 2)
 
@@ -2160,15 +2157,21 @@ else:
         if len(df_raw) > 0:
             df_raw["DateTime"] = pd.to_datetime(df_raw["ts"] / 1000000000, unit='s', errors='coerce')
             df_k_daily = df_raw.groupby(df_raw["DateTime"].dt.date).agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).reset_index()
-            df_k_daily["5MA"] = df_k_daily["Close"].rolling(5).mean(); df_k_daily["10MA"] = df_k_daily["Close"].rolling(10).mean(); df_k_daily["20MA"] = df_k_daily["Close"].rolling(20).mean()
+            df_k_daily["5MA"] = df_k_daily["Close"].rolling(5).mean()
+            df_k_daily["10MA"] = df_k_daily["Close"].rolling(10).mean()
+            df_k_daily["20MA"] = df_k_daily["Close"].rolling(20).mean()
+            df_k_daily["60MA"] = df_k_daily["Close"].rolling(60).mean()
             df_k_daily = calculate_atr(df_k_daily)
-            ma5 = df_k_daily['5MA'].iloc[-1]; ma20 = df_k_daily['20MA'].iloc[-1]
+            
+            ma5 = df_k_daily['5MA'].iloc[-1]
+            ma10 = df_k_daily['10MA'].iloc[-1]
+            ma20 = df_k_daily['20MA'].iloc[-1]
+            ma60 = df_k_daily['60MA'].iloc[-1] if not pd.isna(df_k_daily['60MA'].iloc[-1]) else ma20
             atr_val = df_k_daily['ATR'].iloc[-1] if not pd.isna(df_k_daily['ATR'].iloc[-1]) else (curr_price * 0.02)
             prev_high = df_k_daily['High'].iloc[-2] if len(df_k_daily)>1 else high_price
             prev_low = df_k_daily['Low'].iloc[-2] if len(df_k_daily)>1 else low_price
-        else: ma5, ma20, atr_val, prev_high, prev_low = curr_price, curr_price, curr_price * 0.02, high_price, low_price
+        else: ma5, ma10, ma20, ma60, atr_val, prev_high, prev_low = curr_price, curr_price, curr_price, curr_price, curr_price * 0.02, high_price, low_price
 
-        # 量化判定更新：根據選擇的「短線/當沖」或「波段」動態調整關鍵價位
         if "短線" in trade_style:
             key_resistance = data.get("daytrade_resistance", round(prev_close_price * 1.015, 2))
             key_support = data.get("daytrade_support", round(prev_close_price * 0.985, 2))
@@ -2311,20 +2314,66 @@ else:
         left_main, right_panel = st.columns([3, 1])
         with left_main:
             kbar_tf = st.radio("顯示週期：", ["5分K", "1分K", "60分K", "日K"], horizontal=True)
+            
+            # 分K vs 日K 均線與布林通道繪製邏輯
             if "日K" in kbar_tf and 'df_k_daily' in locals() and not df_k_daily.empty:
-                df_chart = df_k_daily.tail(60).copy(); df_chart["DateTime"] = pd.to_datetime(df_chart["DateTime"]); time_fmt = '%Y-%m-%d'
+                df_chart = df_k_daily.tail(60).copy()
+                df_chart["DateTime"] = pd.to_datetime(df_chart["DateTime"])
+                time_fmt = '%Y-%m-%d'
+                
+                # 日K指標：5MA, 10MA, 20MA, 60MA
+                df_chart["MA5"] = df_chart["Close"].rolling(5).mean()
+                df_chart["MA10"] = df_chart["Close"].rolling(10).mean()
+                df_chart["MA20"] = df_chart["Close"].rolling(20).mean()
+                df_chart["MA60"] = df_chart["Close"].rolling(60).mean()
             else:
                 latest_d = df_raw["DateTime"].dt.date.max() if len(df_raw)>0 else datetime.now().date()
                 df_today_raw = df_raw[df_raw["DateTime"].dt.date == latest_d]
-                if "1分K" in kbar_tf: df_chart = df_today_raw.set_index("DateTime").resample("1min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index() if len(df_today_raw)>0 else pd.DataFrame(); time_fmt = '%H:%M'
-                elif "60分K" in kbar_tf: df_chart = df_raw.set_index("DateTime").resample("60min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index().tail(60) if len(df_raw)>0 else pd.DataFrame(); time_fmt = '%m-%d %H:%M'
-                else: df_chart = df_today_raw.set_index("DateTime").resample("5min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index() if len(df_today_raw)>0 else pd.DataFrame(); time_fmt = '%H:%M'
+                if "1分K" in kbar_tf:
+                    df_chart = df_today_raw.set_index("DateTime").resample("1min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index() if len(df_today_raw)>0 else pd.DataFrame()
+                    time_fmt = '%H:%M'
+                elif "60分K" in kbar_tf:
+                    df_chart = df_raw.set_index("DateTime").resample("60min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index().tail(60) if len(df_raw)>0 else pd.DataFrame()
+                    time_fmt = '%m-%d %H:%M'
+                else:
+                    df_chart = df_today_raw.set_index("DateTime").resample("5min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index() if len(df_today_raw)>0 else pd.DataFrame()
+                    time_fmt = '%H:%M'
+
+                if not df_chart.empty:
+                    # 分K指標：5MA, 20MA 與布林通道
+                    df_chart["MA5"] = df_chart["Close"].rolling(5).mean()
+                    df_chart["MA20"] = df_chart["Close"].rolling(20).mean()
+                    df_chart["STD20"] = df_chart["Close"].rolling(20).std()
+                    df_chart["BB_Upper"] = df_chart["MA20"] + (2 * df_chart["STD20"])
+                    df_chart["BB_Lower"] = df_chart["MA20"] - (2 * df_chart["STD20"])
 
             if len(df_chart) > 0:
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.03)
-                fig.add_trace(go.Candlestick(x=df_chart['DateTime'].dt.strftime(time_fmt), open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'], name='K線', increasing_line_color="#F6465D", decreasing_line_color="#1FC98B"), row=1, col=1)
+                
+                # 主圖 K線
+                fig.add_trace(go.Candlestick(
+                    x=df_chart['DateTime'].dt.strftime(time_fmt),
+                    open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'],
+                    name='K線', increasing_line_color="#F6465D", decreasing_line_color="#1FC98B"
+                ), row=1, col=1)
+
+                if "日K" in kbar_tf:
+                    # 日K線畫 5MA, 10MA, 20MA, 60MA
+                    fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['MA5'], name='5MA', line=dict(color='#FFD166', width=1.2)), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['MA10'], name='10MA', line=dict(color='#FF00E5', width=1.2)), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['MA20'], name='20MA', line=dict(color='#00E5FF', width=1.2)), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['MA60'], name='60MA', line=dict(color='#00FF88', width=1.2)), row=1, col=1)
+                else:
+                    # 分K線（1分/5分/60分K）畫 5MA, 20MA, 布林通道
+                    fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['MA5'], name='5MA', line=dict(color='#FFD166', width=1.2)), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['MA20'], name='20MA (布林中軌)', line=dict(color='#00E5FF', width=1.2)), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['BB_Upper'], name='布林上軌', line=dict(color='#9E9E9E', width=1, dash='dash')), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['BB_Lower'], name='布林下軌', line=dict(color='#9E9E9E', width=1, dash='dash')), row=1, col=1)
+
+                # 下方成交量柱狀圖
                 fig.add_trace(go.Bar(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['Volume'], name='成交量', marker_color="#4C8DFF"), row=2, col=1)
-                fig.update_layout(height=450, margin=dict(l=10, r=10, t=10, b=10), template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis_rangeslider_visible=False)
+                
+                fig.update_layout(height=480, margin=dict(l=10, r=10, t=10, b=10), template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis_rangeslider_visible=False)
                 st.plotly_chart(fig, use_container_width=True)
 
             st.markdown("##### 📊 籌碼面進階數據 (三大法人近5日買賣超 & 籌碼集中度)")
