@@ -157,6 +157,36 @@ h1, h2, h3, h4, h5, h6 {
 .row .name { font-size: 1rem; font-weight: 700; color: #FFFFFF; }
 .row .code { color: #CBD5E1; font-size: .82rem; margin-left: 6px; }
 .row .px { font-size: 1.15rem; font-weight: 800; text-align: right; }
+
+.level-container {
+    background: #121824;
+    border: 1px solid #222C3D;
+    border-radius: 12px;
+    padding: 16px;
+}
+.level-head {
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 1px solid #222C3D;
+    padding-bottom: 10px;
+    margin-bottom: 12px;
+}
+.level-box {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #0A0D14;
+    border: 1px solid #222C3D;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: 6px 0;
+}
+.level-box.normal {
+    border-color: #00E5FF;
+    background: #0F2027;
+}
+.text-red { color: #FF0055 !important; font-weight: 800; }
+.text-green { color: #00FF88 !important; font-weight: 800; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -196,47 +226,32 @@ def calculate_atr(df, period=14):
     df['ATR'] = df['TR'].rolling(period).mean()
     return df
 
-# 補全：計算建倉成本與兩平賣出價
 def calculate_breakeven_price(trades_list, discount=0.2, tax_rate=0.003):
     if not trades_list:
         return 0.0, 0.0, 0.0, 0, 0.0
-    
-    total_shares = 0
-    total_buy_amt = 0.0
-    total_buy_fee = 0.0
-
+    total_shares, total_buy_amt, total_buy_fee = 0, 0.0, 0.0
     for t in trades_list:
         sh = int(safe_float(t.get("shares", safe_float(t.get("sheets", 1)) * 1000)))
         px = safe_float(t.get("price", 0.0))
-        if sh <= 0 or px <= 0:
-            continue
+        if sh <= 0 or px <= 0: continue
         amt = px * sh
         fee = math.floor(amt * 0.001425 * discount)
         if fee < 20: fee = 20
-        total_shares += sh
-        total_buy_amt += amt
-        total_buy_fee += fee
+        total_shares += sh; total_buy_amt += amt; total_buy_fee += fee
 
-    if total_shares <= 0:
-        return 0.0, 0.0, 0.0, 0, 0.0
-
+    if total_shares <= 0: return 0.0, 0.0, 0.0, 0, 0.0
     avg_buy_px = total_buy_amt / total_shares
     total_cost = total_buy_amt + total_buy_fee
-
     breakeven_p = total_cost / (total_shares * (1.0 - tax_rate - 0.001425 * discount))
     return round(breakeven_p, 2), round(total_cost), round(total_buy_fee), total_shares, round(avg_buy_px, 2)
 
-# 補全：未實現損益與報酬率計算
 def calculate_pnl_and_roi(latest_p, trades_list, discount=0.2, tax_rate=0.003):
     breakeven_p, total_cost, b_fee, total_shares, avg_buy_p = calculate_breakeven_price(trades_list, discount, tax_rate)
-    if total_shares <= 0 or latest_p <= 0 or total_cost <= 0:
-        return 0.0, 0.0
-
+    if total_shares <= 0 or latest_p <= 0 or total_cost <= 0: return 0.0, 0.0
     sell_val = latest_p * total_shares
     sell_fee = math.floor(sell_val * 0.001425 * discount)
     if sell_fee < 20: sell_fee = 20
     sell_tax = math.floor(sell_val * tax_rate)
-
     net_income = sell_val - sell_fee - sell_tax
     pnl = net_income - total_cost
     roi = round((pnl / total_cost) * 100, 2)
@@ -875,6 +890,7 @@ def fetch_finmind_chip_data(stock_code, token=""):
     except Exception: pass
     return pd.DataFrame()
 
+# 流暢無防卡死之即時表格渲染函數
 def render_smart_stock_table(df_display, key_prefix):
     if df_display is None or df_display.empty:
         st.warning("⚠️ 查無符合該篩選模組之股票標的。")
@@ -1367,7 +1383,7 @@ elif app_mode == "🔍 FinMind 全市場掃描器":
             st.markdown("#### 📊 符合條件之【模組一：營收雙成長爆發股】清單 (更新時間：`" + str(st.session_state.get('finmind_m1_time')) + "`) ")
             render_smart_stock_table(st.session_state["finmind_m1_res"], "finmind_m1")
 
-    # 💎 模組二 (流暢渲染不卡死)
+    # 💎 模組二 (無二次查詢阻塞防卡死修復)
     with tab_m2:
         st.markdown("""
         ##### ⚙️ 模組二全新量化篩選條件 (全台股上市櫃自動掃描)：
@@ -2093,7 +2109,13 @@ else:
                         start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d"); end_date = datetime.now().strftime("%Y-%m-%d")
                         kbars = api.kbars(contract=contract, start=start_date, end=end_date)
                         df_raw = pd.DataFrame({"ts": kbars.ts, "Open": kbars.Open, "High": kbars.High, "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume})
-                        bal_p = (high_price + low_price + curr_price) / 3
+                        
+                        # 當沖 vs 波段三維算式更新
+                        pivot_p = round((high_price + low_price + prev_close_price) / 3, 2)
+                        
+                        # 當沖/極短線技術強壓與技術強撐算式
+                        daytrade_resistance = round(max(prev_close_price * 1.015, high_price), 2)
+                        daytrade_support = round(min(prev_close_price * 0.985, low_price), 2)
 
                         @api.on_tick_stk_v1()
                         def on_tick_cb(exchange, tick):
@@ -2102,7 +2124,7 @@ else:
                             tick_payload = {
                                 "price": t_price, "volume": t_vol, "time": t_time, "target_price": custom_target_price,
                                 "stop_price": custom_stop_price, "buy_cost": avg_buy_price, "buy_sheets": total_shares,
-                                "breakeven_p": breakeven_p, "total_cost": total_cost, "vwap": avg_price, "pivot": bal_p,
+                                "breakeven_p": breakeven_p, "total_cost": total_cost, "vwap": avg_price, "pivot": pivot_p,
                                 "outer_vol": outer_vol, "inner_vol": inner_vol, "chk_vwap": chk_vwap, "chk_pivot": chk_pivot,
                                 "chk_momentum": chk_momentum, "imbalance_ratio": param_imbalance_ratio,
                                 "chk_big_tick": chk_big_tick, "big_tick_shares": param_big_tick_shares
@@ -2117,7 +2139,11 @@ else:
                             "prev_close_price": prev_close_price, "high_price": high_price, "low_price": low_price,
                             "open_price": open_price, "volume": volume, "avg_price": avg_price, "limit_up": limit_up,
                             "limit_down": limit_down, "bias_rate": ((curr_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0,
-                            "momentum_coef": (outer_vol / inner_vol) if inner_vol > 0 else 1.0, "balance_point": bal_p, "df_raw": df_raw
+                            "momentum_coef": (outer_vol / inner_vol) if inner_vol > 0 else 1.0, 
+                            "balance_point": pivot_p, 
+                            "daytrade_resistance": daytrade_resistance,
+                            "daytrade_support": daytrade_support,
+                            "df_raw": df_raw
                         }
                 except Exception as e: st.error("連線失敗: " + str(e))
 
@@ -2141,6 +2167,16 @@ else:
             prev_high = df_k_daily['High'].iloc[-2] if len(df_k_daily)>1 else high_price
             prev_low = df_k_daily['Low'].iloc[-2] if len(df_k_daily)>1 else low_price
         else: ma5, ma20, atr_val, prev_high, prev_low = curr_price, curr_price, curr_price * 0.02, high_price, low_price
+
+        # 量化判定更新：根據選擇的「短線/當沖」或「波段」動態調整關鍵價位
+        if "短線" in trade_style:
+            key_resistance = data.get("daytrade_resistance", round(prev_close_price * 1.015, 2))
+            key_support = data.get("daytrade_support", round(prev_close_price * 0.985, 2))
+            suggest_entry = round(max(avg_price, key_support), 2)
+        else:
+            key_resistance = round(max(prev_high, ma20 * 1.05), 2)
+            key_support = round(min(prev_low, ma20), 2)
+            suggest_entry = round(max(ma20, key_support), 2)
 
         ai_res = ai_senior_analyst_diagnosis_advanced(target_code, target_name, curr_price, ma5, ma20, prev_high, prev_low, balance_point, {})
         
@@ -2303,7 +2339,7 @@ else:
                 st.dataframe(pd.DataFrame([{"日期": "10/02", "主力買賣超": "+2,450", "籌碼集中度": "12.5%", "買超前5總和": "63.8%"}]), use_container_width=True, hide_index=True)
 
         with right_panel:
-            st.markdown('<div class="level-container"><div class="level-head"><div><span class="muted">技術強壓</span><br><b class="text-red" style="font-size:1.2rem;">' + str(ai_res["resistance"]) + '</b></div><div style="text-align:right;"><span class="muted">技術強撐</span><br><b class="text-green" style="font-size:1.2rem;">' + str(ai_res["support"]) + '</b></div></div><div class="level-box"><span class="lbl">🚀 法定漲停價</span><span class="val text-red">' + f"{limit_up:.2f}" + '</span></div><div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">' + str(ai_res["resistance"]) + '</span></div><div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">' + str(ai_res["entry_price"]) + '</span></div><div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">' + f"{curr_price:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡 多空平衡點</span><span class="val" style="color:var(--gold);">' + f"{balance_point:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡️ 技術強撐價</span><span class="val text-green">' + str(ai_res["support"]) + '</span></div><div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">' + f"{limit_down:.2f}" + '</span></div></div>', unsafe_allow_html=True)
+            st.markdown('<div class="level-container"><div class="level-head"><div><span class="muted">技術強壓</span><br><b class="text-red" style="font-size:1.2rem;">' + f"{key_resistance:.2f}" + '</b></div><div style="text-align:right;"><span class="muted">技術強撐</span><br><b class="text-green" style="font-size:1.2rem;">' + f"{key_support:.2f}" + '</b></div></div><div class="level-box"><span class="lbl">🚀 法定漲停價</span><span class="val text-red">' + f"{limit_up:.2f}" + '</span></div><div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">' + f"{key_resistance:.2f}" + '</span></div><div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">' + f"{suggest_entry:.2f}" + '</span></div><div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">' + f"{curr_price:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡 多空平衡點</span><span class="val" style="color:var(--gold);">' + f"{balance_point:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡️ 技術強撐價</span><span class="val text-green">' + f"{key_support:.2f}" + '</span></div><div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">' + f"{limit_down:.2f}" + '</span></div></div>', unsafe_allow_html=True)
             st.write("")
             if st.button("🤖 AI 深度評估 (Gemini 診斷)", key="btn_right_gemini_eval", use_container_width=True):
                 with st.spinner("AI 診斷中..."):
