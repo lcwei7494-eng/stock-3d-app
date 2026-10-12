@@ -161,11 +161,86 @@ h1, h2, h3, h4, h5, h6 {
 """, unsafe_allow_html=True)
 
 # =========================================================
-# 💾 2. 資料讀寫與輔助函數
+# 💾 2. 資料讀寫與核心財經算式模組
 # =========================================================
 WATCHLIST_FILE = "watchlist.json"
 HOLDINGS_FILE = "holdings.json"
 STOCKIFY_JOURNAL_FILE = "stockify_journal.json"
+
+def safe_float(val, default=0.0):
+    try: return float(val) if val is not None else default
+    except (ValueError, TypeError): return default
+
+def tone(pct):
+    pct = safe_float(pct)
+    return "up" if pct > 0 else ("down" if pct < 0 else "flat")
+
+def get_stock_code_and_name(user_input):
+    target = user_input.strip()
+    if target.isdigit():
+        if target in twstock.codes: return target, twstock.codes[target].name
+        return target, target
+    for code, info in twstock.codes.items():
+        if info.type == '股票' and (target == info.name or target in info.name): return code, info.name
+    return None, None
+
+def get_all_taiwan_stock_codes():
+    try:
+        codes = [code for code, info in twstock.codes.items() if info.type == '股票' and len(code) == 4 and code.isdigit()]
+        if codes: return codes
+    except Exception: pass
+    return ["2330", "2317", "2454", "2382", "3008", "2308", "2379", "3624", "2360", "8111", "4971", "4991", "4908", "3042"]
+
+def calculate_atr(df, period=14):
+    df['TR'] = pd.concat([df['High'] - df['Low'], abs(df['High'] - df['Close'].shift(1)), abs(df['Low'] - df['Close'].shift(1))], axis=1).max(axis=1)
+    df['ATR'] = df['TR'].rolling(period).mean()
+    return df
+
+# 補全：計算建倉成本與兩平賣出價
+def calculate_breakeven_price(trades_list, discount=0.2, tax_rate=0.003):
+    if not trades_list:
+        return 0.0, 0.0, 0.0, 0, 0.0
+    
+    total_shares = 0
+    total_buy_amt = 0.0
+    total_buy_fee = 0.0
+
+    for t in trades_list:
+        sh = int(safe_float(t.get("shares", safe_float(t.get("sheets", 1)) * 1000)))
+        px = safe_float(t.get("price", 0.0))
+        if sh <= 0 or px <= 0:
+            continue
+        amt = px * sh
+        fee = math.floor(amt * 0.001425 * discount)
+        if fee < 20: fee = 20
+        total_shares += sh
+        total_buy_amt += amt
+        total_buy_fee += fee
+
+    if total_shares <= 0:
+        return 0.0, 0.0, 0.0, 0, 0.0
+
+    avg_buy_px = total_buy_amt / total_shares
+    total_cost = total_buy_amt + total_buy_fee
+
+    breakeven_p = total_cost / (total_shares * (1.0 - tax_rate - 0.001425 * discount))
+    return round(breakeven_p, 2), round(total_cost), round(total_buy_fee), total_shares, round(avg_buy_px, 2)
+
+# 補全：未實現損益與報酬率計算
+def calculate_pnl_and_roi(latest_p, trades_list, discount=0.2, tax_rate=0.003):
+    breakeven_p, total_cost, b_fee, total_shares, avg_buy_p = calculate_breakeven_price(trades_list, discount, tax_rate)
+    if total_shares <= 0 or latest_p <= 0 or total_cost <= 0:
+        return 0.0, 0.0
+
+    sell_val = latest_p * total_shares
+    sell_fee = math.floor(sell_val * 0.001425 * discount)
+    if sell_fee < 20: sell_fee = 20
+    sell_tax = math.floor(sell_val * tax_rate)
+
+    net_income = sell_val - sell_fee - sell_tax
+    pnl = net_income - total_cost
+    roi = round((pnl / total_cost) * 100, 2)
+    return pnl, roi
 
 def load_saved_watchlist():
     default_list = ["3624 光頡", "2360 致茂", "8111 立碁", "4971 IET-KY", "4991 環宇-KY", "2330 台積電", "3374 精材", "1785 光洋科", "3081 聯亞", "3088 艾訊", "3219 倚強科", "3228 金麗科"]
@@ -236,37 +311,8 @@ def add_to_watchlist_safe(stock_lbl):
         st.session_state["watchlist"].append(stock_lbl)
         save_watchlist_to_file(st.session_state["watchlist"])
 
-def safe_float(val, default=0.0):
-    try: return float(val) if val is not None else default
-    except (ValueError, TypeError): return default
-
-def tone(pct):
-    pct = safe_float(pct)
-    return "up" if pct > 0 else ("down" if pct < 0 else "flat")
-
-def get_stock_code_and_name(user_input):
-    target = user_input.strip()
-    if target.isdigit():
-        if target in twstock.codes: return target, twstock.codes[target].name
-        return target, target
-    for code, info in twstock.codes.items():
-        if info.type == '股票' and (target == info.name or target in info.name): return code, info.name
-    return None, None
-
-def get_all_taiwan_stock_codes():
-    try:
-        codes = [code for code, info in twstock.codes.items() if info.type == '股票' and len(code) == 4 and code.isdigit()]
-        if codes: return codes
-    except Exception: pass
-    return ["2330", "2317", "2454", "2382", "3008", "2308", "2379", "3624", "2360", "8111", "4971", "4991", "4908", "3042"]
-
-def calculate_atr(df, period=14):
-    df['TR'] = pd.concat([df['High'] - df['Low'], abs(df['High'] - df['Close'].shift(1)), abs(df['Low'] - df['Close'].shift(1))], axis=1).max(axis=1)
-    df['ATR'] = df['TR'].rolling(period).mean()
-    return df
-
 # =========================================================
-# 🧮 3. TWSE OpenAPI + FinMind 上週資金流向比重差值計算引擎
+# 🧮 3. TWSE OpenAPI 全市場成交值集中度 5 步驟計算引擎
 # =========================================================
 @st.cache_data(ttl=1800)
 def fetch_twse_market_concentration():
@@ -348,14 +394,9 @@ def fetch_twse_market_concentration():
         "date_str": datetime.now().strftime("%Y/%m/%d")
     }
 
-# 💡 新增：連線 FinMind 算出一整週（上週五 vs 前週五）產業類股成交比重差值與資金流向
 @st.cache_data(ttl=21600)
 def fetch_weekly_sector_money_flow(token=""):
-    """
-    計算上週五 vs 前週五各大產業類股的成交金額比重差值 (比重狂飆 + 漲跌幅 => 判定資金流向)
-    """
     try:
-        # 上週五比重 vs 前週五比重動態計算數據
         weekly_sector_data = [
             {"產業類股": "半導體業", "上週五比重(%)": 38.5, "前週五比重(%)": 29.2, "類股週漲跌(%)": 4.2, "主力外盤比(%)": 62.1},
             {"產業類股": "電腦及週邊設備", "上週五比重(%)": 14.8, "前週五比重(%)": 11.5, "類股週漲跌(%)": 2.8, "主力外盤比(%)": 56.4},
@@ -367,21 +408,18 @@ def fetch_weekly_sector_money_flow(token=""):
             {"產業類股": "生技醫療", "上週五比重(%)": 2.8, "前週五比重(%)": 3.5, "類股週漲跌(%)": -0.9, "主力外盤比(%)": 44.2},
         ]
         df_sec = pd.DataFrame(weekly_sector_data)
-        
-        # 1. 計算比重差值 (Delta Share %)
         df_sec["成交比重差值(%)"] = (df_sec["上週五比重(%)"] - df_sec["前週五比重(%)"]).round(1)
 
-        # 2. 結合量價關係判定資金真實流向 (比重差值 + 週漲跌幅)
         def flow_classifier(row):
             diff = row["成交比重差值(%)"]
             pct = row["類股週漲跌(%)"]
             
             if diff >= 1.5 and pct >= 1.0:
-                return "🟢 資金狂飆狂吸 (主流群起拉抬)"
+                return "🟢 資金狂飆狂吸 (主流拉抬)"
             elif diff >= 1.5 and pct < 0:
-                return "🔴 爆量滯漲倒貨 (大戶趁熱轉出)"
+                return "🔴 爆量滯漲倒貨 (大戶倒貨)"
             elif diff <= -1.5 and pct < 0:
-                return "🔵 資金顯著退潮 (主力全面撤出)"
+                return "🔵 資金顯著退潮 (主力撤出)"
             else:
                 return "⚪ 資金輪動觀望 (局限盤整)"
 
@@ -837,7 +875,6 @@ def fetch_finmind_chip_data(stock_code, token=""):
     except Exception: pass
     return pd.DataFrame()
 
-# 流暢無防卡死之即時表格渲染函數
 def render_smart_stock_table(df_display, key_prefix):
     if df_display is None or df_display.empty:
         st.warning("⚠️ 查無符合該篩選模組之股票標的。")
@@ -986,9 +1023,8 @@ if app_mode == "🌐 TWSE 全市場成交值集中度":
 
     st.write("")
     
-    # 💡 核心新增：直接觀察「上週（一整週）」各大產業類股資金流向與比重差值
     st.markdown("### 📊 上週各大產業類股資金流向與比重差值 (FinMind 週報比對)")
-    st.caption("【判定指標】：比重差值 = 上週五類股成交比重 - 前週五比重。狂飆（如增加 3.5%）且類股大漲 ➔ 🟢 資金主流狂吸[cite: 1]；暴量滯漲 ➔ 🔴 大戶趁熱倒貨[cite: 1]！")
+    st.caption("【判定指標】：比重差值 = 上週五類股成交比重 - 前週五比重。狂飆（如增加 3.5%）且類股大漲 ➔ 🟢 資金主流狂吸；暴量滯漲 ➔ 🔴 大戶趁熱倒貨！")
     
     df_weekly_flow = fetch_weekly_sector_money_flow(finmind_token)
     if not df_weekly_flow.empty:
@@ -1058,7 +1094,7 @@ if app_mode == "🌐 TWSE 全市場成交值集中度":
         fig_bar.update_layout(height=350, template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", yaxis=dict(autorange="reversed"), xaxis_title="成交金額 (億元)", margin=dict(l=10, r=30, t=20, b=10))
         st.plotly_chart(fig_bar, use_container_width=True)
 
-    st.markdown("#### 📋 證交所 5 步驟集中度與當日量價資金流向明細表")
+    st.markdown("#### 📋 證交所 5 步驟集中度與當日量價資金流向判定明細表")
     st.dataframe(df_top10, use_container_width=True, hide_index=True)
 
 # 🏥 獨立分頁 2：阿宇教學「5分鐘看懂財報體檢」FinMind API 實體數據動態連線版
@@ -1331,10 +1367,10 @@ elif app_mode == "🔍 FinMind 全市場掃描器":
             st.markdown("#### 📊 符合條件之【模組一：營收雙成長爆發股】清單 (更新時間：`" + str(st.session_state.get('finmind_m1_time')) + "`) ")
             render_smart_stock_table(st.session_state["finmind_m1_res"], "finmind_m1")
 
-    # 💎 模組二 (無二次查詢阻塞防卡死修復)
+    # 💎 模組二 (流暢渲染不卡死)
     with tab_m2:
         st.markdown("""
-        ##### ⚙️ 模組二全新量化篩選條件 (全台股上市上櫃自動掃描)：
+        ##### ⚙️ 模組二全新量化篩選條件 (全台股上市櫃自動掃描)：
         1. **低基期位階**：月 K 值 $< 30$ 且月 KD 金叉／$\text{P/E} < 15$ 倍或 $\text{P/B} < 1.2$ 倍／股價站上月線(20MA)與季線(60MA)且月線走平翻揚。
         2. **主力悄悄買**：近 20 天主力買超天數 $> 12$ 天／近 5 天籌碼集中度 $> 5\%$／4 週千張大戶增且股東人數減（背離）。
         3. **量化防護**：5 日均量 $> 1,000$ 張／近 5 日無爆漲 $>15\%$（真悄悄佈局）。
