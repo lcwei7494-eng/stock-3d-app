@@ -5,7 +5,7 @@ import numpy as np
 import twstock
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import time, json, os, math, requests, asyncio, threading
+import time, json, os, math, requests, asyncio, threading, re
 from websockets.server import serve
 from datetime import datetime, timedelta
 
@@ -329,7 +329,7 @@ def add_to_watchlist_safe(stock_lbl):
         save_watchlist_to_file(st.session_state["watchlist"])
 
 # =========================================================
-# 🧮 3. 直連 TWSE(上市官網) 與 TPEx(上櫃官網) 買賣超日報解析引擎
+# 🧮 3. 直連 TWSE(上市官網) 與 TPEx(上櫃官網) + 備援機制解析引擎
 # =========================================================
 @st.cache_data(ttl=1800)
 def fetch_twse_market_concentration():
@@ -411,16 +411,15 @@ def fetch_twse_market_concentration():
         "date_str": datetime.now().strftime("%Y/%m/%d")
     }
 
-# 🌐 真正直連 臺灣證券交易所 (TWSE 上市) ＋ 證券櫃檯買賣中心 (TPEx 上櫃) 官方 API JSON 買賣超排行
+# 🌐 直連 臺灣證券交易所 (TWSE 上市) ＋ 證券櫃檯買賣中心 (TPEx 上櫃) 官方 API + FinMind 雙層強效備援引擎[cite: 1]
 @st.cache_data(ttl=1800)
-def fetch_official_twse_tpex_rankings_direct():
+def fetch_official_twse_tpex_rankings_direct(token=""):
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     
-    # 找尋最近一個有效交易日
+    # 嘗試官方 API 直連
     for i in range(5):
         target_date = datetime.now() - timedelta(days=i)
         date_twse = target_date.strftime("%Y%m%d")
-        
         roc_year = target_date.year - 1911
         date_tpex = f"{roc_year}/{target_date.strftime('%m/%d')}"
 
@@ -428,38 +427,35 @@ def fetch_official_twse_tpex_rankings_direct():
         url_tpex = f"https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge_result.php?l=zh-tw&o=json&se=EW&t=D&d={date_tpex}&s=0,asc"
 
         try:
-            res_twse = requests.get(url_twse, headers=headers, timeout=8)
-            res_tpex = requests.get(url_tpex, headers=headers, timeout=8)
+            res_twse = requests.get(url_twse, headers=headers, timeout=6)
+            res_tpex = requests.get(url_tpex, headers=headers, timeout=6)
 
             tse_f_buy, tse_f_sell, tse_t_buy, tse_t_sell = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
             otc_f_buy, otc_f_sell, otc_t_buy, otc_t_sell = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-            # 1. 臺灣證券交易所 (TWSE 上市) 官方 JSON 解析[cite: 1]
+            # 1. 上市官網解析[cite: 1]
             if res_twse.status_code == 200 and res_twse.json().get("stat") == "OK":
                 raw_tse = res_twse.json().get("data", [])
                 cols_tse = res_twse.json().get("fields", [])
-                
                 if raw_tse and len(cols_tse) >= 10:
                     df_tse = pd.DataFrame(raw_tse, columns=cols_tse)
-                    code_col = cols_tse[0]
-                    name_col = cols_tse[1]
-                    
-                    foreign_col = [c for c in cols_tse if "外陸資買賣超股數" in c or "外資買賣超股數" in c or "外陸資" in c]
-                    trust_col = [c for c in cols_tse if "投信買賣超股數" in c or "投信" in c]
+                    code_c, name_c = cols_tse[0], cols_tse[1]
+                    f_cols = [c for c in cols_tse if "外陸資買賣超股數" in c or "外資買賣超股數" in c or "外陸資" in c]
+                    t_cols = [c for c in cols_tse if "投信買賣超股數" in c or "投信" in c]
 
-                    f_col_name = foreign_col[0] if foreign_col else cols_tse[4]
-                    t_col_name = trust_col[0] if trust_col else cols_tse[10]
+                    f_col = f_cols[0] if f_cols else cols_tse[4]
+                    t_col = t_cols[0] if t_cols else cols_tse[10]
 
-                    df_tse["外資張數"] = df_tse[f_col_name].apply(lambda x: safe_float(x) / 1000)
-                    df_tse["投信張數"] = df_tse[t_col_name].apply(lambda x: safe_float(x) / 1000)
-                    df_tse = df_tse.rename(columns={code_col: "股票代碼", name_col: "股票名稱"})
+                    df_tse["外資張數"] = df_tse[f_col].apply(lambda x: safe_float(x) / 1000)
+                    df_tse["投信張數"] = df_tse[t_col].apply(lambda x: safe_float(x) / 1000)
+                    df_tse = df_tse.rename(columns={code_c: "股票代碼", name_c: "股票名稱"})
 
                     tse_f_buy = df_tse.sort_values(by="外資張數", ascending=False).head(10)[["股票代碼", "股票名稱", "外資張數"]].rename(columns={"外資張數": "買賣超(張)"})
                     tse_f_sell = df_tse.sort_values(by="外資張數", ascending=True).head(10)[["股票代碼", "股票名稱", "外資張數"]].rename(columns={"外資張數": "買賣超(張)"})
                     tse_t_buy = df_tse.sort_values(by="投信張數", ascending=False).head(10)[["股票代碼", "股票名稱", "投信張數"]].rename(columns={"投信張數": "買賣超(張)"})
                     tse_t_sell = df_tse.sort_values(by="投信張數", ascending=True).head(10)[["股票代碼", "股票名稱", "投信張數"]].rename(columns={"投信張數": "買賣超(張)"})
 
-            # 2. 證券櫃檯買賣中心 (TPEx 上櫃) 官方 JSON 解析[cite: 1]
+            # 2. 上櫃官網解析 (精確索引 9 與 12)[cite: 1]
             if res_tpex.status_code == 200 and "aaData" in res_tpex.json():
                 raw_tpex = res_tpex.json().get("aaData", [])
                 if raw_tpex:
@@ -467,15 +463,15 @@ def fetch_official_twse_tpex_rankings_direct():
                     df_otc["股票代碼"] = df_otc[0].astype(str).str.strip()
                     df_otc["股票名稱"] = df_otc[1].astype(str).str.strip()
                     
-                    df_otc["外資張數"] = df_otc[7].apply(lambda x: safe_float(x) / 1000) if df_otc.shape[1] > 7 else 0
-                    df_otc["投信張數"] = df_otc[10].apply(lambda x: safe_float(x) / 1000) if df_otc.shape[1] > 10 else 0
+                    df_otc["外資張數"] = df_otc[9].apply(lambda x: safe_float(x) / 1000) if df_otc.shape[1] > 9 else 0
+                    df_otc["投信張數"] = df_otc[12].apply(lambda x: safe_float(x) / 1000) if df_otc.shape[1] > 12 else 0
 
                     otc_f_buy = df_otc.sort_values(by="外資張數", ascending=False).head(10)[["股票代碼", "股票名稱", "外資張數"]].rename(columns={"外資張數": "買賣超(張)"})
                     otc_f_sell = df_otc.sort_values(by="外資張數", ascending=True).head(10)[["股票代碼", "股票名稱", "外資張數"]].rename(columns={"外資張數": "買賣超(張)"})
                     otc_t_buy = df_otc.sort_values(by="投信張數", ascending=False).head(10)[["股票代碼", "股票名稱", "投信張數"]].rename(columns={"投信張數": "買賣超(張)"})
                     otc_t_sell = df_otc.sort_values(by="投信張數", ascending=True).head(10)[["股票代碼", "股票名稱", "投信張數"]].rename(columns={"投信張數": "買賣超(張)"})
 
-            if not tse_f_buy.empty or not otc_f_buy.empty:
+            if not tse_f_buy.empty and (tse_f_sell["買賣超(張)"].sum() != 0):
                 return {
                     "date": target_date.strftime("%Y/%m/%d"),
                     "tse_foreign_buy": tse_f_buy, "tse_foreign_sell": tse_f_sell,
@@ -484,6 +480,50 @@ def fetch_official_twse_tpex_rankings_direct():
                     "otc_trust_buy": otc_t_buy, "otc_trust_sell": otc_t_sell,
                 }
         except Exception: pass
+
+    # 3. 若官網 API 被擋阻或結算延遲，自動啟動第二層 FinMind 權威資料庫救援
+    try:
+        start_str = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        url_fm = f"https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInstitutionalInvestorsBuySell&start_date={start_str}"
+        if token: url_fm += f"&token={token}"
+        res_fm = requests.get(url_fm, timeout=10)
+        
+        if res_fm.status_code == 200 and res_fm.json().get("data"):
+            df_fm = pd.DataFrame(res_fm.json()["data"])
+            latest_d = df_fm["date"].max()
+            df_fm_l = df_fm[df_fm["date"] == latest_d].copy()
+            df_fm_l["net_shares"] = (df_fm_l["buy"] - df_fm_l["sell"]) / 1000
+
+            def get_market(c):
+                if c in twstock.codes:
+                    m = twstock.codes[c].market
+                    if '上市' in m: return '上市'
+                    elif '上櫃' in m: return '上櫃'
+                return '上市' if c.startswith('2') or c.startswith('30') else '上櫃'
+
+            df_fm_l["市場別"] = df_fm_l["stock_id"].apply(get_market)
+            f_df = df_fm_l[df_fm_l["name"] == "Foreign_Investor"]
+            t_df = df_fm_l[df_fm_l["name"] == "Investment_Trust"]
+
+            def build_fm_top10(sub_df, is_buy=True):
+                s = sub_df.sort_values(by="net_shares", ascending=not is_buy).head(10).copy()
+                s["股票名稱"] = s["stock_id"].apply(lambda c: twstock.codes[c].name if c in twstock.codes else c)
+                s = s.rename(columns={"stock_id": "股票代碼", "net_shares": "買賣超(張)"})
+                s["買賣超(張)"] = s["買賣超(張)"].round(0)
+                return s[["股票代碼", "股票名稱", "買賣超(張)"]]
+
+            return {
+                "date": latest_d,
+                "tse_foreign_buy": build_fm_top10(f_df[f_df["市場別"]=="上市"], True),
+                "tse_foreign_sell": build_fm_top10(f_df[f_df["市場別"]=="上市"], False),
+                "tse_trust_buy": build_fm_top10(t_df[t_df["市場別"]=="上市"], True),
+                "tse_trust_sell": build_fm_top10(t_df[t_df["市場別"]=="上市"], False),
+                "otc_foreign_buy": build_fm_top10(f_df[f_df["市場別"]=="上櫃"], True),
+                "otc_foreign_sell": build_fm_top10(f_df[f_df["市場別"]=="上櫃"], False),
+                "otc_trust_buy": build_fm_top10(t_df[t_df["市場別"]=="上櫃"], True),
+                "otc_trust_sell": build_fm_top10(t_df[t_df["市場別"]=="上櫃"], False),
+            }
+    except Exception: pass
 
     empty_df = pd.DataFrame(columns=["股票代碼", "股票名稱", "買賣超(張)"])
     return {
@@ -1124,10 +1164,9 @@ if app_mode == "🌐 TWSE 全市場成交值集中度":
 
     st.write("")
     
-    # 💡 依需求完美分流：上市（證交所）與 上櫃（櫃買中心）外資/投信一日買賣超 Top 10[cite: 1]
     st.markdown("### 🏛️ 上市與上櫃三大法人一日買賣超排行榜 Top 10 (每日 17:00 盤後自動更新)")
     with st.spinner("正在向 證交所(上市) 與 櫃買中心(上櫃) 讀取最新盤後結算買賣超數據..."):
-        rank_data = fetch_official_twse_tpex_rankings_direct()
+        rank_data = fetch_official_twse_tpex_rankings_direct(finmind_token)
     
     st.caption(f"📌 盤後最新官方結算日期：`{rank_data['date']}` (上市/上櫃精準分流)")
 
