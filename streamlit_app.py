@@ -201,7 +201,9 @@ def safe_float(val, default=0.0):
     try:
         if val is None: return default
         val_str = str(val).replace(',', '').strip()
-        return float(val_str)
+        # 正規表達式提純含負號的數字
+        match = re.search(r'[-+]?\d*\.?\d+', val_str)
+        return float(match.group()) if match else default
     except (ValueError, TypeError): return default
 
 def tone(pct):
@@ -310,7 +312,7 @@ def load_saved_stockify_journal():
         {"account": "主帳戶", "date": "2025-05-28", "code": "3015", "name": "全漢", "type": "買進", "price": 61.9, "shares": 1000, "fee_discount": 0.2, "note": "存股建倉"},
         {"account": "主帳戶", "date": "2026-06-04", "code": "3015", "name": "全漢", "type": "賣出", "price": 62.7, "shares": 1000, "fee_discount": 0.2, "note": "獲利平倉"},
         {"account": "主帳戶", "date": "2026-10-02", "code": "3624", "name": "光頡", "type": "買進", "price": 148.5, "shares": 1000, "fee_discount": 0.2, "note": "突破買進"},
-        {"account": "主帳戶", "date": "2026-10-05", "code": "3624", "name": "光頡", "type": "買進", "price": 152.0, "shares": 1000, "fee_discount": 0.2, "note": "加碼進場"}
+        {"account": "3624", "date": "2026-10-05", "code": "3624", "name": "光頡", "type": "買進", "price": 152.0, "shares": 1000, "fee_discount": 0.2, "note": "加碼進場"}
     ]
 
 def save_stockify_journal_to_file(journal_data):
@@ -329,7 +331,7 @@ def add_to_watchlist_safe(stock_lbl):
         save_watchlist_to_file(st.session_state["watchlist"])
 
 # =========================================================
-# 🧮 3. 直連 TWSE(上市官網) 與 TPEx(上櫃官網) + 備援機制解析引擎
+# 🧮 3. 直連 TWSE(上市官網) 與 TPEx(上櫃官網) + 雙層強效備援引擎
 # =========================================================
 @st.cache_data(ttl=1800)
 def fetch_twse_market_concentration():
@@ -411,12 +413,11 @@ def fetch_twse_market_concentration():
         "date_str": datetime.now().strftime("%Y/%m/%d")
     }
 
-# 🌐 直連 臺灣證券交易所 (TWSE 上市) ＋ 證券櫃檯買賣中心 (TPEx 上櫃) 官方 API JSON 買超與賣超排行完全修正
+# 🌐 上市(證交所)與上櫃(櫃買中心)官方 API 直連 + FinMind 雙層備援全修復機制
 @st.cache_data(ttl=1800)
 def fetch_official_twse_tpex_rankings_direct(token=""):
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     
-    # 嘗試官方 API 直連
     for i in range(5):
         target_date = datetime.now() - timedelta(days=i)
         date_twse = target_date.strftime("%Y%m%d")
@@ -433,15 +434,15 @@ def fetch_official_twse_tpex_rankings_direct(token=""):
             tse_f_buy, tse_f_sell, tse_t_buy, tse_t_sell = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
             otc_f_buy, otc_f_sell, otc_t_buy, otc_t_sell = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-            # 1. 臺灣證券交易所 (TWSE 上市) 官方 JSON 解析
+            # 1. 上市官網 JSON 強效解析
             if res_twse.status_code == 200 and res_twse.json().get("stat") == "OK":
                 raw_tse = res_twse.json().get("data", [])
                 cols_tse = res_twse.json().get("fields", [])
                 if raw_tse and len(cols_tse) >= 10:
                     df_tse = pd.DataFrame(raw_tse, columns=cols_tse)
                     code_c, name_c = cols_tse[0], cols_tse[1]
-                    f_cols = [c for c in cols_tse if "外陸資買賣超股數" in c or "外資買賣超股數" in c or "外陸資" in c]
-                    t_cols = [c for c in cols_tse if "投信買賣超股數" in c or "投信" in c]
+                    f_cols = [c for c in cols_tse if "外陸資買賣超股數" in c or "外資買賣超股數" in c]
+                    t_cols = [c for c in cols_tse if "投信買賣超股數" in c]
 
                     f_col = f_cols[0] if f_cols else cols_tse[4]
                     t_col = t_cols[0] if t_cols else cols_tse[10]
@@ -452,11 +453,10 @@ def fetch_official_twse_tpex_rankings_direct(token=""):
 
                     tse_f_buy = df_tse[df_tse["外資張數"] > 0].sort_values(by="外資張數", ascending=False).head(10)[["股票代碼", "股票名稱", "外資張數"]].rename(columns={"外資張數": "買賣超(張)"})
                     tse_f_sell = df_tse[df_tse["外資張數"] < 0].sort_values(by="外資張數", ascending=True).head(10)[["股票代碼", "股票名稱", "外資張數"]].rename(columns={"外資張數": "買賣超(張)"})
-                    
                     tse_t_buy = df_tse[df_tse["投信張數"] > 0].sort_values(by="投信張數", ascending=False).head(10)[["股票代碼", "股票名稱", "投信張數"]].rename(columns={"投信張數": "買賣超(張)"})
                     tse_t_sell = df_tse[df_tse["投信張數"] < 0].sort_values(by="投信張數", ascending=True).head(10)[["股票代碼", "股票名稱", "投信張數"]].rename(columns={"投信張數": "買賣超(張)"})
 
-            # 2. 證券櫃檯買賣中心 (TPEx 上櫃) 官方 JSON 索引修正
+            # 2. 上櫃官網 JSON 強效解析
             if res_tpex.status_code == 200 and "aaData" in res_tpex.json():
                 raw_tpex = res_tpex.json().get("aaData", [])
                 if raw_tpex:
@@ -469,11 +469,10 @@ def fetch_official_twse_tpex_rankings_direct(token=""):
 
                     otc_f_buy = df_otc[df_otc["外資張數"] > 0].sort_values(by="外資張數", ascending=False).head(10)[["股票代碼", "股票名稱", "外資張數"]].rename(columns={"外資張數": "買賣超(張)"})
                     otc_f_sell = df_otc[df_otc["外資張數"] < 0].sort_values(by="外資張數", ascending=True).head(10)[["股票代碼", "股票名稱", "外資張數"]].rename(columns={"外資張數": "買賣超(張)"})
-                    
                     otc_t_buy = df_otc[df_otc["投信張數"] > 0].sort_values(by="投信張數", ascending=False).head(10)[["股票代碼", "股票名稱", "投信張數"]].rename(columns={"投信張數": "買賣超(張)"})
                     otc_t_sell = df_otc[df_otc["投信張數"] < 0].sort_values(by="投信張數", ascending=True).head(10)[["股票代碼", "股票名稱", "投信張數"]].rename(columns={"投信張數": "買賣超(張)"})
 
-            if not tse_f_buy.empty and not tse_f_sell.empty:
+            if not tse_f_buy.empty and not tse_f_sell.empty and not otc_f_buy.empty:
                 return {
                     "date": target_date.strftime("%Y/%m/%d"),
                     "tse_foreign_buy": tse_f_buy, "tse_foreign_sell": tse_f_sell,
@@ -483,7 +482,7 @@ def fetch_official_twse_tpex_rankings_direct(token=""):
                 }
         except Exception: pass
 
-    # 3. 第二層 FinMind 權威資料庫雙重救援 (確保 100% 正確獲取賣超數值)
+    # 3. 第二層 FinMind 雙重救援 (確保 100% 正確獲取上市上櫃買超/賣超數值)
     try:
         start_str = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
         url_fm = f"https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInstitutionalInvestorsBuySell&start_date={start_str}"
