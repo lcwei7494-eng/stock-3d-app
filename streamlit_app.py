@@ -157,36 +157,6 @@ h1, h2, h3, h4, h5, h6 {
 .row .name { font-size: 1rem; font-weight: 700; color: #FFFFFF; }
 .row .code { color: #CBD5E1; font-size: .82rem; margin-left: 6px; }
 .row .px { font-size: 1.15rem; font-weight: 800; text-align: right; }
-
-.level-container {
-    background: #121824;
-    border: 1px solid #222C3D;
-    border-radius: 12px;
-    padding: 16px;
-}
-.level-head {
-    display: flex;
-    justify-content: space-between;
-    border-bottom: 1px solid #222C3D;
-    padding-bottom: 10px;
-    margin-bottom: 12px;
-}
-.level-box {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: #0A0D14;
-    border: 1px solid #222C3D;
-    border-radius: 8px;
-    padding: 8px 12px;
-    margin: 6px 0;
-}
-.level-box.normal {
-    border-color: #00E5FF;
-    background: #0F2027;
-}
-.text-red { color: #FF0055 !important; font-weight: 800; }
-.text-green { color: #00FF88 !important; font-weight: 800; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -330,7 +300,169 @@ def add_to_watchlist_safe(stock_lbl):
         save_watchlist_to_file(st.session_state["watchlist"])
 
 # =========================================================
-# 🧮 3. 直連 TWSE(上市官網) 與 TPEx(上櫃官網) + 備援機制解析引擎
+# 🧮 3. 四大核心關鍵價位演算引擎 (均線[M] + 分價量區[V2] + Pivot + 極限區間)
+# =========================================================
+def calculate_advanced_key_levels(df, curr_price):
+    curr_p = safe_float(curr_price)
+    if df.empty or len(df) < 20 or curr_p <= 0:
+        return {}
+
+    df = df.copy()
+    
+    # 1️⃣ 週期極限區間 (極高 / 極低)
+    extreme_high = round(df['High'].max(), 2)
+    extreme_low = round(df['Low'].min(), 2)
+    
+    # 2️⃣ 均線計算 (MA5, MA10, MA20, MA60, MA120, MA240)
+    ma_dict = {}
+    for ma_len in [5, 10, 20, 60, 120, 240]:
+        if len(df) >= ma_len:
+            ma_val = round(df['Close'].rolling(ma_len).mean().iloc[-1], 2)
+            if not np.isnan(ma_val):
+                ma_dict[f"MA{ma_len}"] = ma_val
+
+    # 3️⃣ 分價量累積區 (Volume Profile)
+    p_min, p_max = df['Low'].min(), df['High'].max()
+    bins = np.linspace(p_min, p_max, 30)
+    df['PriceBin'] = pd.cut(df['Close'], bins=bins)
+    vol_profile = df.groupby('PriceBin', observed=False)['Volume'].sum()
+    
+    sorted_vols = vol_profile.sort_values(ascending=False)
+    v2_price_bin = sorted_vols.index[1] if len(sorted_vols) > 1 else sorted_vols.index[0]
+    v2_price = round((v2_price_bin.left + v2_price_bin.right) / 2, 2) if v2_price_bin else None
+
+    # 4️⃣ 波段轉折高低點 (Pivot Points)
+    pivots = []
+    for i in range(2, len(df) - 2):
+        if df['High'].iloc[i] > df['High'].iloc[i-1] and df['High'].iloc[i] > df['High'].iloc[i-2] and \
+           df['High'].iloc[i] > df['High'].iloc[i+1] and df['High'].iloc[i] > df['High'].iloc[i+2]:
+            pivots.append(round(df['High'].iloc[i], 2))
+        if df['Low'].iloc[i] < df['Low'].iloc[i-1] and df['Low'].iloc[i] < df['Low'].iloc[i-2] and \
+           df['Low'].iloc[i] < df['Low'].iloc[i+1] and df['Low'].iloc[i] < df['Low'].iloc[i+2]:
+            pivots.append(round(df['Low'].iloc[i], 2))
+
+    # 5️⃣ 多空分類
+    raw_resistances = []
+    raw_supports = []
+
+    for ma_name, ma_val in ma_dict.items():
+        if ma_val > curr_p:
+            raw_resistances.append({'price': ma_val, 'is_ma': True})
+        elif ma_val < curr_p:
+            raw_supports.append({'price': ma_val, 'is_ma': True})
+
+    if v2_price:
+        if v2_price > curr_p:
+            raw_resistances.append({'price': v2_price, 'is_v2': True})
+        elif v2_price < curr_p:
+            raw_supports.append({'price': v2_price, 'is_v2': True})
+
+    for pv in set(pivots):
+        if pv > curr_p:
+            raw_resistances.append({'price': pv, 'is_pivot': True})
+        elif pv < curr_p:
+            raw_supports.append({'price': pv, 'is_pivot': True})
+
+    # 6️⃣ 價位合併與排序修正
+    def merge_and_label(level_list, is_resistance=True):
+        if not level_list:
+            return []
+        
+        # 壓力：從小到大排 (1最接近現價)； 支撐：從大到小排 (1最接近現價)
+        level_list = sorted(level_list, key=lambda x: x['price'], reverse=not is_resistance)
+        merged = []
+        
+        for item in level_list:
+            px = item['price']
+            matched = False
+            for m in merged:
+                if abs(m['price'] - px) / px <= 0.012: # 1.2% 重疊範圍融合
+                    m['is_ma'] = m.get('is_ma', False) or item.get('is_ma', False)
+                    m['is_v2'] = m.get('is_v2', False) or item.get('is_v2', False)
+                    m['price'] = round((m['price'] + px) / 2, 2)
+                    matched = True
+                    break
+            if not matched:
+                merged.append({'price': px, 'is_ma': item.get('is_ma', False), 'is_v2': item.get('is_v2', False)})
+        
+        merged = sorted(merged, key=lambda x: x['price'], reverse=not is_resistance)
+
+        final_levels = []
+        for idx, item in enumerate(merged[:4]):
+            tags = ""
+            if item['is_ma']:
+                tags += '<span style="background:#2A364F; color:#4C8DFF; padding:1px 5px; border-radius:4px; font-size:0.72rem; margin-left:4px; font-weight:800;">M</span>'
+            if item['is_v2']:
+                tags += '<span style="background:#3D2A4F; color:#D870FF; padding:1px 5px; border-radius:4px; font-size:0.72rem; margin-left:4px; font-weight:800;">V2</span>'
+            
+            final_levels.append({
+                'order': f"({idx+1})",
+                'price': f"{item['price']:.2f}",
+                'tags': tags
+            })
+        return final_levels
+
+    return {
+        'extreme_high': f"{extreme_high:.2f}",
+        'extreme_low': f"{extreme_low:.2f}",
+        'resistances': merge_and_label(raw_resistances, is_resistance=True),
+        'supports': merge_and_label(raw_supports, is_resistance=False)
+    }
+
+def render_right_key_levels_panel(key_data):
+    """復刻照片右側『關鍵價』深色戰情室面板"""
+    if not key_data:
+        st.write("尚無關鍵價資料")
+        return
+
+    res_html = ""
+    for r in key_data.get('resistances', []):
+        res_html += f"""
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; margin:4px 0; background:#161D2B; border-radius:6px;">
+            <span style="color:#CBD5E1; font-size:0.9rem;">{r['order']} <b style="color:#F6465D; font-size:1.05rem; margin-left:4px;">{r['price']}</b> {r['tags']}</span>
+        </div>
+        """
+
+    sup_html = ""
+    for s in key_data.get('supports', []):
+        sup_html += f"""
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; margin:4px 0; background:#161D2B; border-radius:6px;">
+            <span style="color:#CBD5E1; font-size:0.9rem;">{s['order']} <b style="color:#1FC98B; font-size:1.05rem; margin-left:4px;">{s['price']}</b> {s['tags']}</span>
+        </div>
+        """
+
+    panel_html = f"""
+    <div style="background:#0D111A; border:1px solid #222C3D; border-radius:12px; padding:14px; color:#FFFFFF;">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #222C3D; padding-bottom:8px; margin-bottom:12px;">
+            <span style="font-size:0.95rem; font-weight:800; color:#FFD166;">📌 關鍵價</span>
+        </div>
+        
+        <div style="background:#161D2B; border-radius:8px; padding:8px 12px; margin-bottom:12px;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                <span style="color:#CBD5E1; font-size:0.85rem;">極高</span>
+                <b style="color:#F6465D; font-size:1.0rem;">{key_data.get('extreme_high', '--')}</b>
+            </div>
+            <div style="display:flex; justify-content:space-between;">
+                <span style="color:#CBD5E1; font-size:0.85rem;">極低</span>
+                <b style="color:#00E5FF; font-size:1.0rem;">{key_data.get('extreme_low', '--')}</b>
+            </div>
+        </div>
+
+        <div style="margin-bottom:12px;">
+            <div style="color:#F6465D; font-size:0.88rem; font-weight:800; margin-bottom:4px;">壓力</div>
+            {res_html if res_html else '<span style="color:#666; font-size:0.8rem;">上方無明顯技術壓力</span>'}
+        </div>
+
+        <div>
+            <div style="color:#1FC98B; font-size:0.88rem; font-weight:800; margin-bottom:4px;">支撐</div>
+            {sup_html if sup_html else '<span style="color:#666; font-size:0.8rem;">下方無明顯技術支撐</span>'}
+        </div>
+    </div>
+    """
+    st.markdown(panel_html, unsafe_allow_html=True)
+
+# =========================================================
+# 🧮 4. 集中度與法人買賣超
 # =========================================================
 @st.cache_data(ttl=1800)
 def fetch_twse_market_concentration():
@@ -412,7 +544,6 @@ def fetch_twse_market_concentration():
         "date_str": datetime.now().strftime("%Y/%m/%d")
     }
 
-# 🌐 上市與上櫃三大法人買賣超 Top 20 完全修復引擎
 @st.cache_data(ttl=1800)
 def fetch_official_twse_tpex_rankings_direct(token=""):
     headers = {
@@ -512,7 +643,7 @@ def fetch_weekly_sector_money_flow(token=""):
         return pd.DataFrame()
 
 # =========================================================
-# 🏥 4. 阿宇教學：FinMind 3大財報 Dataset 並行直連引擎
+# 🏥 5. 阿宇教學：FinMind 3大財報 Dataset 並行直連引擎
 # =========================================================
 @st.cache_data(ttl=21600)
 def fetch_real_finmind_financials(stock_code, token=""):
@@ -640,7 +771,7 @@ def fetch_real_finmind_financials(stock_code, token=""):
     }
 
 # =========================================================
-# 🧮 5. 核心工具與【張宇明股神三線經典演算法】
+# 🧮 6. 核心工具與【張宇明股神三線經典演算法】
 # =========================================================
 def calculate_three_lines_strategy_advanced(df, market_df=None):
     data = df.copy()
@@ -786,7 +917,7 @@ if st.sidebar.button("🔄 一鍵重置 API 連線與清理 Session", use_contai
     time.sleep(1); st.rerun()
 
 # =========================================================
-# 🔒 6. 100% 真實 API 數據解析
+# 🔒 8. 100% 真實 API 數據解析
 # =========================================================
 @st.cache_resource(ttl=3600, show_spinner=False)
 def get_shioaji_api(k_key, s_key):
@@ -820,7 +951,7 @@ class SmartOrderManager:
             quantity=sheets,
             action=sj.constant.Action.Buy,
             price_type=sj.constant.StockPriceType.LMT,
-            order_type=sj.constant.TFTOrderType.ROD,
+            order_type=sj.constant.OrderType.ROD,
             account=self.api.stock_account
         )
         try:
@@ -837,7 +968,7 @@ class SmartOrderManager:
             quantity=sheets,
             action=sj.constant.Action.Sell,
             price_type=sj.constant.StockPriceType.MKT,
-            order_type=sj.constant.TFTOrderType.ROD,
+            order_type=sj.constant.OrderType.ROD,
             account=self.api.stock_account
         )
         try:
@@ -1071,7 +1202,7 @@ def ai_senior_analyst_diagnosis_advanced(code, name, curr, ma5, ma20, prev_high,
     return {"support": support_price, "resistance": resistance_price, "trend": trend, "entry_price": entry_price, "strategy": strategy}
 
 # =========================================================
-# 7. 各頁面路由與戰情室
+# 9. 各頁面路由與戰情室
 # =========================================================
 
 # 🌐 頂級分頁 1：TWSE 證交所(上市) ＋ TPEx 櫃買(上櫃) 法人買賣超排行引擎
@@ -1660,7 +1791,7 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
             with t4: render_smart_stock_table(df_hot.sort_values(by="漲跌幅(%)", ascending=True), "hot_down")
         except Exception as e: st.error("錯誤: " + str(e))
 
-# ⚡ 當沖強勢股全台股上市櫃（1800+檔）雙階段獨立控制掃描器 (含三大核心與危險標的排除機制修復)
+# ⚡ 當沖強勢股全台股上市櫃（1800+檔）雙階段獨立控制掃描器
 elif app_mode == "⚡ 當沖強勢股篩選":
     st.title("⚡ 全台股（1,800+ 檔上市櫃）當沖強勢股雙階段雙重安全防護掃描器")
     st.caption("【全市場初選】遍歷 TSE/OTC 所有人氣流動性個股 ➔ 【進階掃描】三大核心條件 + 排除處置股與鎖漲跌停危險標的。")
@@ -1763,19 +1894,15 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                                 contract = api_filter.Contracts.Stocks.get(code)
                                 if not contract: continue
 
-                                # ⛔ 1. 危險標的排除：處置股（關禁閉）/ 變更交易法
                                 if p2_exclude_disposal and ("*" in name or "處置" in str(getattr(contract, 'status', ''))): continue
 
-                                # ⛔ 2. 危險標的排除：鎖漲停/鎖跌停標的（距漲跌停板 < 0.5%）
                                 limit_up = safe_float(getattr(contract, 'price_up', curr_p * 1.1))
                                 limit_down = safe_float(getattr(contract, 'price_down', curr_p * 0.9))
                                 if p2_exclude_limit:
                                     if curr_p >= limit_up * 0.995 or curr_p <= limit_down * 1.005: continue
 
-                                # 🎯 3. 核心條件：黃金股價區間 (50~200元，含 100~150元區間)
                                 if p2_chk_price_range and not (50.0 <= curr_p <= 200.0): continue
 
-                                # 🎯 4. 核心條件：預估爆量與題材熱度
                                 kbars = api_filter.kbars(contract=contract, start=start_date, end=end_date)
                                 df_raw = pd.DataFrame({"ts": kbars.ts, "Open": kbars.Open, "High": kbars.High, "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume})
                                 if len(df_raw) < 10: continue
@@ -1787,7 +1914,6 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                                 pred_vol_ratio = round(tot_vol / prev_vol, 2) if prev_vol > 0 else 1.0
                                 if pred_vol_ratio < p2_pred_vol_mult: continue
 
-                                # 🎯 5. 核心條件：站上當日均線 VWAP
                                 vwap = safe_float(getattr(contract, 'average_price', curr_p))
                                 if p2_chk_vwap and vwap > 0 and curr_p < vwap: continue
 
@@ -2054,7 +2180,7 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
     else:
         st.info("ℹ️【" + str(sel_account) + "】目前尚無交易紀錄，請展開上方『➕ 新增交易紀錄』填寫。")
 
-# 三維定位與當沖盯盤系統 (修復內部引號 HTML 安全拼裝)
+# 三維定位與當沖盯盤系統 (完全整合四大核心關鍵價演算 + 復刻照片右側面板 UI)
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
     if "selected_stock" not in st.session_state: st.session_state["selected_stock"] = "3624"
@@ -2501,9 +2627,13 @@ else:
                 st.dataframe(pd.DataFrame([{"日期": "10/02", "主力買賣超": "+2,450", "籌碼集中度": "12.5%", "買超前5總和": "63.8%"}]), use_container_width=True, hide_index=True)
 
         with right_panel:
-            st.markdown('<div class="level-container"><div class="level-head"><div><span class="muted">技術強壓</span><br><b class="text-red" style="font-size:1.2rem;">' + f"{key_resistance:.2f}" + '</b></div><div style="text-align:right;"><span class="muted">技術強撐</span><br><b class="text-green" style="font-size:1.2rem;">' + f"{key_support:.2f}" + '</b></div></div><div class="level-box"><span class="lbl">🚀 法定漲停價</span><span class="val text-red">' + f"{limit_up:.2f}" + '</span></div><div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">' + f"{key_resistance:.2f}" + '</span></div><div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">' + f"{suggest_entry:.2f}" + '</span></div><div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">' + f"{curr_price:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡 多空平衡點</span><span class="val" style="color:var(--gold);">' + f"{balance_point:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡️ 技術強撐價</span><span class="val text-green">' + f"{key_support:.2f}" + '</span></div><div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">' + f"{limit_down:.2f}" + '</span></div></div>', unsafe_allow_html=True)
+            # 1️⃣ 計算四大核心關鍵價 (均線[M] + 分價量[V2] + Pivot + 極限區間)
+            key_levels_data = calculate_advanced_key_levels(df_raw, curr_price)
             
-            # 動態價格帶橫條圖（由左至右：由大至小 📈）
+            # 2️⃣ 渲染 100% 復刻照片右側之面板
+            render_right_key_levels_panel(key_levels_data)
+
+            # 3️⃣ 關鍵價位階梯帶 (由左至右：由大至小 📈)
             st.write("")
             st.markdown("##### 📊 關鍵價位階梯帶 (由左至右：由大至小 📈)")
             
@@ -2543,4 +2673,4 @@ else:
                     st.session_state["monitor_ai_eval_" + str(target_code)] = run_goldman_sachs_ai_evaluation(combined_dict, gemini_api_key)
 
         if ("monitor_ai_eval_" + str(target_code)) in st.session_state:
-            st.markdown("<div class='navy-card'>" + str(st.session_state["monitor_ai_eval_" + str(target_code)]) + "</div>", unsafe_allow_html=True)
+            st.markdown("<div class='navy-card'>" + str(st.session_state["monitor_ai_eval_" + str(target_code)]) + "
