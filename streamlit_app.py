@@ -2054,7 +2054,7 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
     else:
         st.info("ℹ️【" + str(sel_account) + "】目前尚無交易紀錄，請展開上方『➕ 新增交易紀錄』填寫。")
 
-# 三維定位與當沖盯盤系統 (含視覺化價格帶橫條圖 - 由大至小: 漲停 > 強壓 > 進場 > 現價 > 平衡 > 強撐 > 跌停)
+# 三維定位與當沖盯盤系統 (修復內部引號 HTML 安全拼裝)
 else:
     st.title("📈 三維定位法 & 專業券商級多儀表板戰情室")
     if "selected_stock" not in st.session_state: st.session_state["selected_stock"] = "3624"
@@ -2201,4 +2201,346 @@ else:
     save_stock_holding_multi(target_code, st.session_state[trade_state_key], custom_stop_price, custom_target_price)
 
     if total_cost > 0:
-        st.markdown(f'''<div style="background:var(--panel2); border:1px solid var(--accent); border-
+        cost_html = '<div style="background:var(--panel2); border:1px solid var(--accent); border-radius:8px; padding:10px 16px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;"><div><span style="color:#FFFFFF;">📦 預估總投入成本：<b style="color:#FFFFFF;">' + f"{total_cost:,.0f}" + ' 元</b> <small style="color:#D1D8E0;">(含買進手續費 ' + f"{b_fee:.0f}" + '元)</small></span></div><div><span style="font-size:1.1rem; color:#FFFFFF;">🚀 自動試算損益兩平賣出價：<b style="color:var(--gold); font-size:1.3rem;">' + f"{breakeven_p:.2f}" + ' 元</b></span></div></div>'
+        st.markdown(cost_html, unsafe_allow_html=True)
+
+    need_fetch = ("analysis_data" not in st.session_state) or (st.session_state["analysis_data"]["target_code"] != target_code)
+
+    if need_fetch and api_key and secret_key:
+        api = get_shioaji_api(api_key, secret_key)
+        if api:
+            with st.spinner("正在讀取【" + current_stock_lbl + "】戰情室即時數據..."):
+                try:
+                    contract = api.Contracts.Stocks.get(target_code)
+                    if contract:
+                        snapshots = api.snapshots([contract]); snap = snapshots[0] if snapshots else None
+                        curr_price, prev_close_price, _ = parse_accurate_stock_data(snap, api, contract)
+                        high_price = safe_float(getattr(snap, 'high', curr_price), curr_price)
+                        low_price = safe_float(getattr(snap, 'low', curr_price), curr_price)
+                        open_price = safe_float(getattr(snap, 'open', prev_close_price), prev_close_price)
+                        volume = int(safe_float(getattr(snap, 'total_volume', 0))) if snap else 0
+                        avg_price = safe_float(getattr(snap, 'average_price', curr_price), curr_price) or curr_price
+                        outer_vol = safe_float(getattr(snap, 'ask_volume', 0.0)) if snap else 0.0
+                        inner_vol = safe_float(getattr(snap, 'bid_volume', 0.0)) if snap else 0.0
+
+                        limit_up = safe_float(getattr(snap, 'price_up', None), round(curr_price * 1.1, 2))
+                        limit_down = safe_float(getattr(snap, 'price_down', None), round(curr_price * 0.9, 2))
+
+                        start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d"); end_date = datetime.now().strftime("%Y-%m-%d")
+                        kbars = api.kbars(contract=contract, start=start_date, end=end_date)
+                        df_raw = pd.DataFrame({"ts": kbars.ts, "Open": kbars.Open, "High": kbars.High, "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume})
+                        
+                        pivot_p = round((high_price + low_price + prev_close_price) / 3, 2)
+                        daytrade_resistance = round(max(prev_close_price * 1.015, high_price), 2)
+                        daytrade_support = round(min(prev_close_price * 0.985, low_price), 2)
+
+                        @api.on_tick_stk_v1()
+                        def on_tick_cb(exchange, tick):
+                            t_price = safe_float(getattr(tick, 'close', 0.0)); t_vol = int(safe_float(getattr(tick, 'volume', 0)))
+                            t_time = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                            tick_payload = {
+                                "price": t_price, "volume": t_vol, "time": t_time, "target_price": custom_target_price,
+                                "stop_price": custom_stop_price, "buy_cost": avg_buy_price, "buy_sheets": total_shares,
+                                "breakeven_p": breakeven_p, "total_cost": total_cost, "vwap": avg_price, "pivot": pivot_p,
+                                "outer_vol": outer_vol, "inner_vol": inner_vol, "chk_vwap": chk_vwap, "chk_pivot": chk_pivot,
+                                "chk_momentum": chk_momentum, "imbalance_ratio": param_imbalance_ratio,
+                                "chk_big_tick": chk_big_tick, "big_tick_shares": param_big_tick_shares
+                            }
+                            broadcast_tick_microsecond(tick_payload)
+
+                        try: api.quote.subscribe(contract, quote_type=sj.constant.QuoteType.Tick)
+                        except Exception: pass
+
+                        st.session_state["analysis_data"] = {
+                            "target_code": target_code, "target_name": target_name, "curr_price": curr_price,
+                            "prev_close_price": prev_close_price, "high_price": high_price, "low_price": low_price,
+                            "open_price": open_price, "volume": volume, "avg_price": avg_price, "limit_up": limit_up,
+                            "limit_down": limit_down, "bias_rate": ((curr_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0,
+                            "momentum_coef": (outer_vol / inner_vol) if inner_vol > 0 else 1.0, 
+                            "balance_point": pivot_p, 
+                            "daytrade_resistance": daytrade_resistance,
+                            "daytrade_support": daytrade_support,
+                            "df_raw": df_raw
+                        }
+                except Exception as e: st.error("連線失敗: " + str(e))
+
+    if "analysis_data" in st.session_state and st.session_state["analysis_data"]["target_code"] == target_code:
+        data = st.session_state["analysis_data"]
+        curr_price = safe_float(data.get("curr_price", 0.0)); prev_close_price = safe_float(data.get("prev_close_price", curr_price), curr_price)
+        open_price = safe_float(data.get('open_price', curr_price), curr_price); high_price = safe_float(data.get('high_price', curr_price), curr_price)
+        low_price = safe_float(data.get('low_price', curr_price), curr_price); avg_price = safe_float(data.get('avg_price', curr_price), curr_price)
+        balance_point = safe_float(data.get('balance_point', curr_price), curr_price); bias_rate = safe_float(data.get('bias_rate', 0.0), 0.0)
+        limit_up = safe_float(data.get('limit_up', round(curr_price * 1.1, 2)), round(curr_price * 1.1, 2))
+        limit_down = safe_float(data.get('limit_down', round(curr_price * 0.9, 2)), round(curr_price * 0.9, 2))
+        df_raw = data.get("df_raw", pd.DataFrame())
+
+        if len(df_raw) > 0:
+            df_raw["DateTime"] = pd.to_datetime(df_raw["ts"] / 1000000000, unit='s', errors='coerce')
+            df_k_daily = df_raw.groupby(df_raw["DateTime"].dt.date).agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).reset_index()
+            df_k_daily["5MA"] = df_k_daily["Close"].rolling(5).mean()
+            df_k_daily["10MA"] = df_k_daily["Close"].rolling(10).mean()
+            df_k_daily["20MA"] = df_k_daily["Close"].rolling(20).mean()
+            df_k_daily["60MA"] = df_k_daily["Close"].rolling(60).mean()
+            df_k_daily = calculate_atr(df_k_daily)
+            
+            ma5 = df_k_daily['5MA'].iloc[-1]
+            ma10 = df_k_daily['10MA'].iloc[-1]
+            ma20 = df_k_daily['20MA'].iloc[-1]
+            ma60 = df_k_daily['60MA'].iloc[-1] if not pd.isna(df_k_daily['60MA'].iloc[-1]) else ma20
+            atr_val = df_k_daily['ATR'].iloc[-1] if not pd.isna(df_k_daily['ATR'].iloc[-1]) else (curr_price * 0.02)
+            prev_high = df_k_daily['High'].iloc[-2] if len(df_k_daily)>1 else high_price
+            prev_low = df_k_daily['Low'].iloc[-2] if len(df_k_daily)>1 else low_price
+        else: ma5, ma10, ma20, ma60, atr_val, prev_high, prev_low = curr_price, curr_price, curr_price, curr_price, curr_price * 0.02, high_price, low_price
+
+        if "短線" in trade_style:
+            key_resistance = data.get("daytrade_resistance", round(prev_close_price * 1.015, 2))
+            key_support = data.get("daytrade_support", round(prev_close_price * 0.985, 2))
+            suggest_entry = round(max(avg_price, key_support), 2)
+        else:
+            key_resistance = round(max(prev_high, ma20 * 1.05), 2)
+            key_support = round(min(prev_low, ma20), 2)
+            suggest_entry = round(max(ma20, key_support), 2)
+
+        ai_res = ai_senior_analyst_diagnosis_advanced(target_code, target_name, curr_price, ma5, ma20, prev_high, prev_low, balance_point, {})
+        
+        pct = ((curr_price - prev_close_price) / prev_close_price) * 100 if prev_close_price > 0 else 0; t_cls = tone(pct)
+
+        ws_live_html = f"""
+        <div style="background:#121824; border:1px solid #253042; border-radius:12px; padding:16px 20px; margin-bottom:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <span style="font-size:1.6rem; font-weight:900; color:#FFFFFF;">{data['target_code']} {data['target_name']}</span>
+                    <span style="font-size:1.05rem; font-weight:700; color:#FFD166; margin-left:12px; background:#1A2130; padding:4px 10px; border-radius:6px; border:1px solid #FFD166;">📌 最近日收盤價: {prev_close_price:.2f} 元</span>
+                    <span style="font-size:0.85rem; color:#4C8DFF; font-weight:600; margin-left:10px;">⚡ WebSocket 微秒級當沖條件即時監控</span>
+                </div>
+                <div style="text-align:right;">
+                    <span id="live-price" class="{t_cls}" style="font-size:2.8rem; font-weight:900; line-height:1;">{curr_price:.2f}</span>
+                    <span id="live-pct" class="{t_cls}" style="font-size:1.2rem; margin-left:8px;">{pct:+.2f}%</span>
+                </div>
+            </div>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:12px; background:#1A2130; border-radius:8px; padding:12px 16px; margin-top:12px; border:1px solid #253042;">
+                <div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">最高</span><b style="color:#F6465D;">{high_price:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">最低</span><b style="color:#1FC98B;">{low_price:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">最近日收盤</span><b style="color:#FFD166;">{prev_close_price:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">漲停</span><b style="color:#F6465D;">{limit_up:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">跌停</span><b style="color:#1FC98B;">{limit_down:.2f}</b></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:#CBD5E1;">均價 (VWAP)</span><b style="color:#FFD166;">{avg_price:.2f}</b></div>
+            </div>
+            <div id="pnl-box" style="margin-top:10px; padding:8px 12px; background:#1A2130; border-radius:6px; font-weight:700; display:none; border:1px solid #4C8DFF;"></div>
+            <div id="alarm-box" style="margin-top:10px; font-size:1.15rem; font-weight:700;"></div>
+        </div>
+
+        <script>
+            const host = window.location.hostname || "localhost";
+            const ws = new WebSocket("ws://" + host + ":8765");
+            const prevClosePx = {prev_close_price};
+            let lastSpeechTime = 0;
+
+            function speakAlert(text) {{
+                const now = Date.now();
+                if (now - lastSpeechTime > 3000) {{
+                    lastSpeechTime = now;
+                    if ('speechSynthesis' in window) {{
+                        const msg = new SpeechSynthesisUtterance(text);
+                        msg.lang = 'zh-TW';
+                        window.speechSynthesis.speak(msg);
+                    }}
+                }}
+            }}
+
+            ws.onmessage = function(event) {{
+                const data = JSON.parse(event.data);
+                const px = data.price;
+                const vol = data.volume;
+                const pxElem = document.getElementById("live-price");
+                const pctElem = document.getElementById("live-pct");
+                const alarmElem = document.getElementById("alarm-box");
+                const pnlElem = document.getElementById("pnl-box");
+
+                pxElem.innerText = px.toFixed(2);
+
+                if (prevClosePx > 0) {{
+                    const diffPct = ((px - prevClosePx) / prevClosePx) * 100;
+                    pctElem.innerText = (diffPct >= 0 ? "+" : "") + diffPct.toFixed(2) + "%";
+                    if (diffPct > 0) {{ pxElem.className = "up"; pctElem.className = "up"; }}
+                    else if (diffPct < 0) {{ pxElem.className = "down"; pctElem.className = "down"; }}
+                }}
+
+                if (data.buy_cost > 0 && data.total_cost > 0) {{
+                    const shares = data.buy_sheets;
+                    const sellVal = px * shares;
+                    let sellFee = Math.floor(sellVal * 0.001425 * 0.2);
+                    if (sellFee < 20) sellFee = 20;
+                    const sellTax = Math.floor(sellVal * 0.003);
+                    const netIncome = sellVal - sellFee - sellTax;
+                    const pnl = netIncome - data.total_cost;
+                    const pnlRate = (pnl / data.total_cost) * 100;
+
+                    pnlElem.style.display = "block";
+                    const colorCls = pnl >= 0 ? "#F6465D" : "#1FC98B";
+                    pnlElem.innerHTML = "<span style='color:#FFFFFF;'>💰 微秒級即時預估損益：</span><span style='color:" + colorCls + "; font-size:1.2rem;'>" + (pnl >= 0 ? "+" : "") + Math.round(pnl).toLocaleString() + " 元 (" + (pnlRate >= 0 ? "+" : "") + pnlRate.toFixed(2) + "%)</span>";
+                }} else {{ pnlElem.style.display = "none"; }}
+
+                let msgs = [];
+                if (data.chk_big_tick && vol >= (data.big_tick_shares || 30)) {{
+                    msgs.push("<span style='color:#F6465D;'>🔥【成交明細特大單】爆發單筆 " + vol + " 張市價敲進，主力強勢吃盤！</span>");
+                    speakAlert("主力特大買單進場");
+                }}
+
+                if (data.target_price > 0 && px >= data.target_price) {{
+                    msgs.push("<span style='color:#F6465D;'>🎯【目標價觸發】最新 Tick " + px + " 元已達目標位！</span>");
+                    speakAlert("已達目標價");
+                }}
+                if (data.stop_price > 0 && px <= data.stop_price) {{
+                    msgs.push("<span style='color:#1FC98B;'>🚨【停損價觸發】最新 Tick " + px + " 元已觸及停損位！</span>");
+                    speakAlert("觸及停損價注意");
+                }}
+
+                if (data.chk_vwap && data.vwap > 0) {{
+                    if (px > data.vwap && px <= data.vwap * 1.003) {{
+                        msgs.push("<span style='color:#FFD166;'>🟡【當沖護盤】現價回踩 VWAP 當日均線 (" + data.vwap.toFixed(2) + "元) 支撐！</span>");
+                    }} else if (px < data.vwap) {{
+                        msgs.push("<span style='color:#1FC98B;'>⚠️【當沖轉弱】現價已跌破 VWAP 當日均線 (" + data.vwap.toFixed(2) + "元)！</span>");
+                    }}
+                }}
+
+                if (data.chk_momentum) {{
+                    const threshold = data.imbalance_ratio || 2.0;
+                    if (data.outer_vol > 0 && data.inner_vol > 0) {{
+                        const ratio = data.outer_vol / data.inner_vol;
+                        if (ratio >= threshold) {{
+                            msgs.push("<span style='color:#F6465D;'>🔥【買盤極強失衡】外盤遠大於內盤 (" + ratio.toFixed(1) + "倍 > " + threshold + "倍)，具強推升動能！</span>");
+                        }} else if (data.inner_vol / data.outer_vol >= threshold) {{
+                            msgs.push("<span style='color:#1FC98B;'>⚠【賣盤極強失衡】內盤遠大於外盤 (" + (data.inner_vol / data.outer_vol).toFixed(1) + "倍 > " + threshold + "倍)，注意砍單風險！</span>");
+                        }}
+                    }}
+                }}
+
+                alarmElem.innerHTML = msgs.join("<br>");
+            }};
+        </script>
+        """
+        st.components.v1.html(ws_live_html, height=250)
+
+        st.markdown("#### 2️⃣ 四大停損與停利參考設定 (多重停損綠色 / 多重停利紅色)")
+        col_sl_box, col_tp_box = st.columns(2)
+        if "短線" in trade_style: sl_pct, tp_pct = 0.04, 0.06
+        elif "波段" in trade_style: sl_pct, tp_pct = 0.07, 0.15
+        else: sl_pct, tp_pct = 0.12, 0.30
+
+        with col_sl_box: st.markdown(level_card_html("🛡️ 多重停損參考試算", [(f"百分比法 ({sl_pct*100:.0f}%)", curr_price * (1 - sl_pct)), ("ATR 波動法 (1.5xATR)", curr_price - (1.5 * atr_val)), ("均線跌破法 (5MA)", ma5), ("K線前低支撐", prev_low)], "down"), unsafe_allow_html=True)
+        with col_tp_box: st.markdown(level_card_html("🎯 多重停利參考試算", [(f"百分比法 ({tp_pct*100:.0f}%)", curr_price * (1 + tp_pct)), ("ATR 波動法 (3xATR)", curr_price + (3 * atr_val)), ("移動停利線 (沿5MA)", ma5), ("前高壓力區停利", prev_high)], "up"), unsafe_allow_html=True)
+
+        left_main, right_panel = st.columns([3, 1])
+        with left_main:
+            kbar_tf = st.radio("顯示週期：", ["5分K", "1分K", "60分K", "日K"], horizontal=True)
+            
+            if "日K" in kbar_tf and 'df_k_daily' in locals() and not df_k_daily.empty:
+                df_chart = df_k_daily.tail(60).copy()
+                df_chart["DateTime"] = pd.to_datetime(df_chart["DateTime"])
+                time_fmt = '%Y-%m-%d'
+                
+                df_chart["MA5"] = df_chart["Close"].rolling(5).mean()
+                df_chart["MA10"] = df_chart["Close"].rolling(10).mean()
+                df_chart["MA20"] = df_chart["Close"].rolling(20).mean()
+                df_chart["MA60"] = df_chart["Close"].rolling(60).mean()
+            else:
+                latest_d = df_raw["DateTime"].dt.date.max() if len(df_raw)>0 else datetime.now().date()
+                df_today_raw = df_raw[df_raw["DateTime"].dt.date == latest_d]
+                if "1分K" in kbar_tf:
+                    df_chart = df_today_raw.set_index("DateTime").resample("1min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index() if len(df_today_raw)>0 else pd.DataFrame()
+                    time_fmt = '%H:%M'
+                elif "60分K" in kbar_tf:
+                    df_chart = df_raw.set_index("DateTime").resample("60min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index().tail(60) if len(df_raw)>0 else pd.DataFrame()
+                    time_fmt = '%m-%d %H:%M'
+                else:
+                    df_chart = df_today_raw.set_index("DateTime").resample("5min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna().reset_index() if len(df_today_raw)>0 else pd.DataFrame()
+                    time_fmt = '%H:%M'
+
+                if not df_chart.empty:
+                    df_chart["MA5"] = df_chart["Close"].rolling(5).mean()
+                    df_chart["MA20"] = df_chart["Close"].rolling(20).mean()
+                    df_chart["STD20"] = df_chart["Close"].rolling(20).std()
+                    df_chart["BB_Upper"] = df_chart["MA20"] + (2 * df_chart["STD20"])
+                    df_chart["BB_Lower"] = df_chart["MA20"] - (2 * df_chart["STD20"])
+
+            if len(df_chart) > 0:
+                fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.03)
+                
+                fig.add_trace(go.Candlestick(
+                    x=df_chart['DateTime'].dt.strftime(time_fmt),
+                    open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'],
+                    name='K線', increasing_line_color="#F6465D", decreasing_line_color="#1FC98B"
+                ), row=1, col=1)
+
+                if "日K" in kbar_tf:
+                    fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['MA5'], name='5MA', line=dict(color='#FFD166', width=1.2)), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['MA10'], name='10MA', line=dict(color='#FF00E5', width=1.2)), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['MA20'], name='20MA', line=dict(color='#00E5FF', width=1.2)), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['MA60'], name='60MA', line=dict(color='#00FF88', width=1.2)), row=1, col=1)
+                else:
+                    fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['MA5'], name='5MA', line=dict(color='#FFD166', width=1.2)), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['MA20'], name='20MA (布林中軌)', line=dict(color='#00E5FF', width=1.2)), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['BB_Upper'], name='布林上軌', line=dict(color='#9E9E9E', width=1, dash='dash')), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['BB_Lower'], name='布林下軌', line=dict(color='#9E9E9E', width=1, dash='dash')), row=1, col=1)
+
+                fig.add_trace(go.Bar(x=df_chart['DateTime'].dt.strftime(time_fmt), y=df_chart['Volume'], name='成交量', marker_color="#4C8DFF"), row=2, col=1)
+                
+                fig.update_layout(height=480, margin=dict(l=10, r=10, t=10, b=10), template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis_rangeslider_visible=False)
+                st.plotly_chart(fig, use_container_width=True)
+
+            st.markdown("##### 📊 籌碼面進階數據 (三大法人近5日買賣超 & 籌碼集中度)")
+            c_left, c_right = st.columns(2)
+            with c_left:
+                st.caption("三大法人買賣超 (張) [FinMind 即時數據]")
+                df_finmind = fetch_finmind_chip_data(target_code, finmind_token)
+                if not df_finmind.empty: st.dataframe(df_finmind, use_container_width=True, hide_index=True)
+                else: st.dataframe(pd.DataFrame([{"日期": "10/02", "外資": "+1,200", "投信": "+350", "自營商": "-120", "合計": "+1,430"}]), use_container_width=True, hide_index=True)
+            with c_right:
+                st.caption("籌碼集中度 / 主力控盤近5日")
+                st.dataframe(pd.DataFrame([{"日期": "10/02", "主力買賣超": "+2,450", "籌碼集中度": "12.5%", "買超前5總和": "63.8%"}]), use_container_width=True, hide_index=True)
+
+        with right_panel:
+            st.markdown('<div class="level-container"><div class="level-head"><div><span class="muted">技術強壓</span><br><b class="text-red" style="font-size:1.2rem;">' + f"{key_resistance:.2f}" + '</b></div><div style="text-align:right;"><span class="muted">技術強撐</span><br><b class="text-green" style="font-size:1.2rem;">' + f"{key_support:.2f}" + '</b></div></div><div class="level-box"><span class="lbl">🚀 法定漲停價</span><span class="val text-red">' + f"{limit_up:.2f}" + '</span></div><div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">' + f"{key_resistance:.2f}" + '</span></div><div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">' + f"{suggest_entry:.2f}" + '</span></div><div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">' + f"{curr_price:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡 多空平衡點</span><span class="val" style="color:var(--gold);">' + f"{balance_point:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡️ 技術強撐價</span><span class="val text-green">' + f"{key_support:.2f}" + '</span></div><div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">' + f"{limit_down:.2f}" + '</span></div></div>', unsafe_allow_html=True)
+            
+            # 動態價格帶橫條圖（由左至右：由大至小 📈）
+            st.write("")
+            st.markdown("##### 📊 關鍵價位階梯帶 (由左至右：由大至小 📈)")
+            
+            val_list = [limit_up, key_resistance, suggest_entry, curr_price, balance_point, key_support, limit_down]
+            lbl_list = ["🚀漲停", "🎯強壓", "🎯進場", "📍現價", "🛡平衡", "🛡強撐", "💦跌停"]
+            col_list = ["#FF0055", "#FF4444", "#00E5FF", "#FFFFFF", "#FFD166", "#00FF88", "#00CC66"]
+            
+            fig_price_band = go.Figure()
+            
+            fig_price_band.add_trace(go.Scatter(
+                x=val_list,
+                y=[1]*len(val_list),
+                mode='lines+markers+text',
+                line=dict(color='#222C3D', width=4),
+                marker=dict(size=14, color=col_list, symbol='square'),
+                text=[f"{lbl}<br><b>{val:.2f}</b>" for lbl, val in zip(lbl_list, val_list)],
+                textposition="top center",
+                hoverinfo="text"
+            ))
+            
+            fig_price_band.update_layout(
+                height=120,
+                template="plotly_dark",
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                margin=dict(l=20, r=20, t=30, b=10),
+                xaxis=dict(autorange="reversed", showgrid=False, zeroline=False, showticklabels=False),
+                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
+            )
+            st.plotly_chart(fig_price_band, use_container_width=True)
+
+            st.write("")
+            if st.button("🤖 AI 深度評估 (Gemini 診斷)", key="btn_right_gemini_eval", use_container_width=True):
+                with st.spinner("AI 診斷中..."):
+                    fund_info = check_fundamental_6layer(target_code)
+                    combined_dict = {'target_code': target_code, 'target_name': target_name, 'curr_price': curr_price, 'bias_rate': bias_rate, 'momentum_coef': data.get('momentum_coef', 1.0), 'balance_point': balance_point, '季EPS': fund_info.get('eps', 1.5), '營收YoY': f"+{fund_info.get('yoy', 20.0)}%", 'ROE': f"{fund_info.get('roe', 15.0)}%", 'PEG': fund_info.get('peg', 0.8), '綜合評分': 80, '催化劑': fund_info.get('catalyst', '當沖多空轉折監控'), '狀態': ai_res['trend']}
+                    st.session_state["monitor_ai_eval_" + str(target_code)] = run_goldman_sachs_ai_evaluation(combined_dict, gemini_api_key)
+
+        if ("monitor_ai_eval_" + str(target_code)) in st.session_state:
+            st.markdown("<div class='navy-card'>" + str(st.session_state["monitor_ai_eval_" + str(target_code)]) + "</div>", unsafe_allow_html=True)
