@@ -399,7 +399,7 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     return "❌ 呼叫 Gemini API 失敗，請確認 API Key 權限。\n錯誤明細: " + (err_msgs[0] if err_msgs else "無回應")
 
 # =========================================================
-# 🧮 4. 四大核心關鍵價位演算引擎 (全自動強平產生 [M][V2] 雙標籤與單標籤，剔除雜訊)
+# 🧮 4. 四大核心關鍵價位演算引擎 (安全且強化的點對點融合)
 # =========================================================
 def calculate_advanced_key_levels(df, curr_price):
     curr_p = safe_float(curr_price)
@@ -420,9 +420,9 @@ def calculate_advanced_key_levels(df, curr_price):
             if not np.isnan(ma_val):
                 ma_levels.append(ma_val)
 
-    # 3️⃣ 分價量累積區 Volume Profile [V2] (計算前 3 大成交流動集中峰值)
+    # 3️⃣ 分價量累積區 Volume Profile [V2]
     p_min, p_max = df['Low'].min(), df['High'].max()
-    bins = np.linspace(p_min, p_max, 15) # 15 區等距，凝聚籌碼峰
+    bins = np.linspace(p_min, p_max, 15)
     df['PriceBin'] = pd.cut(df['Close'], bins=bins)
     vol_profile = df.groupby('PriceBin', observed=False)['Volume'].sum()
     sorted_vols = vol_profile.sort_values(ascending=False)
@@ -433,24 +433,30 @@ def calculate_advanced_key_levels(df, curr_price):
         if bin_val:
             v2_levels.append(round((bin_val.left + bin_val.right) / 2, 2))
 
-    # 4️⃣ 精確點對點比對 (融合 [M] 均線與 [V2] 籌碼大單價位)
+    # 4️⃣ 波段轉折高低點 (Pivot Points) 宣告與演算
+    pivots = []
+    for i in range(2, len(df) - 2):
+        if df['High'].iloc[i] > df['High'].iloc[i-1] and df['High'].iloc[i] > df['High'].iloc[i-2] and \
+           df['High'].iloc[i] > df['High'].iloc[i+1] and df['High'].iloc[i] > df['High'].iloc[i+2]:
+            pivots.append(round(df['High'].iloc[i], 2))
+        if df['Low'].iloc[i] < df['Low'].iloc[i-1] and df['Low'].iloc[i] < df['Low'].iloc[i-2] and \
+           df['Low'].iloc[i] < df['Low'].iloc[i+1] and df['Low'].iloc[i] < df['Low'].iloc[i+2]:
+            pivots.append(round(df['Low'].iloc[i], 2))
+
+    # 5️⃣ 精確比對與融合標籤產生
     def build_level_candidates(price_list, is_resistance=True):
         candidates = []
         filtered_prices = [p for p in price_list if (p > curr_p if is_resistance else p < curr_p)]
         
         for px in set(filtered_prices):
-            # 檢查是否靠近任何一條均線 (價差 3.5% 內)
             near_ma = any(abs(px - ma) / px <= 0.035 for ma in ma_levels)
-            # 檢查是否靠近分價量大單區 (價差 3.5% 內)
             near_v2 = any(abs(px - vp) / px <= 0.035 for vp in v2_levels)
 
-            # 強制賦予標籤
             is_m_tag = near_ma
             is_v2_tag = near_v2
             
-            # 如果兩者都不是，強制將重要的籌碼峰值/關鍵均線顯現
             if not is_m_tag and not is_v2_tag:
-                is_m_tag = True # 設為均線支撐/壓力位
+                is_m_tag = True
                 
             candidates.append({
                 'price': px,
@@ -458,7 +464,6 @@ def calculate_advanced_key_levels(df, curr_price):
                 'is_v2': is_v2_tag
             })
             
-        # 融合非常相近的價格帶 (2.0% 以內合併)
         merged = []
         candidates = sorted(candidates, key=lambda x: x['price'], reverse=not is_resistance)
         for item in candidates:
@@ -474,20 +479,17 @@ def calculate_advanced_key_levels(df, curr_price):
             if not matched:
                 merged.append(item)
 
-        # 排序權重：雙標籤 [M][V2] 優先 ➔ 單標籤 ➔ 其他
         merged = sorted(merged, key=lambda x: (
             3 if (x['is_ma'] and x['is_v2']) else (2 if (x['is_ma'] or x['is_v2']) else 1),
             -x['price'] if is_resistance else x['price']
         ), reverse=True)
 
-        # 最多取前 3 個最重要的關卡，並按與現價近遠排序
-        result = merged[:3]
-        result = sorted(result, key=lambda x: x['price'], reverse=not is_resistance)
+        top_3 = merged[:3]
+        top_3 = sorted(top_3, key=lambda x: x['price'], reverse=not is_resistance)
 
         final_levels = []
-        for idx, item in enumerate(result):
-            # 💡 保障機制：若沒有產生雙標籤，強制將第一道主要關卡設為雙標籤共振！
-            is_dual = (item['is_ma'] and item['is_v2']) or (idx == 0 and len(result) > 0)
+        for idx, item in enumerate(top_3):
+            is_dual = (item['is_ma'] and item['is_v2']) or (idx == 0 and len(top_3) > 0)
             
             tags = ""
             if is_dual or item['is_ma']:
@@ -1821,25 +1823,26 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
             with t4: render_smart_stock_table(df_hot.sort_values(by="漲跌幅(%)", ascending=True), "hot_down")
         except Exception as e: st.error("錯誤: " + str(e))
 
-# ⚡ 當沖強勢股全台股上市櫃（1800+檔）雙階段獨立控制掃描器
+# ⚡ 當沖強勢股全台股上市櫃（1800+檔）雙模式切換篩選器 (大盤重挫逆勢亮燈強勢股捕捉)
 elif app_mode == "⚡ 當沖強勢股篩選":
-    st.title("⚡ 全台股（1,800+ 檔上市櫃）當沖強勢股雙階段雙重安全防護掃描器")
-    st.caption("【全市場初選】遍歷 TSE/OTC 所有人氣流動性個股 ➔ 【進階掃描】三大核心條件 + 排除處置股與鎖漲跌停危險標的。")
+    st.title("⚡ 全台股（1,800+ 檔上市櫃）當沖/逆勢強勢股雙模式雙重防護掃描器")
+    st.caption("【全市場初選】遍歷 TSE/OTC 所有人氣流動性個股 ➔ 【進階掃描】三大核心條件 + 可選放寬股價區間/捕捉逆勢亮燈鎖漲停股。")
 
     with st.sidebar.expander("⚙️ 第一階段：全市場初選門檻設定", expanded=True):
-        p1_min_vol = st.number_input("① 最低成交量門檻 (張)", value=1000, step=100)
-        p1_min_amt = st.number_input("② 最低成交金額門檻 (萬元)", value=5000, step=500)
-        p1_min_amp = st.number_input("③ 最低當日振幅門檻 (%)", value=3.0, step=0.5)
+        p1_min_vol = st.number_input("① 最低成交量門檻 (張)", value=500, step=100) # 調降至 500 張防漏
+        p1_min_amt = st.number_input("② 最低成交金額門檻 (萬元)", value=2000, step=500) # 調降至 2000 萬元
+        p1_min_amp = st.number_input("③ 最低當日振幅門檻 (%)", value=2.5, step=0.5)
 
     with st.sidebar.expander("⚙️ 第二階段：三大核心條件與危險標的排除設定", expanded=True):
-        p2_chk_price_range = st.checkbox("① 優先黃金股價區間 (50 ~ 200 元)", value=True)
+        p2_mode = st.radio("🎯 篩選戰術目標模式", ["⚡ 標準當沖模式 (排除鎖漲停)", "🔥 逆勢強勢股模式 (含快鎖漲停/低基期黑馬股)"])
+        p2_chk_price_range = st.checkbox("① 優先黃金股價區間 (放寬為 15 ~ 250 元)", value=True)
         p2_chk_vwap = st.checkbox("② 站上當日均線 VWAP / 盤前題材動能", value=True)
-        p2_pred_vol_mult = st.number_input("③ 今日預估爆量倍數門檻", value=1.5, step=0.5)
+        p2_pred_vol_mult = st.number_input("③ 今日預估爆量倍數門檻", value=1.2, step=0.1) # 下修至 1.2 倍防漏
         
         st.markdown("---")
         p2_exclude_disposal = st.checkbox("⛔ 排除處置股/變更交易法 (關禁閉標的)", value=True)
-        p2_exclude_limit = st.checkbox("⛔ 排除已被鎖漲停/鎖跌停標的 (防違約交割)", value=True)
-        p2_max_dt_ratio = st.number_input("⛔ 排除極端高當沖比上限 % (防洗盤)", value=75.0, step=5.0)
+        # 根據選定的模式，自動決定是否排除接近漲停的標的
+        p2_exclude_limit = (p2_mode == "⚡ 標準當沖模式 (排除鎖漲停)")
 
     if st.button("🚀 1. 執行第一階段：全台股 1,800+ 檔上市櫃人氣初選", type="primary"):
         api_filter = get_shioaji_api(api_key, secret_key)
@@ -1884,7 +1887,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                                     "今日成交量(張)": tot_vol, "成交金額(萬元)": tot_amt_wan, "篩選階段": "第一階段初選通過"
                                 })
                 else:
-                    sample_codes = ["3624", "2360", "8111", "4971", "4991", "4908", "2466", "3006", "2330", "2454", "2317", "3374", "1785", "3081", "3088", "3219", "3228"]
+                    sample_codes = ["3624", "2360", "8111", "4971", "4991", "4908", "2466", "3006", "2330", "2454", "2317", "3374", "1785", "3081", "3088", "3219", "3228", "6269", "3354", "3485", "3406", "6278", "2429", "6925", "2424", "2033", "8437", "4924", "2380"]
                     snaps_df = fetch_real_stock_snapshots(sample_codes, "初選熱門")
                     for _, r in snaps_df.iterrows():
                         stage1_results.append({
@@ -1924,15 +1927,20 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                                 contract = api_filter.Contracts.Stocks.get(code)
                                 if not contract: continue
 
+                                # ⛔ 1. 處置股/變更交易法排除
                                 if p2_exclude_disposal and ("*" in name or "處置" in str(getattr(contract, 'status', ''))): continue
 
+                                # 🎯 2. 股價區間放寬判斷 (15 ~ 250 元，確保囊括中低價飆股/防禦股)
+                                min_p = 15.0 if p2_chk_price_range else 0.0
+                                max_p = 250.0 if p2_chk_price_range else 9999.0
+                                if not (min_p <= curr_p <= max_p): continue
+
+                                # ⛔ 3. 漲停排除開關 (若為「逆勢強勢股模式」，則不剔除漲停/快鎖漲停股)
                                 limit_up = safe_float(getattr(contract, 'price_up', curr_p * 1.1))
-                                limit_down = safe_float(getattr(contract, 'price_down', curr_p * 0.9))
-                                if p2_exclude_limit:
-                                    if curr_p >= limit_up * 0.995 or curr_p <= limit_down * 1.005: continue
+                                if p2_exclude_limit and curr_p >= limit_up * 0.992:
+                                    continue
 
-                                if p2_chk_price_range and not (50.0 <= curr_p <= 200.0): continue
-
+                                # 🎯 4. 預估爆量與題材熱度
                                 kbars = api_filter.kbars(contract=contract, start=start_date, end=end_date)
                                 df_raw = pd.DataFrame({"ts": kbars.ts, "Open": kbars.Open, "High": kbars.High, "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume})
                                 if len(df_raw) < 10: continue
@@ -1944,23 +1952,27 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                                 pred_vol_ratio = round(tot_vol / prev_vol, 2) if prev_vol > 0 else 1.0
                                 if pred_vol_ratio < p2_pred_vol_mult: continue
 
+                                # 🎯 5. 均線 VWAP 站上判斷
                                 vwap = safe_float(getattr(contract, 'average_price', curr_p))
                                 if p2_chk_vwap and vwap > 0 and curr_p < vwap: continue
+
+                                is_near_limit_up = (curr_p >= limit_up * 0.985)
+                                status_lbl = "🔥 逆勢亮燈/強勢鎖板" if is_near_limit_up else "🟢 第二階段精選通過"
 
                                 item_copy = dict(item)
                                 item_copy.update({
                                     "預估爆量倍數": f"{pred_vol_ratio} 倍",
-                                    "黃金股價帶": "🟢 50~200元價差充裕" if (50<=curr_p<=200) else "⚪ 其他區間",
+                                    "股價帶": "🟢 15~250元價差充裕" if (15<=curr_p<=250) else "⚪ 其他區間",
                                     "VWAP均線位階": "🟢 站上當日均線 (多頭點火)" if curr_p >= vwap else "🔴 均線下方",
-                                    "危險標的檢查": "✅ 已安全排除處置/鎖漲跌停/洗盤股",
+                                    "篩選特徵": status_lbl,
                                     "篩選階段": "第二階段精選全部通過"
                                 })
                                 stage2_results.append(item_copy)
 
                             st.session_state["stage2_data"] = stage2_results
                             if stage2_results:
-                                st.success("🏆 第二階段嚴格精選完成！已成功排除處置/鎖板危險標的，篩選出最佳當沖標的：")
-                            else: st.warning("ℹ 第二階段精選中，第一階段標的暫無個股同時符合您設定的三大核心與安全排除門檻。")
+                                st.success("🏆 第二階段嚴格精選完成！已順利篩選出當前最佳標的：")
+                            else: st.warning("ℹ 第二階段精選中，第一階段標的暫無個股同時符合您設定的三大核心門檻。")
                         except Exception as e: st.error("第二階段精選失敗: " + str(e))
 
         with col_btn_three:
@@ -2660,7 +2672,7 @@ else:
             # 1️⃣ 保留原盯盤戰情室
             st.markdown('<div class="level-container"><div class="level-head"><div><span class="muted">技術強壓</span><br><b class="text-red" style="font-size:1.2rem;">' + f"{key_resistance:.2f}" + '</b></div><div style="text-align:right;"><span class="muted">技術強撐</span><br><b class="text-green" style="font-size:1.2rem;">' + f"{key_support:.2f}" + '</b></div></div><div class="level-box"><span class="lbl">🚀 法定漲停價</span><span class="val text-red">' + f"{limit_up:.2f}" + '</span></div><div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">' + f"{key_resistance:.2f}" + '</span></div><div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">' + f"{suggest_entry:.2f}" + '</span></div><div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">' + f"{curr_price:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡 多空平衡點</span><span class="val" style="color:var(--gold);">' + f"{balance_point:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡️ 技術強撐價</span><span class="val text-green">' + f"{key_support:.2f}" + '</span></div><div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">' + f"{limit_down:.2f}" + '</span></div></div>', unsafe_allow_html=True)
             
-            # 2️⃣ 新增專屬四大核心關鍵價位表 (強制融合點對點產生 [M][V2] 雙標籤)
+            # 2️⃣ 新增專屬四大核心關鍵價位表
             key_levels_data = calculate_advanced_key_levels(df_raw, curr_price)
             render_right_key_levels_panel(key_levels_data)
 
