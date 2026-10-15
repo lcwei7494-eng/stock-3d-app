@@ -399,7 +399,7 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     return "❌ 呼叫 Gemini API 失敗，請確認 API Key 權限。\n錯誤明細: " + (err_msgs[0] if err_msgs else "無回應")
 
 # =========================================================
-# 🧮 4. 四大核心關鍵價位演算引擎 (修復標籤優先權與共振融合)
+# 🧮 4. 四大核心關鍵價位演算引擎 (徹底修正雙標籤 [M][V2] 融合與顯示順序)
 # =========================================================
 def calculate_advanced_key_levels(df, curr_price):
     curr_p = safe_float(curr_price)
@@ -420,15 +420,18 @@ def calculate_advanced_key_levels(df, curr_price):
             if not np.isnan(ma_val):
                 ma_dict[f"MA{ma_len}"] = ma_val
 
-    # 3️⃣ 分價量累積區 [V2]
+    # 3️⃣ 分價量累積區 Volume Profile [V2] (優化：計算前兩大成交流動區間)
     p_min, p_max = df['Low'].min(), df['High'].max()
-    bins = np.linspace(p_min, p_max, 30)
+    bins = np.linspace(p_min, p_max, 20) # 精簡為 20 區，提升集中度
     df['PriceBin'] = pd.cut(df['Close'], bins=bins)
     vol_profile = df.groupby('PriceBin', observed=False)['Volume'].sum()
-    
     sorted_vols = vol_profile.sort_values(ascending=False)
-    v2_price_bin = sorted_vols.index[1] if len(sorted_vols) > 1 else sorted_vols.index[0]
-    v2_price = round((v2_price_bin.left + v2_price_bin.right) / 2, 2) if v2_price_bin else None
+    
+    v2_prices = []
+    for i in range(min(2, len(sorted_vols))):
+        bin_val = sorted_vols.index[i]
+        if bin_val:
+            v2_prices.append(round((bin_val.left + bin_val.right) / 2, 2))
 
     # 4️⃣ 波段轉折高低點 (Pivot Points)
     pivots = []
@@ -444,29 +447,30 @@ def calculate_advanced_key_levels(df, curr_price):
     raw_resistances = []
     raw_supports = []
 
+    # 匯入均線 [M]
     for ma_name, ma_val in ma_dict.items():
-        if ma_val > curr_p:
-            raw_resistances.append({'price': ma_val, 'is_ma': True, 'is_v2': False})
-        elif ma_val < curr_p:
-            raw_supports.append({'price': ma_val, 'is_ma': True, 'is_v2': False})
+        item = {'price': ma_val, 'is_ma': True, 'is_v2': False}
+        if ma_val > curr_p: raw_resistances.append(item)
+        elif ma_val < curr_p: raw_supports.append(item)
 
-    if v2_price:
-        if v2_price > curr_p:
-            raw_resistances.append({'price': v2_price, 'is_ma': False, 'is_v2': True})
-        elif v2_price < curr_p:
-            raw_supports.append({'price': v2_price, 'is_ma': False, 'is_v2': True})
+    # 匯入分價量區域 [V2]
+    for vp in v2_prices:
+        item = {'price': vp, 'is_ma': False, 'is_v2': True}
+        if vp > curr_p: raw_resistances.append(item)
+        elif vp < curr_p: raw_supports.append(item)
 
+    # 匯入 Pivot 轉折點
     for pv in set(pivots):
-        if pv > curr_p:
-            raw_resistances.append({'price': pv, 'is_ma': False, 'is_v2': False})
-        elif pv < curr_p:
-            raw_supports.append({'price': pv, 'is_ma': False, 'is_v2': False})
+        item = {'price': pv, 'is_ma': False, 'is_v2': False}
+        if pv > curr_p: raw_resistances.append(item)
+        elif pv < curr_p: raw_supports.append(item)
 
-    # 6️⃣ 價位融合與標籤優先級處置
+    # 6️⃣ 價位重疊融合與雙標籤強平邏輯
     def merge_and_label(level_list, is_resistance=True):
         if not level_list:
             return []
         
+        # 壓力：從小到大排序；支撐：從大到小排序
         level_list = sorted(level_list, key=lambda x: x['price'], reverse=not is_resistance)
         merged = []
         
@@ -474,29 +478,37 @@ def calculate_advanced_key_levels(df, curr_price):
             px = item['price']
             matched = False
             for m in merged:
-                if abs(m['price'] - px) / px <= 0.020: # 放寬為 2.0% 價格接近即判定為共振關卡
+                # 門檻調鬆至 2.8%，確保貼近的均線與籌碼分價區自動重疊並獲得 [M][V2] 雙標籤！
+                if abs(m['price'] - px) / px <= 0.028:
                     m['is_ma'] = m.get('is_ma', False) or item.get('is_ma', False)
                     m['is_v2'] = m.get('is_v2', False) or item.get('is_v2', False)
                     m['price'] = round((m['price'] + px) / 2, 2)
                     matched = True
                     break
             if not matched:
-                merged.append({'price': px, 'is_ma': item.get('is_ma', False), 'is_v2': item.get('is_v2', False)})
+                merged.append({
+                    'price': px, 
+                    'is_ma': item.get('is_ma', False), 
+                    'is_v2': item.get('is_v2', False)
+                })
         
-        # 優先保留具備 M 或 V2 標籤之關鍵價，再按離現價近遠排序
-        tagged_items = [x for x in merged if x['is_ma'] or x['is_v2']]
-        untagged_items = [x for x in merged if not (x['is_ma'] or x['is_v2'])]
+        # 排序：優先保留 [M][V2] 雙標籤，其次單標籤 [M] / [V2]，最後純數字轉折點
+        def priority_score(x):
+            score = 0
+            if x['is_ma'] and x['is_v2']: score = 3
+            elif x['is_ma'] or x['is_v2']: score = 2
+            else: score = 1
+            return score
+
+        # 依照標籤重要性進行分組排序
+        merged_sorted = sorted(merged, key=lambda x: (priority_score(x), -x['price'] if is_resistance else x['price']), reverse=True)
         
-        # 排序：壓力由小到大 (1最貼近現價)，支撐由大到小 (1最貼近現價)
-        tagged_items = sorted(tagged_items, key=lambda x: x['price'], reverse=not is_resistance)
-        untagged_items = sorted(untagged_items, key=lambda x: x['price'], reverse=not is_resistance)
-        
-        # 標籤優先，再補充純轉折點
-        combined_items = (tagged_items + untagged_items)[:4]
-        combined_items = sorted(combined_items, key=lambda x: x['price'], reverse=not is_resistance)
+        # 取前 4 道最重要的關卡，最後依離現價近遠再次正確排序！
+        top_4 = merged_sorted[:4]
+        top_4 = sorted(top_4, key=lambda x: x['price'], reverse=not is_resistance)
 
         final_levels = []
-        for idx, item in enumerate(combined_items):
+        for idx, item in enumerate(top_4):
             tags = ""
             if item['is_ma']:
                 tags += '<span style="background:#2A364F; color:#4C8DFF; padding:1px 5px; border-radius:4px; font-size:0.72rem; margin-left:4px; font-weight:800;">M</span>'
@@ -2664,10 +2676,10 @@ else:
                 st.dataframe(pd.DataFrame([{"日期": "10/02", "主力買賣超": "+2,450", "籌碼集中度": "12.5%", "買超前5總和": "63.8%"}]), use_container_width=True, hide_index=True)
 
         with right_panel:
-            # 1️⃣ 原本盯盤系統的當沖價位戰情室
+            # 1️⃣ 保留原盯盤戰情室
             st.markdown('<div class="level-container"><div class="level-head"><div><span class="muted">技術強壓</span><br><b class="text-red" style="font-size:1.2rem;">' + f"{key_resistance:.2f}" + '</b></div><div style="text-align:right;"><span class="muted">技術強撐</span><br><b class="text-green" style="font-size:1.2rem;">' + f"{key_support:.2f}" + '</b></div></div><div class="level-box"><span class="lbl">🚀 法定漲停價</span><span class="val text-red">' + f"{limit_up:.2f}" + '</span></div><div class="level-box"><span class="lbl">🎯 技術強壓位</span><span class="val text-red">' + f"{key_resistance:.2f}" + '</span></div><div class="level-box"><span class="lbl">🎯 建議進場價</span><span class="val" style="color:var(--accent);">' + f"{suggest_entry:.2f}" + '</span></div><div class="level-box normal"><span class="lbl">📍 最新成交價</span><span class="val">' + f"{curr_price:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡 多空平衡點</span><span class="val" style="color:var(--gold);">' + f"{balance_point:.2f}" + '</span></div><div class="level-box"><span class="lbl">🛡️ 技術強撐價</span><span class="val text-green">' + f"{key_support:.2f}" + '</span></div><div class="level-box"><span class="lbl">💦 法定跌停價</span><span class="val text-green">' + f"{limit_down:.2f}" + '</span></div></div>', unsafe_allow_html=True)
             
-            # 2️⃣ 另外新增：獨立的四大核心關鍵價位表 (不替換原本戰情室組件，且已優先保留 [M]/[V2] 標籤)
+            # 2️⃣ 新增專屬四大核心關鍵價位表 (標籤優先級與重疊共振修復)
             key_levels_data = calculate_advanced_key_levels(df_raw, curr_price)
             render_right_key_levels_panel(key_levels_data)
 
