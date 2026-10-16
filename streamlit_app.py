@@ -2718,3 +2718,121 @@ else:
         if ("monitor_ai_eval_" + str(target_code)) in st.session_state:
             eval_text = str(st.session_state["monitor_ai_eval_" + str(target_code)])
             st.markdown(f"<div class='navy-card'>{eval_text}</div>", unsafe_allow_html=True)
+import streamlit as st
+
+# 設定頁面標題與配置
+st.set_page_config(page_title="修復表單字體對比度範例", layout="centered")
+
+# -----------------------------------------------------------------------------
+# 注入自訂 CSS：確保所有表單元件在亮色/暗色主題下均具備高對比度與高辨識度
+# -----------------------------------------------------------------------------
+custom_css = """
+<style>
+    /* 1. 修正單行輸入框、多行文字框、數字輸入框的字體與背景對比 */
+    .stTextInput input, 
+    .stTextArea textarea, 
+    .stNumberInput input,
+    .stSelectbox div[data-baseweb="select"] {
+        color: var(--text-color, #31333F) !important;
+        background-color: var(--secondary-background-color, #F0F2F6) !important;
+        border: 1px solid #CCCCCC !important;
+        border-radius: 8px !important;
+    }
+
+    /* 2. 修正輸入框 Focus (聚焦) 時的文字與外框 */
+    .stTextInput input:focus, 
+    .stTextArea textarea:focus, 
+    .stNumberInput input:focus {
+        border-color: #FF4B4B !important;
+        box-shadow: 0 0 0 1px #FF4B4B !important;
+    }
+
+    /* 3. 修正表單標籤（Label）字體顏色，確保清楚可見 */
+    .stTextInput label, 
+    .stTextArea label, 
+    .stNumberInput label, 
+    .stSelectbox label,
+    .stDateInput label {
+        color: var(--text-color, #31333F) !important;
+        font-weight: 600 !important;
+    }
+
+    /* 4. 修正占位符（Placeholder）顏色，避免太淡或看不見 */
+    ::placeholder {
+        color: #888888 !important;
+        opacity: 1 !important;
+    }
+
+    /* 5. 修正下拉選單（Selectbox）展開後的選項文字與背景 */
+    div[data-baseweb="popover"] ul {
+        background-color: var(--background-color, #FFFFFF) !important;
+    }
+    div[data-baseweb="popover"] li {
+        color: var(--text-color, #31333F) !important;
+    }
+
+    /* 6. 表單送出按鈕 (Submit Button) 高對比樣式 */
+    .stButton > button, div[data-testid="stFormSubmitButton"] > button {
+        background-color: #FF4B4B !important;
+        color: #FFFFFF !important;
+        font-weight: bold !important;
+        border: none !important;
+        border-radius: 8px !important;
+        padding: 0.5rem 1rem !important;
+        transition: background-color 0.3s ease;
+    }
+    .stButton > button:hover, div[data-testid="stFormSubmitButton"] > button:hover {
+        background-color: #D32F2F !important;
+        color: #FFFFFF !important;
+    }
+</style>
+"""
+
+st.markdown(custom_css, unsafe_allow_allow_html=True)
+
+# -----------------------------------------------------------------------------
+# 表單介面範例
+# -----------------------------------------------------------------------------
+st.title("表單元件高對比度測試")
+st.write("以下表單已套用高對比度 CSS，無論系統設定為亮色模式或暗色模式，文字皆可清晰辨識。")
+
+with st.form("user_info_form"):
+    st.subheader("請填寫資訊")
+
+    # 文字輸入框
+    user_name = st.text_input(
+        label="使用者姓名",
+        placeholder="請輸入您的姓名（例如：張小明）"
+    )
+
+    # 股票/合約代碼輸入框
+    stock_code = st.text_input(
+        label="股票/合約代碼",
+        placeholder="請輸入代碼（例如：2330 或 TX00）"
+    )
+
+    # 下拉選單
+    kbar_type = st.selectbox(
+        label="K 線週期選擇",
+        options=["1分K", "5分K", "15分K", "日K", "週K"]
+    )
+
+    # 數字輸入框
+    trade_quantity = st.number_input(
+        label="交易數量",
+        min_value=1,
+        max_value=100,
+        value=1
+    )
+
+    # 備註 (多行文字框)
+    notes = st.text_area(
+        label="備註說明",
+        placeholder="請輸入其他說明事項..."
+    )
+
+    # 送出按鈕
+    submitted = st.form_submit_button("確認送出")
+
+if submitted:
+    st.success(f"表單已成功送出！姓名：{user_name}，代碼：{stock_code}，週期：{kbar_type}")
