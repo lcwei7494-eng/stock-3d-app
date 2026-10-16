@@ -12,17 +12,17 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="TWSE全市場集中度 & 財報體檢與張宇明股神系統", layout="wide")
 
 # =========================================================
-# 🎨 1. UI 主題樣式
+# 🎨 1. UI 主題樣式 (高分辨率高對比防吃字 UI 樣式引擎)
 # =========================================================
 st.markdown("""
 <style>
 :root {
     --bg: #000000;
     --panel: #0A0D14;
-    --panel2: #121824;
-    --line: #222C3D;
+    --panel2: #0F172A;
+    --line: #334155;
     --text: #FFFFFF;
-    --muted: #CBD5E1;
+    --muted: #94A3B8;
     --up: #FF0055;
     --down: #00FF88;
     --accent: #00E5FF;
@@ -30,6 +30,7 @@ st.markdown("""
     --magenta: #FF00E5;
 }
 
+/* 全域黑色背景 */
 .stApp {
     background-color: #000000 !important;
     color: #FFFFFF !important;
@@ -52,18 +53,67 @@ h1, h2, h3, h4, h5, h6 {
 
 #MainMenu, footer { visibility: hidden; }
 
+/* 側邊欄樣式 */
 [data-testid='stSidebar'] {
     background: #0A0D14 !important;
-    border-right: 1px solid #222C3D;
+    border-right: 1px solid #334155;
 }
 [data-testid='stSidebar'] * {
     color: #FFFFFF !important;
 }
 
+/* 🎨 核心：輸入框、下拉選單、表單元件高對比防吃字樣式重構 */
+div[data-baseweb="select"] > div,
+div[data-baseweb="input"] > div,
+.stTextInput input, .stNumberInput input, .stSelectbox select {
+    background-color: #0F172A !important;
+    color: #FFFFFF !important;
+    border: 1.5px solid #00E5FF !important;
+    border-radius: 8px !important;
+    font-weight: 700 !important;
+}
+
+/* 下拉選單展開選項目錄 (Dropdown Menu) 高對比對應 */
+ul[data-baseweb="menu"], [data-baseweb="popover"] {
+    background-color: #1E293B !important;
+    border: 1.5px solid #00E5FF !important;
+    border-radius: 8px !important;
+}
+ul[data-baseweb="menu"] li, [data-baseweb="popover"] * {
+    color: #FFFFFF !important;
+    font-weight: 700 !important;
+}
+ul[data-baseweb="menu"] li:hover, [data-baseweb="option"]:hover {
+    background-color: #00E5FF !important;
+    color: #000000 !important;
+}
+ul[data-baseweb="menu"] li:hover * {
+    color: #000000 !important;
+}
+
+/* Expander 與 Popover 表單卡片背景 */
+.stExpander, [data-testid="stPopoverBody"] {
+    background-color: #0F172A !important;
+    border: 1.5px solid #334155 !important;
+    border-radius: 10px !important;
+}
+
+/* Radio 單選按鈕高亮樣式 */
+div[data-testid="stRadio"] label {
+    color: #FFFFFF !important;
+    font-weight: 700 !important;
+    background-color: #0F172A !important;
+    padding: 4px 10px !important;
+    border-radius: 6px !important;
+    border: 1px solid #334155 !important;
+    margin-right: 6px !important;
+}
+
+/* 頁籤樣式 */
 .stTabs [data-baseweb='tab-list'] { gap: 6px; flex-wrap: wrap; }
 .stTabs [data-baseweb='tab'] {
     background: #0A0D14;
-    border: 1px solid #222C3D;
+    border: 1px solid #334155;
     border-radius: 999px;
     padding: 6px 16px;
 }
@@ -76,10 +126,10 @@ h1, h2, h3, h4, h5, h6 {
 .stButton>button {
     min-height: 38px;
     border-radius: 8px;
-    border: 1px solid #222C3D;
-    background: #121824;
+    border: 1px solid #334155;
+    background: #0F172A;
     color: #FFFFFF !important;
-    font-weight: 600;
+    font-weight: 700;
 }
 .stButton>button:hover {
     border-color: #00E5FF;
@@ -91,18 +141,18 @@ h1, h2, h3, h4, h5, h6 {
     background: #0A0D14 !important;
     border-radius: 8px;
     padding: 4px;
-    border: 1px solid #222C3D;
+    border: 1px solid #334155;
 }
 [data-testid='stDataFrame'] * { color: #FFFFFF !important; }
 [data-testid='stDataFrame'] [role='grid'] [role='row']:hover,
 [data-testid='stDataFrame'] [role='row']:hover * {
-    background-color: #121824 !important;
+    background-color: #0F172A !important;
     color: #FFFFFF !important;
 }
 
 .fin-health-box {
-    background: #121824;
-    border: 1.5px solid #222C3D;
+    background: #0F172A;
+    border: 1.5px solid #334155;
     border-radius: 10px;
     padding: 16px;
     height: 100%;
@@ -110,7 +160,7 @@ h1, h2, h3, h4, h5, h6 {
 .fin-health-box h4 {
     margin-top: 0;
     color: #00E5FF !important;
-    border-bottom: 1px solid #222C3D;
+    border-bottom: 1px solid #334155;
     padding-bottom: 8px;
 }
 
@@ -136,7 +186,7 @@ h1, h2, h3, h4, h5, h6 {
 
 .navy-card {
     background: #0A0D14;
-    border: 1px solid #222C3D;
+    border: 1px solid #334155;
     border-radius: 10px;
     padding: 12px 16px;
     margin-bottom: 10px;
@@ -146,7 +196,7 @@ h1, h2, h3, h4, h5, h6 {
     justify-content: space-between;
     align-items: center;
     background: #0A0D14;
-    border: 1px solid #222C3D;
+    border: 1px solid #334155;
     border-left: 4px solid #CBD5E1;
     border-radius: 10px;
     padding: 10px 14px;
@@ -159,15 +209,15 @@ h1, h2, h3, h4, h5, h6 {
 .row .px { font-size: 1.15rem; font-weight: 800; text-align: right; }
 
 .level-container {
-    background: #121824;
-    border: 1px solid #222C3D;
+    background: #0F172A;
+    border: 1px solid #334155;
     border-radius: 12px;
     padding: 16px;
 }
 .level-head {
     display: flex;
     justify-content: space-between;
-    border-bottom: 1px solid #222C3D;
+    border-bottom: 1px solid #334155;
     padding-bottom: 10px;
     margin-bottom: 12px;
 }
@@ -176,7 +226,7 @@ h1, h2, h3, h4, h5, h6 {
     justify-content: space-between;
     align-items: center;
     background: #0A0D14;
-    border: 1px solid #222C3D;
+    border: 1px solid #334155;
     border-radius: 8px;
     padding: 8px 12px;
     margin: 6px 0;
@@ -399,7 +449,7 @@ def run_goldman_sachs_ai_evaluation(data_dict, user_gemini_key=""):
     return "❌ 呼叫 Gemini API 失敗，請確認 API Key 權限。\n錯誤明細: " + (err_msgs[0] if err_msgs else "無回應")
 
 # =========================================================
-# 🧮 4. 四大核心關鍵價位演算引擎 (安全且強化的點對點融合)
+# 🧮 4. 四大核心關鍵價位演算引擎 (補齊 pivots 變數宣告)
 # =========================================================
 def calculate_advanced_key_levels(df, curr_price):
     curr_p = safe_float(curr_price)
@@ -1823,25 +1873,24 @@ elif app_mode == "🔥 大戶投 — 盤中熱門":
             with t4: render_smart_stock_table(df_hot.sort_values(by="漲跌幅(%)", ascending=True), "hot_down")
         except Exception as e: st.error("錯誤: " + str(e))
 
-# ⚡ 當沖強勢股全台股上市櫃（1800+檔）雙模式切換篩選器 (大盤重挫逆勢亮燈強勢股捕捉)
+# ⚡ 當沖強勢股全台股上市櫃（1800+檔）雙模式切換篩選器
 elif app_mode == "⚡ 當沖強勢股篩選":
     st.title("⚡ 全台股（1,800+ 檔上市櫃）當沖/逆勢強勢股雙模式雙重防護掃描器")
     st.caption("【全市場初選】遍歷 TSE/OTC 所有人氣流動性個股 ➔ 【進階掃描】三大核心條件 + 可選放寬股價區間/捕捉逆勢亮燈鎖漲停股。")
 
     with st.sidebar.expander("⚙️ 第一階段：全市場初選門檻設定", expanded=True):
-        p1_min_vol = st.number_input("① 最低成交量門檻 (張)", value=500, step=100) # 調降至 500 張防漏
-        p1_min_amt = st.number_input("② 最低成交金額門檻 (萬元)", value=2000, step=500) # 調降至 2000 萬元
+        p1_min_vol = st.number_input("① 最低成交量門檻 (張)", value=500, step=100)
+        p1_min_amt = st.number_input("② 最低成交金額門檻 (萬元)", value=2000, step=500)
         p1_min_amp = st.number_input("③ 最低當日振幅門檻 (%)", value=2.5, step=0.5)
 
     with st.sidebar.expander("⚙️ 第二階段：三大核心條件與危險標的排除設定", expanded=True):
         p2_mode = st.radio("🎯 篩選戰術目標模式", ["⚡ 標準當沖模式 (排除鎖漲停)", "🔥 逆勢強勢股模式 (含快鎖漲停/低基期黑馬股)"])
         p2_chk_price_range = st.checkbox("① 優先黃金股價區間 (放寬為 15 ~ 250 元)", value=True)
         p2_chk_vwap = st.checkbox("② 站上當日均線 VWAP / 盤前題材動能", value=True)
-        p2_pred_vol_mult = st.number_input("③ 今日預估爆量倍數門檻", value=1.2, step=0.1) # 下修至 1.2 倍防漏
+        p2_pred_vol_mult = st.number_input("③ 今日預估爆量倍數門檻", value=1.2, step=0.1)
         
         st.markdown("---")
         p2_exclude_disposal = st.checkbox("⛔ 排除處置股/變更交易法 (關禁閉標的)", value=True)
-        # 根據選定的模式，自動決定是否排除接近漲停的標的
         p2_exclude_limit = (p2_mode == "⚡ 標準當沖模式 (排除鎖漲停)")
 
     if st.button("🚀 1. 執行第一階段：全台股 1,800+ 檔上市櫃人氣初選", type="primary"):
@@ -1927,20 +1976,16 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                                 contract = api_filter.Contracts.Stocks.get(code)
                                 if not contract: continue
 
-                                # ⛔ 1. 處置股/變更交易法排除
                                 if p2_exclude_disposal and ("*" in name or "處置" in str(getattr(contract, 'status', ''))): continue
 
-                                # 🎯 2. 股價區間放寬判斷 (15 ~ 250 元，確保囊括中低價飆股/防禦股)
                                 min_p = 15.0 if p2_chk_price_range else 0.0
                                 max_p = 250.0 if p2_chk_price_range else 9999.0
                                 if not (min_p <= curr_p <= max_p): continue
 
-                                # ⛔ 3. 漲停排除開關 (若為「逆勢強勢股模式」，則不剔除漲停/快鎖漲停股)
                                 limit_up = safe_float(getattr(contract, 'price_up', curr_p * 1.1))
                                 if p2_exclude_limit and curr_p >= limit_up * 0.992:
                                     continue
 
-                                # 🎯 4. 預估爆量與題材熱度
                                 kbars = api_filter.kbars(contract=contract, start=start_date, end=end_date)
                                 df_raw = pd.DataFrame({"ts": kbars.ts, "Open": kbars.Open, "High": kbars.High, "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume})
                                 if len(df_raw) < 10: continue
@@ -1952,7 +1997,6 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                                 pred_vol_ratio = round(tot_vol / prev_vol, 2) if prev_vol > 0 else 1.0
                                 if pred_vol_ratio < p2_pred_vol_mult: continue
 
-                                # 🎯 5. 均線 VWAP 站上判斷
                                 vwap = safe_float(getattr(contract, 'average_price', curr_p))
                                 if p2_chk_vwap and vwap > 0 and curr_p < vwap: continue
 
