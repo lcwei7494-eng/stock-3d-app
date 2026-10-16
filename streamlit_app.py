@@ -1670,8 +1670,9 @@ elif app_mode == "🔍 FinMind 全市場掃描器":
                             if real_p == 0: continue
 
                             kbars = api.kbars(contract=contract, start=start_d, end=end_d)
+                            if not kbars or len(kbars.Close) < 60: continue
+
                             df_k = pd.DataFrame({"Close": kbars.Close})
-                            if len(df_k) < 60: continue
                             df_k["60MA"] = df_k["Close"].rolling(60).mean()
                             ma60 = safe_float(df_k["60MA"].iloc[-1], real_p * 0.92)
 
@@ -1719,9 +1720,9 @@ elif app_mode == "🔍 FinMind 全市場掃描器":
                             if real_p == 0: continue
 
                             kbars = api.kbars(contract=contract, start=start_d, end=end_d)
-                            df_k = pd.DataFrame({"Close": kbars.Close, "Volume": kbars.Volume})
-                            if len(df_k) < 60: continue
+                            if not kbars or len(kbars.Close) < 60: continue
 
+                            df_k = pd.DataFrame({"Close": kbars.Close, "Volume": kbars.Volume})
                             df_k["20MA"] = df_k["Close"].rolling(20).mean()
                             df_k["60MA"] = df_k["Close"].rolling(60).mean()
                             ma20 = df_k["20MA"].iloc[-1]
@@ -1799,9 +1800,9 @@ elif app_mode == "🚀 6層量化戰略選股":
                             fund = check_fundamental_6layer(c_code)
                             
                             kbars = api.kbars(contract=contract, start=start_date, end=end_date)
-                            df_k = pd.DataFrame({"Close": kbars.Close, "High": kbars.High, "Low": kbars.Low, "Open": kbars.Open, "Volume": kbars.Volume})
-                            if len(df_k) < 20: continue
+                            if not kbars or len(kbars.Close) < 20: continue
 
+                            df_k = pd.DataFrame({"Close": kbars.Close, "High": kbars.High, "Low": kbars.Low, "Open": kbars.Open, "Volume": kbars.Volume})
                             df_k["20MA"] = df_k["Close"].rolling(20).mean()
                             df_k["60MA"] = df_k["Close"].rolling(60).mean() if len(df_k) >= 60 else df_k["20MA"]
                             ma20, ma60 = df_k["20MA"].iloc[-1], df_k["60MA"].iloc[-1]
@@ -1987,9 +1988,9 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                                     continue
 
                                 kbars = api_filter.kbars(contract=contract, start=start_date, end=end_date)
-                                df_raw = pd.DataFrame({"ts": kbars.ts, "Open": kbars.Open, "High": kbars.High, "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume})
-                                if len(df_raw) < 10: continue
+                                if not kbars or len(kbars.Close) < 10: continue
 
+                                df_raw = pd.DataFrame({"ts": kbars.ts, "Open": kbars.Open, "High": kbars.High, "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume})
                                 df_raw["Date"] = pd.to_datetime(df_raw["ts"] / 1000000000, unit='s', errors='coerce')
                                 df_k = df_raw.groupby(df_raw["Date"].dt.date).agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).reset_index()
 
@@ -2150,7 +2151,7 @@ elif app_mode == "📊 簡單台股記帳 (Stockify)":
             curr_shares = b_shares - s_shares
 
             b_avg = (buys["price"] * buys["shares"]).sum() / b_shares if b_shares > 0 else 0.0
-            s_avg = (sells["price"] * sells["shares"]).sum() / s_sh if s_sh > 0 else 0.0
+            s_avg = (sells["price"] * sells["shares"]).sum() / s_shares if s_shares > 0 else 0.0
 
             latest_p = snap_prices.get(c, b_avg if b_avg > 0 else s_avg)
             div_total = divs["net_amt"].sum() if not divs.empty else 0.0
@@ -2440,7 +2441,7 @@ else:
 
                         start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d"); end_date = datetime.now().strftime("%Y-%m-%d")
                         kbars = api.kbars(contract=contract, start=start_date, end=end_date)
-                        df_raw = pd.DataFrame({"ts": kbars.ts, "Open": kbars.Open, "High": kbars.High, "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume})
+                        df_raw = pd.DataFrame({"ts": kbars.ts, "Open": kbars.Open, "High": kbars.High, "Low": kbars.Low, "Close": kbars.Close, "Volume": kbars.Volume}) if (kbars and len(kbars.Close) > 0) else pd.DataFrame()
                         
                         pivot_p = round((high_price + low_price + prev_close_price) / 3, 2)
                         daytrade_resistance = round(max(prev_close_price * 1.015, high_price), 2)
