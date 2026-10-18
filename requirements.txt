@@ -6,5 +6,3 @@ plotly
 google-genai
 requests
 websockets
-FinMind
-tqdm
