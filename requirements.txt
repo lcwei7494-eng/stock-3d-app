@@ -4,3 +4,6 @@ pandas
 twstock
 plotly
 google-genai
+requests
+websockets
+FinMind
