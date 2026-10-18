@@ -30,41 +30,16 @@ st.markdown("""
     --magenta: #FF00E5;
 }
 
-/* 全域黑色背景 */
-.stApp {
-    background-color: #000000 !important;
-    color: #FFFFFF !important;
-}
-
-html, body, p, span, label, div {
-    font-family: 'Noto Sans TC', 'Microsoft JhengHei', sans-serif;
-    color: #FFFFFF !important;
-}
-
-h1, h2, h3, h4, h5, h6 {
-    color: #FFFFFF !important;
-    font-weight: 700 !important;
-}
-
-.block-container {
-    padding-top: 1.0rem;
-    max-width: 1450px;
-}
-
+.stApp { background-color: #000000 !important; color: #FFFFFF !important; }
+html, body, p, span, label, div { font-family: 'Noto Sans TC', 'Microsoft JhengHei', sans-serif; color: #FFFFFF !important; }
+h1, h2, h3, h4, h5, h6 { color: #FFFFFF !important; font-weight: 700 !important; }
+.block-container { padding-top: 1.0rem; max-width: 1450px; }
 #MainMenu, footer { visibility: hidden; }
 
-/* 側邊欄樣式 */
-[data-testid='stSidebar'] {
-    background: #0A0D14 !important;
-    border-right: 1px solid #334155;
-}
-[data-testid='stSidebar'] * {
-    color: #FFFFFF !important;
-}
+[data-testid='stSidebar'] { background: #0A0D14 !important; border-right: 1px solid #334155; }
+[data-testid='stSidebar'] * { color: #FFFFFF !important; }
 
-/* 🎨 核心：輸入框、下拉選單、表單元件高對比防吃字樣式重構 */
-div[data-baseweb="select"] > div,
-div[data-baseweb="input"] > div,
+div[data-baseweb="select"] > div, div[data-baseweb="input"] > div,
 .stTextInput input, .stNumberInput input, .stSelectbox select {
     background-color: #0F172A !important;
     color: #FFFFFF !important;
@@ -73,32 +48,22 @@ div[data-baseweb="input"] > div,
     font-weight: 700 !important;
 }
 
-/* 下拉選單展開選項目錄 (Dropdown Menu) 高對比對應 */
 ul[data-baseweb="menu"], [data-baseweb="popover"] {
     background-color: #1E293B !important;
     border: 1.5px solid #00E5FF !important;
     border-radius: 8px !important;
 }
-ul[data-baseweb="menu"] li, [data-baseweb="popover"] * {
-    color: #FFFFFF !important;
-    font-weight: 700 !important;
-}
 ul[data-baseweb="menu"] li:hover, [data-baseweb="option"]:hover {
     background-color: #00E5FF !important;
     color: #000000 !important;
 }
-ul[data-baseweb="menu"] li:hover * {
-    color: #000000 !important;
-}
 
-/* Expander 與 Popover 表單卡片背景 */
 .stExpander, [data-testid="stPopoverBody"] {
     background-color: #0F172A !important;
     border: 1.5px solid #334155 !important;
     border-radius: 10px !important;
 }
 
-/* Radio 單選按鈕高亮樣式 */
 div[data-testid="stRadio"] label {
     color: #FFFFFF !important;
     font-weight: 700 !important;
@@ -109,71 +74,16 @@ div[data-testid="stRadio"] label {
     margin-right: 6px !important;
 }
 
-/* 頁籤樣式 */
 .stTabs [data-baseweb='tab-list'] { gap: 6px; flex-wrap: wrap; }
-.stTabs [data-baseweb='tab'] {
-    background: #0A0D14;
-    border: 1px solid #334155;
-    border-radius: 999px;
-    padding: 6px 16px;
-}
-.stTabs [aria-selected='true'] {
-    background: #00E5FF;
-    border-color: #00E5FF;
-}
+.stTabs [data-baseweb='tab'] { background: #0A0D14; border: 1px solid #334155; border-radius: 999px; padding: 6px 16px; }
+.stTabs [aria-selected='true'] { background: #00E5FF; border-color: #00E5FF; }
 .stTabs [aria-selected='true'] * { color: #000000 !important; font-weight: 700; }
 
-.stButton>button {
-    min-height: 38px;
-    border-radius: 8px;
-    border: 1px solid #334155;
-    background: #0F172A;
-    color: #FFFFFF !important;
-    font-weight: 700;
-}
-.stButton>button:hover {
-    border-color: #00E5FF;
-    background: #00E5FF;
-    color: #000000 !important;
-}
+.stButton>button { min-height: 38px; border-radius: 8px; border: 1px solid #334155; background: #0F172A; color: #FFFFFF !important; font-weight: 700; }
+.stButton>button:hover { border-color: #00E5FF; background: #00E5FF; color: #000000 !important; }
 
-[data-testid='stDataFrame'] {
-    background: #0A0D14 !important;
-    border-radius: 8px;
-    padding: 4px;
-    border: 1px solid #334155;
-}
+[data-testid='stDataFrame'] { background: #0A0D14 !important; border-radius: 8px; padding: 4px; border: 1px solid #334155; }
 [data-testid='stDataFrame'] * { color: #FFFFFF !important; }
-[data-testid='stDataFrame'] [role='grid'] [role='row']:hover,
-[data-testid='stDataFrame'] [role='row']:hover * {
-    background-color: #0F172A !important;
-    color: #FFFFFF !important;
-}
-
-.fin-health-box {
-    background: #0F172A;
-    border: 1.5px solid #334155;
-    border-radius: 10px;
-    padding: 16px;
-    height: 100%;
-}
-.fin-health-box h4 {
-    margin-top: 0;
-    color: #00E5FF !important;
-    border-bottom: 1px solid #334155;
-    padding-bottom: 8px;
-}
-
-.analysis-yellow-card {
-    background-color: #FFD166 !important;
-    border: 2px solid #FFA000 !important;
-    border-radius: 6px;
-    padding: 14px 16px;
-    color: #000000 !important;
-    font-weight: 800;
-    line-height: 1.6;
-}
-.analysis-yellow-card * { color: #000000 !important; }
 
 .twse-stat-card {
     background: linear-gradient(135deg, #0D1B2A 0%, #1B263B 100%);
@@ -184,59 +94,13 @@ div[data-testid="stRadio"] label {
     box-shadow: 0 4px 15px rgba(0, 229, 255, 0.15);
 }
 
-.navy-card {
-    background: #0A0D14;
-    border: 1px solid #334155;
-    border-radius: 10px;
-    padding: 12px 16px;
-    margin-bottom: 10px;
-}
-.row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: #0A0D14;
-    border: 1px solid #334155;
-    border-left: 4px solid #CBD5E1;
-    border-radius: 10px;
-    padding: 10px 14px;
-    margin: 6px 0;
-}
+.navy-card { background: #0A0D14; border: 1px solid #334155; border-radius: 10px; padding: 12px 16px; margin-bottom: 10px; }
+.row { display: flex; justify-content: space-between; align-items: center; background: #0A0D14; border: 1px solid #334155; border-left: 4px solid #CBD5E1; border-radius: 10px; padding: 10px 14px; margin: 6px 0; }
 .row.up-bar { border-left-color: #FF0055; }
 .row.down-bar { border-left-color: #00FF88; }
 .row .name { font-size: 1rem; font-weight: 700; color: #FFFFFF; }
 .row .code { color: #CBD5E1; font-size: .82rem; margin-left: 6px; }
 .row .px { font-size: 1.15rem; font-weight: 800; text-align: right; }
-
-.level-container {
-    background: #0F172A;
-    border: 1px solid #334155;
-    border-radius: 12px;
-    padding: 16px;
-}
-.level-head {
-    display: flex;
-    justify-content: space-between;
-    border-bottom: 1px solid #334155;
-    padding-bottom: 10px;
-    margin-bottom: 12px;
-}
-.level-box {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: #0A0D14;
-    border: 1px solid #334155;
-    border-radius: 8px;
-    padding: 8px 12px;
-    margin: 6px 0;
-}
-.level-box.normal {
-    border-color: #00E5FF;
-    background: #0F2027;
-}
-.text-red { color: #FF0055 !important; font-weight: 800; }
-.text-green { color: #00FF88 !important; font-weight: 800; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -380,19 +244,22 @@ def add_to_watchlist_safe(stock_lbl):
         save_watchlist_to_file(st.session_state["watchlist"])
 
 # =========================================================
-# 🧮 3. TW Breakout Scanner V1.0 量化計算演算法 (隔日突破)
+# 🧮 3. TW Breakout Scanner V1.0 量化計算演算法 (隔日突破修復版)
 # =========================================================
 def analyze_one_breakout_stock(df, min_avg_amount=300000000, min_return=0.02, max_return=0.07, min_volume_ratio=1.5, min_close_pos=0.75):
     """
     TW Breakout Scanner V1.0 精確規格實作：
-    1. 硬性篩選：排除近 20 日均成交額 < 3 億、當日漲幅不在 +2%~+7% 區間、未站上 20MA、20MA 斜率下滑、未接近突破前 20 日高點 (精確排除當日)、成交量未達 5MA 均量 1.5 倍、收盤位階未達高低振幅上方 25%。
-    2. 100 分制評分：趨勢 (25分)、突破強度 (25分)、量能確認 (20分)、收盤位置 (15分)、流動性 (15分)。
+    1. 硬性篩選：排除近 20 日均成交額 < 3 億、當日漲幅不在 +2%~+7% 區間、未站上 20MA、20MA 斜率下滑、未接近突破前 20 日高點 (精確排除當日)、成交量未達 5MA 均量 1.5 倍、收盤位階未達高低振幅上方 25%[cite: 1]。
+    2. 100 分制評分：趨勢 (25分)、突破強度 (25分)、量能確認 (20分)、收盤位置 (15分)、流動性 (15分)[cite: 1]。
     """
     df = df.sort_values("date").copy()
     if len(df) < 60: return None
 
     close = df["close"]; high = df["max"]; low = df["min"]
-    volume = df["Trading_Volume"]; amount = df["Trading_money"]
+    volume = df["Trading_Volume"]
+    
+    # 相容 Trading_money 或以 close * volume 試算
+    amount = df["Trading_money"] if "Trading_money" in df.columns else close * volume
 
     df["MA20"] = close.rolling(20).mean()
     df["MA60"] = close.rolling(60).mean()
@@ -401,7 +268,7 @@ def analyze_one_breakout_stock(df, min_avg_amount=300000000, min_return=0.02, ma
     df["VOL_AVG5_PREV"] = volume.shift(1).rolling(5).mean()
     df["VOLUME_RATIO"] = volume / (df["VOL_AVG5_PREV"] + 1e-9)
     
-    # 精確排除當日：取前 1~20 個交易日的歷史高點
+    # 精確排除當日：取前 1~20 個交易日的歷史高點[cite: 1]
     df["PREV_HIGH20"] = high.shift(1).rolling(20).max()
 
     day_range = high - low
@@ -423,7 +290,7 @@ def analyze_one_breakout_stock(df, min_avg_amount=300000000, min_return=0.02, ma
 
     if not np.isfinite(np.asarray(required_values, dtype=float)).all(): return None
 
-    # 硬性排除門檻驗證
+    # 8 大硬性排除門檻驗證[cite: 1]
     conditions = {
         "流動性足夠": last["AVG_AMOUNT20"] >= min_avg_amount,
         "當日漲幅合適": min_return <= last["RETURN"] <= max_return,
@@ -437,7 +304,7 @@ def analyze_one_breakout_stock(df, min_avg_amount=300000000, min_return=0.02, ma
 
     if not all(conditions.values()): return None
 
-    # 100 分制評分模型 (分數代表技術條件符合度)
+    # 100 分制評分模型 (分數代表技術條件符合度)[cite: 1]
     trend_score = (10 * float(last["close"] > last["MA20"]) + 8 * float(last["MA20"] > last["MA60"]) + 7 * float(last["MA20_SLOPE5"] > 0))
     breakout_ratio = last["close"] / last["PREV_HIGH20"] - 1
     breakout_score = np.clip((breakout_ratio + 0.02) / 0.05, 0, 1) * 25
@@ -447,11 +314,10 @@ def analyze_one_breakout_stock(df, min_avg_amount=300000000, min_return=0.02, ma
 
     total_score = trend_score + breakout_score + volume_score + close_score + liquidity_score
 
-    # 分級評語
     eval_tag = "🔥 80分以上 (優先觀察)" if total_score >= 80 else ("🟡 70~79分 (備選觀察)" if total_score >= 70 else "⚪ 低於70分")
 
     return {
-        "date": last["date"].strftime("%Y-%m-%d"),
+        "date": last["date"].strftime("%Y-%m-%d") if hasattr(last["date"], 'strftime') else str(last["date"]),
         "stock_id": str(last["stock_id"]),
         "close": round(float(last["close"]), 2),
         "daily_return_pct": round(float(last["RETURN"] * 100), 2),
@@ -867,75 +733,6 @@ def parse_accurate_stock_data(snapshot, api, contract):
     if c_price > 0 and ref_price > 0: pct_rate = round(((c_price - ref_price) / ref_price) * 100, 2)
     return c_price, ref_price, pct_rate
 
-def fetch_real_stock_snapshots(codes_list, tag_feature="精選"):
-    api = get_shioaji_api(api_key, secret_key)
-    if not api: return pd.DataFrame()
-    try:
-        contracts = [api.Contracts.Stocks.get(code) for code in codes_list if api.Contracts.Stocks.get(code)]
-        if not contracts: return pd.DataFrame()
-        snaps = api.snapshots(contracts); snap_dict = {s.code: s for s in snaps}; results = []
-        for contract in contracts:
-            c_code = contract.code; c_name = twstock.codes[c_code].name if c_code in twstock.codes else c_code; s = snap_dict.get(c_code)
-            curr_p, real_close_p, pct = parse_accurate_stock_data(s, api, contract)
-            tot_vol = int(safe_float(getattr(s, 'total_volume', 0))) if s else 0
-            results.append({"股票代碼": c_code, "股票名稱": c_name, "最新真實價": curr_p, "最近日收盤價": real_close_p, "最新價": curr_p, "漲跌幅(%)": pct, "成交量(張)": tot_vol, "成交值(萬元)": round(curr_p * tot_vol / 1000), "篩選特徵": tag_feature, "狀態": "即時行情"})
-        return pd.DataFrame(results)
-    except Exception: return pd.DataFrame()
-
-# WebSocket 推播引擎
-CONNECTED_CLIENTS = set()
-async def ws_handler(websocket):
-    CONNECTED_CLIENTS.add(websocket)
-    try:
-        async for message in websocket: pass
-    except Exception: pass
-    finally: CONNECTED_CLIENTS.remove(websocket)
-
-def start_websocket_server():
-    loop = asyncio.new_event_loop(); asyncio.set_event_loop(loop)
-    async def run_server():
-        async with serve(ws_handler, "0.0.0.0", 8765): await asyncio.Future()
-    try: loop.run_until_complete(run_server())
-    except Exception: pass
-
-if "ws_thread_started" not in st.session_state:
-    st.session_state["ws_thread_started"] = True
-    t = threading.Thread(target=start_websocket_server, daemon=True); t.start()
-
-def broadcast_tick_microsecond(tick_data):
-    if CONNECTED_CLIENTS:
-        msg = json.dumps(tick_data)
-        async def _send():
-            for ws in list(CONNECTED_CLIENTS):
-                try: await ws.send(msg)
-                except Exception: pass
-        asyncio.run(_send())
-
-@st.cache_data(ttl=3600)
-def fetch_finmind_chip_data(stock_code, token=""):
-    start_date = (datetime.now() - timedelta(days=15)).strftime("%Y-%m-%d")
-    url = "https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInstitutionalInvestorsBuySell&data_id=" + str(stock_code) + "&start_date=" + str(start_date)
-    if token: url += "&token=" + str(token)
-    try:
-        res = requests.get(url, timeout=10)
-        if res.status_code == 200:
-            raw_data = res.json().get("data", [])
-            if raw_data:
-                df = pd.DataFrame(raw_data); df["net_vol"] = (df["buy"] - df["sell"]) / 1000
-                name_map = {"Foreign_Investor": "外資", "Investment_Trust": "投信", "Dealer_Self": "自營商", "Dealer_Hedging": "自營商避險"}
-                df["name_clean"] = df["name"].map(lambda x: name_map.get(x, x))
-                pivot_df = df.pivot_table(index="date", columns="name_clean", values="net_vol", aggfunc="sum").fillna(0)
-                if "自營商避險" in pivot_df.columns: pivot_df["自營商"] = pivot_df.get("自營商", 0) + pivot_df["自營商避險"]
-                for col in ["外資", "投信", "自營商"]:
-                    if col not in pivot_df.columns: pivot_df[col] = 0.0
-                pivot_df["合計"] = pivot_df["外資"] + pivot_df["投信"] + pivot_df["自營商"]
-                pivot_df = pivot_df.sort_index(ascending=False).head(5).reset_index()
-                pivot_df["日期"] = pd.to_datetime(pivot_df["date"]).dt.strftime("%m/%d")
-                for col in ["外資", "投信", "自營商", "合計"]: pivot_df[col] = pivot_df[col].apply(lambda x: f"{x:+.0f}" if x != 0 else "0")
-                return pivot_df[["日期", "外資", "投信", "自營商", "合計"]]
-    except Exception: pass
-    return pd.DataFrame()
-
 def render_smart_stock_table(df_display, key_prefix):
     if df_display is None or df_display.empty:
         st.warning("⚠️ 查無符合該篩選模組之股票標的。")
@@ -982,7 +779,7 @@ def render_smart_stock_table(df_display, key_prefix):
             st.markdown("<div class='navy-card'>" + str(st.session_state["ai_eval_" + c_code]) + "</div>", unsafe_allow_html=True)
 
 # =========================================================
-# 10. 各頁面路由與戰情室
+# 10. 各頁面路由與戰情室 (已完全對齊)
 # =========================================================
 
 # 🌐 頁面 1：TWSE 全市場成交值集中度
@@ -1090,10 +887,10 @@ elif app_mode == "🔍 FinMind 全市場掃描器":
 
 # ⚡ 頁面 5：當沖強勢股篩選 (正式加入當沖突破強勢股掃描器 V1.0 模組卡片)
 elif app_mode == "⚡ 當沖強勢股篩選":
-    st.title("⚡ 全台股當沖與逆勢強勢股「第二階段雙戰術模式與突破掃描」戰情室")
+    st.title("⚡ 全台股當沖與逆勢強勢股「突破掃描與雙戰術模式」戰情室")
     
-    st.markdown("### 🚀 當沖突破強勢股掃描器 V1.0 (100 分制評分模型)")
-    st.caption("【選股特色】：計算全台股上市/上櫃個股之 20MA、60MA、前 20 日最高價（精確排除當日）與量能倍數，輸出值得隔日觀察的前 20 檔股票[cite: 1]！")
+    st.markdown("### 🚀 TW Breakout Scanner V1.0 (隔日突破當沖強勢股掃描器)[cite: 1]")
+    st.caption("【選股特色】：計算全台股上市/上櫃個股之 20MA、60MA、前 20 日最高價（精確排除當日[cite: 1]）與量能倍數，輸出值得隔日觀察的前 20 檔股票[cite: 1]！")
 
     c1, c2, c3 = st.columns(3)
     with c1: min_amt_input = st.number_input("最低 20 日均成交額 (NT$ 億元/日)", value=3.0, step=0.5)
@@ -1130,6 +927,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                             kbars = api_filter.kbars(contract=contract, start=start_date, end=end_date)
                             if not kbars or len(kbars.Close) < 60: continue
 
+                            # 正確建構 Pandas DataFrame (避免相除型別錯誤)
                             df_stk = pd.DataFrame({
                                 "date": pd.to_datetime(kbars.ts / 1000000000, unit='s'),
                                 "stock_id": code,
@@ -1141,7 +939,7 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                                 "Trading_money": kbars.Close * kbars.Volume
                             })
 
-                            # 帶入 100 分制評分與 8 大硬性風控過濾演算法
+                            # 帶入 100 分制評分與 8 大硬性風控過濾演算法[cite: 1]
                             res = analyze_one_breakout_stock(
                                 df_stk,
                                 min_avg_amount=min_amt_input * 100000000,
@@ -1158,12 +956,12 @@ elif app_mode == "⚡ 當沖強勢股篩選":
                         st.session_state["breakout_v1_res"] = df_top20
                         st.success(f"🎉 隔日突破當沖掃描完成！成功為您過濾出 {len(df_top20)} 檔值得隔日觀察的高分精選股[cite: 1]：")
                     else:
-                        st.warning("ℹ 今日全市場標的中，暫無股票同時符合您設定的 8 大硬性排除門檻與評分分數，建議稍微調整放寬成交金額或爆量倍數！")
+                        st.warning("ℹ 今日全市場標的暫無股票符合所有硬性排除門檻與評分，建議稍微放寬成交金額或爆量倍數！")
             except Exception as e:
                 st.error("突破掃描器執行失敗: " + str(e))
 
     if "breakout_v1_res" in st.session_state and not st.session_state["breakout_v1_res"].empty:
-        st.markdown("#### 🏆 值得隔日觀察的前 20 檔突破強勢股榜單 (按 100 分制評分高低排序)")
+        st.markdown("#### 🏆 值得隔日觀察的前 20 檔突破強勢股榜單 (按 100 分制評分高低排序)[cite: 1]")
         render_smart_stock_table(st.session_state["breakout_v1_res"], "breakout_top20")
 
     st.markdown("---")
