@@ -1,7 +1,7 @@
 import subprocess
 import sys
 
-subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
+
 import streamlit as st
 import shioaji as sj
 import pandas as pd
