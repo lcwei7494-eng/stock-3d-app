@@ -6,5 +6,5 @@ plotly
 google-genai
 requests
 websockets
-plsywright
+playwright
 #rebuild
