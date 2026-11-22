@@ -6,3 +6,4 @@ plotly
 google-genai
 requests
 websockets
+plsywright
